@@ -1,0 +1,34 @@
+:root {
+  font-family: "SF Pro Display", "Segoe UI", sans-serif;
+  color: #f3f5f7;
+  background: rgba(15, 22, 28, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+#root {
+  height: 100dvh;
+  overflow: hidden;
+  padding: 28px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}

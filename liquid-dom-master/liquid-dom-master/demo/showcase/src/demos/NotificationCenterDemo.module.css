@@ -1,0 +1,197 @@
+.root {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.canvasShell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #101010;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.backdrop {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.iconBackdrop {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.backgroundImage {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.appGrid {
+  position: absolute;
+  right: 24px;
+  top: 40px;
+  left: 24px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px 14px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.appItem {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.appIcon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 22px;
+  corner-shape: squircle;
+  color: rgba(255, 255, 255, 0.95);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-color) 72%, white), color-mix(in srgb, var(--app-color) 84%, white) 62%, color-mix(in srgb, var(--app-color) 88%, black));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26)
+}
+
+.appIconGlyph {
+  width: 24px;
+  height: 24px;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2));
+  stroke-width: 2.2;
+}
+
+.appLabel {
+  overflow: hidden;
+  max-width: 70px;
+  color: rgb(255, 255, 255);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: center;
+  text-shadow: 0 1px 7px rgba(0, 0, 0, 0.4);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trayContent {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.panelOverlay {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 50px;
+  padding-bottom: 10px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.drawerInfo {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-align: center;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.22);
+}
+
+.drawerMeta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.weather {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.weatherIcon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.drawerTime {
+  font-size: 82px;
+  font-weight: 800;
+  line-height: 0.86;
+}
+
+.homeIndicator {
+  width: 100px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 18px rgba(0, 0, 0, 0.08);
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+.panelOverlay[data-dragging='true'] .homeIndicator {
+  opacity: 0;
+}
+
+.buttonContent {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.95);
+  pointer-events: none;
+  user-select: none;
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}

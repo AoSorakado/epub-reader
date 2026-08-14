@@ -1,0 +1,914 @@
+package com.example.epubreader.ui.settings
+
+import android.app.Application
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import com.example.epubreader.data.db.AppDatabase
+import com.example.epubreader.ui.bookshelf.BookshelfViewModel
+import com.example.epubreader.ui.bookshelf.BookshelfViewModelFactory
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.navigation.NavController
+import com.example.epubreader.ui.components.liquid.LiquidToggle
+import com.example.epubreader.ui.components.liquid.LiquidSlider
+import com.example.epubreader.ui.theme.AppTheme
+import com.example.epubreader.ui.theme.getThemeGradient
+import com.example.epubreader.ui.theme.getThemeAccentColor
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
+import kotlin.math.PI
+import kotlin.math.roundToInt
+import kotlin.math.sin
+
+class SettingsViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return SettingsViewModel(application) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    navController: NavController,
+    viewModel: SettingsViewModel,
+    backgroundBackdrop: Backdrop
+) {
+    val context = LocalContext.current
+
+    var isWebDavExpanded by remember { mutableStateOf(false) }
+    
+    var rootCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var buttonBounds by remember { mutableStateOf(Rect.Zero) }
+    var themeButtonBounds by remember { mutableStateOf(Rect.Zero) }
+
+    val syncState by viewModel.syncState.collectAsState()
+    val syncMessage by viewModel.syncMessage.collectAsState()
+    val appTheme by viewModel.appTheme.collectAsState()
+    val immersiveStatusBar by viewModel.immersiveStatusBar.collectAsState()
+    val isCustomThemeThreeColors by viewModel.isCustomThemeThreeColors.collectAsState()
+    val customColors by viewModel.customColors.collectAsState()
+
+    var isCustomThemeExpanded by remember { mutableStateOf(false) }
+    var isThemeExpanded by remember { mutableStateOf(false) }
+
+    val transition = updateTransition(targetState = isWebDavExpanded, label = "WebDavExpansion")
+    val expandProgressState = transition.animateFloat(
+        transitionSpec = { spring(dampingRatio = 0.6f, stiffness = 250f) },
+        label = "expandProgress"
+    ) { expanded ->
+        if (expanded) 1f else 0f
+    }
+
+    val isTransitioning = transition.currentState != transition.targetState || transition.currentState
+
+    val themeTransition = updateTransition(targetState = isThemeExpanded, label = "ThemeExpansion")
+    val themeExpandProgressState = themeTransition.animateFloat(
+        transitionSpec = { spring(dampingRatio = 0.6f, stiffness = 250f) },
+        label = "themeExpandProgress"
+    ) { expanded ->
+        if (expanded) 1f else 0f
+    }
+
+    val isThemeTransitioning = themeTransition.currentState != themeTransition.targetState || themeTransition.currentState
+
+    val dao = remember { AppDatabase.getDatabase(context).bookDao() }
+    val bookshelfViewModel: BookshelfViewModel = viewModel(factory = BookshelfViewModelFactory(dao, context.applicationContext as android.app.Application))
+    val localImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            bookshelfViewModel.importLocalBook(it, context)
+        }
+    }
+
+    val isDark = appTheme == AppTheme.MIDNIGHT_GLASS
+    val primaryTextColor = if (isDark) Color(0xFFF1F5F9) else Color(0xFF2B173A)
+    val secondaryTextColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF543866).copy(alpha = 0.85f)
+
+    val settingsGradient = getThemeGradient(appTheme, if (isCustomThemeThreeColors) customColors else customColors.take(2))
+    val settingsBackdrop = rememberLayerBackdrop {
+        drawRect(brush = settingsGradient)
+        drawContent()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { rootCoords = it }
+    ) {
+        Scaffold(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(brush = settingsGradient)
+                .layerBackdrop(settingsBackdrop),
+            topBar = {
+                Column {
+                    TopAppBar(
+                        title = { Text("配置", color = primaryTextColor, fontWeight = FontWeight.Bold) },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                            titleContentColor = primaryTextColor
+                        )
+                    )
+                    
+                    // Top Sync Status Banner
+                    AnimatedVisibility(
+                        visible = syncState != SyncState.IDLE,
+                        enter = expandVertically(),
+                        exit = shrinkVertically()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    when (syncState) {
+                                        SyncState.SYNCING -> Color(0xFF007BFF).copy(alpha = 0.8f)
+                                        SyncState.SUCCESS -> Color(0xFF4CAF50).copy(alpha = 0.8f)
+                                        SyncState.ERROR -> Color(0xFFE53935).copy(alpha = 0.8f)
+                                        else -> Color.Transparent
+                                    }
+                                )
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            if (syncState == SyncState.SYNCING) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            } else if (syncState == SyncState.SUCCESS || syncState == SyncState.ERROR) {
+                                Icon(
+                                    imageVector = Icons.Filled.Sync,
+                                    contentDescription = "Status",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Text(syncMessage, color = Color.White, fontSize = 14.sp)
+                        }
+                    }
+                }
+            },
+            containerColor = Color.Transparent,
+            contentColor = primaryTextColor
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                // THEME SELECTION SECTION
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("界面与外观", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = primaryTextColor)
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp)
+                            .onGloballyPositioned { coords ->
+                                if (!isThemeTransitioning) {
+                                    rootCoords?.let { root ->
+                                        themeButtonBounds = root.localBoundingBoxOf(coords, clipBounds = false)
+                                    }
+                                }
+                            }
+                            .graphicsLayer {
+                                alpha = if (isThemeTransitioning) 0f else 1f
+                            }
+                            .drawBackdrop(
+                                backdrop = backgroundBackdrop,
+                                shape = { RoundedCornerShape(24.dp) },
+                                effects = {
+                                    vibrancy()
+                                    blur(8f.dp.toPx())
+                                    lens(14f.dp.toPx(), 28f.dp.toPx(), chromaticAberration = true)
+                                },
+                                highlight = { Highlight.Plain },
+                                onDrawSurface = { drawRect(Color.White.copy(alpha = 0.10f)) }
+                            )
+                            .clip(RoundedCornerShape(24.dp))
+                            .clickable { if (!isThemeTransitioning) isThemeExpanded = true }
+                            .padding(horizontal = 20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CollapsedThemeButton(appTheme = appTheme, settingsGradient = settingsGradient, primaryTextColor = primaryTextColor, secondaryTextColor = secondaryTextColor)
+                    }
+                }
+
+                // READER SETTINGS SECTION
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("阅读设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = primaryTextColor)
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("沉浸状态栏", fontSize = 16.sp, color = primaryTextColor)
+                        LiquidToggle(
+                            selected = { immersiveStatusBar },
+                            onSelect = { viewModel.setImmersiveStatusBar(it) },
+                            backdrop = backgroundBackdrop
+                        )
+                    }
+                }
+
+                // BOOKSHELF MANAGEMENT SECTION
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("书架管理", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = primaryTextColor)
+                    
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { localImportLauncher.launch(arrayOf("application/epub+zip")) }
+                            .padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("本地导入书籍", fontSize = 16.sp, color = primaryTextColor)
+                        Icon(Icons.Filled.Folder, contentDescription = "Import", tint = getThemeAccentColor(appTheme))
+                    }
+                }
+
+                // WEBDAV SYNC SECTION
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("云端同步", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = primaryTextColor)
+                    
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .onGloballyPositioned { coords ->
+                            if (!isTransitioning) {
+                                rootCoords?.let { root ->
+                                    buttonBounds = root.localBoundingBoxOf(coords, clipBounds = false)
+                                }
+                            }
+                        }
+                        .graphicsLayer {
+                            // Completely hidden when morphing takes over
+                            alpha = if (isTransitioning) 0f else 1f
+                        }
+                        .drawBackdrop(
+                            backdrop = backgroundBackdrop,
+                            shape = { RoundedCornerShape(28.dp) },
+                            effects = {
+                                vibrancy()
+                                blur(3f.dp.toPx())
+                                lens(
+                                    refractionHeight = 14f.dp.toPx(),
+                                    refractionAmount = 28f.dp.toPx(),
+                                    chromaticAberration = true
+                                )
+                            },
+                            highlight = { Highlight.Plain },
+                            onDrawSurface = {
+                                drawRect(Color.White.copy(alpha = 0.10f))
+                            }
+                        )
+                        .clickable { if (!isTransitioning) isWebDavExpanded = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    CollapsedWebDavButton(primaryTextColor = primaryTextColor)
+                }
+            }
+        }
+        }
+
+        // Overlay for Dim Background. Always in tree to avoid inflation stutter.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                // Move off-screen instantly when not transitioning to prevent touch interception
+                .offset { if (isTransitioning) IntOffset.Zero else IntOffset(100000, 0) }
+                .graphicsLayer { alpha = expandProgressState.value }
+                .background(Color.Black.copy(alpha = 0.25f))
+                .pointerInput(Unit) {
+                    detectTapGestures { isWebDavExpanded = false }
+                }
+        )
+
+        // Extreme GPU-Accelerated Fluid Liquid Morphing Component
+        // ALWAYS in tree to pre-inflate heavy OutlinedTextFields. This completely eliminates frame 0 stutter!
+        if (buttonBounds != Rect.Zero) {
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // Snap off-screen when collapsed
+                    .offset { if (isTransitioning) IntOffset.Zero else IntOffset(100000, 0) }
+                    .graphicsLayer { alpha = if (isTransitioning) 1f else 0f }
+            ) {
+                val density = LocalDensity.current
+                val screenWidthPx = constraints.maxWidth.toFloat()
+                val screenHeightPx = constraints.maxHeight.toFloat()
+
+                val expandedWidthPx = with(density) { (maxWidth - 48.dp).toPx() }
+                val expandedHeightPx = with(density) { 460.dp.toPx() }
+                val expandedLeft = (screenWidthPx - expandedWidthPx) / 2f
+                val expandedTop = (screenHeightPx - expandedHeightPx) / 2f
+                val expandedRect = Rect(expandedLeft, expandedTop, expandedLeft + expandedWidthPx, expandedTop + expandedHeightPx)
+
+                // True Geometry Morphing container
+                Box(
+                    modifier = Modifier
+                        // Morph Layout Size
+                        .layout { measurable, c ->
+                            val progress = expandProgressState.value
+                            val currentWidth = lerp(buttonBounds.width, expandedWidthPx, progress).coerceAtLeast(0f)
+                            val currentHeight = lerp(buttonBounds.height, expandedHeightPx, progress).coerceAtLeast(0f)
+                            val placeable = measurable.measure(
+                                Constraints.fixed(currentWidth.roundToInt(), currentHeight.roundToInt())
+                            )
+                            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                        }
+                        // Morph Layout Position
+                        .offset {
+                            val progress = expandProgressState.value
+                            val currentLeft = lerp(buttonBounds.left, expandedRect.left, progress)
+                            val currentTop = lerp(buttonBounds.top, expandedRect.top, progress)
+                            IntOffset(currentLeft.roundToInt(), currentTop.roundToInt())
+                        }
+                        .drawBackdrop(
+                            backdrop = settingsBackdrop,
+                            shape = { RoundedCornerShape(28.dp) },
+                            effects = {
+                                val progress = expandProgressState.value
+                                vibrancy()
+                                blur(androidx.compose.ui.util.lerp(3f, 8f, progress).dp.toPx())
+                                lens(
+                                    refractionHeight = androidx.compose.ui.util.lerp(14f, 24f, progress).dp.toPx(),
+                                    refractionAmount = androidx.compose.ui.util.lerp(28f, 48f, progress).dp.toPx(),
+                                    chromaticAberration = true
+                                )
+                            },
+                            highlight = { Highlight.Plain },
+                            onDrawSurface = {
+                                drawRect(Color.White.copy(alpha = 0.10f))
+                            }
+                        )
+                        .pointerInput(Unit) { detectTapGestures {} },
+                    contentAlignment = Alignment.Center
+                ) {
+                    val progress = expandProgressState.value
+
+                    // Static Content Overlay: Collapsed Button (Fades out)
+                    Box(
+                        modifier = Modifier
+                            .requiredSize(
+                                width = with(density) { buttonBounds.width.toDp() },
+                                height = with(density) { buttonBounds.height.toDp() }
+                            )
+                            .graphicsLayer {
+                                // Fade out fast
+                                alpha = (1f - progress * 4f).coerceIn(0f, 1f)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CollapsedWebDavButton(primaryTextColor = primaryTextColor)
+                    }
+
+                    // Static Content Overlay: Expanded Dialog (Fades in)
+                    Box(
+                        modifier = Modifier
+                            .requiredSize(
+                                width = with(density) { expandedWidthPx.toDp() },
+                                height = with(density) { expandedHeightPx.toDp() }
+                            )
+                            .graphicsLayer {
+                                val alphaValue = ((progress - 0.2f) * 1.25f).coerceIn(0f, 1f)
+                                alpha = alphaValue
+                                
+                                val scale = lerp(0.9f, 1f, alphaValue)
+                                scaleX = scale
+                                scaleY = scale
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ExpandedWebDavForm(
+                            initialUrl = viewModel.getSavedWebDavUrl(),
+                            initialUser = viewModel.getSavedWebDavUser(),
+                            initialPass = viewModel.getSavedWebDavPass(),
+                            isDark = isDark,
+                            primaryTextColor = primaryTextColor,
+                            secondaryTextColor = secondaryTextColor,
+                            onDismiss = { isWebDavExpanded = false },
+                            onConnect = { url, user, pass ->
+                                isWebDavExpanded = false
+                                viewModel.syncWebDav(url, user, pass)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Dim Background for Theme Morphing
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .offset { if (isThemeTransitioning) IntOffset.Zero else IntOffset(100000, 0) }
+                .graphicsLayer { alpha = themeExpandProgressState.value }
+                .background(Color.Black.copy(alpha = 0.18f))
+                .pointerInput(Unit) {
+                    detectTapGestures { isThemeExpanded = false }
+                }
+        )
+
+        // Fluid Liquid Morphing Theme Picker Component
+        if (themeButtonBounds != Rect.Zero) {
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .offset { if (isThemeTransitioning) IntOffset.Zero else IntOffset(100000, 0) }
+                    .graphicsLayer { alpha = if (isThemeTransitioning) 1f else 0f }
+            ) {
+                val progress = themeExpandProgressState.value
+                val screenWidthPx = constraints.maxWidth.toFloat()
+                val screenHeightPx = constraints.maxHeight.toFloat()
+                val density = LocalDensity.current
+
+                val expandedWidthPx = (screenWidthPx - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
+                val expandedHeightPx = with(density) { 268.dp.toPx() }
+
+                val expandedRect = remember(screenWidthPx, screenHeightPx, expandedWidthPx, expandedHeightPx, themeButtonBounds) {
+                    val left = (screenWidthPx - expandedWidthPx) / 2f
+                    val top = (themeButtonBounds.top - with(density) { 30.dp.toPx() }).coerceIn(
+                        with(density) { 70.dp.toPx() },
+                        screenHeightPx - expandedHeightPx - with(density) { 70.dp.toPx() }
+                    )
+                    Rect(left, top, left + expandedWidthPx, top + expandedHeightPx)
+                }
+
+                Box(
+                    modifier = Modifier
+                        .requiredSize(
+                            width = with(density) {
+                                lerp(themeButtonBounds.width, expandedWidthPx, progress).toDp()
+                            },
+                            height = with(density) {
+                                lerp(themeButtonBounds.height, expandedHeightPx, progress).toDp()
+                            }
+                        )
+                        .offset {
+                            val currentLeft = lerp(themeButtonBounds.left, expandedRect.left, progress)
+                            val currentTop = lerp(themeButtonBounds.top, expandedRect.top, progress)
+                            IntOffset(currentLeft.roundToInt(), currentTop.roundToInt())
+                        }
+                        .drawBackdrop(
+                            backdrop = settingsBackdrop,
+                            shape = { RoundedCornerShape(with(density) { lerp(24.dp.toPx(), 28.dp.toPx(), progress).toDp() }) },
+                            effects = {
+                                vibrancy()
+                                blur(androidx.compose.ui.util.lerp(3f, 8f, progress).dp.toPx())
+                                lens(
+                                    refractionHeight = androidx.compose.ui.util.lerp(14f, 24f, progress).dp.toPx(),
+                                    refractionAmount = androidx.compose.ui.util.lerp(28f, 48f, progress).dp.toPx(),
+                                    chromaticAberration = true
+                                )
+                            },
+                            highlight = { Highlight.Plain },
+                            onDrawSurface = {
+                                drawRect(Color.White.copy(alpha = 0.10f))
+                            }
+                        )
+                        .pointerInput(Unit) { detectTapGestures {} },
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Collapsed Button (Fades out)
+                    Box(
+                        modifier = Modifier
+                            .requiredSize(
+                                width = with(density) { themeButtonBounds.width.toDp() },
+                                height = with(density) { themeButtonBounds.height.toDp() }
+                            )
+                            .graphicsLayer {
+                                alpha = (1f - progress * 3f).coerceIn(0f, 1f)
+                            }
+                            .padding(horizontal = 20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CollapsedThemeButton(appTheme = appTheme, settingsGradient = settingsGradient, primaryTextColor = primaryTextColor, secondaryTextColor = secondaryTextColor)
+                    }
+
+                    // Expanded Dialog (Fades in)
+                    Box(
+                        modifier = Modifier
+                            .requiredSize(
+                                width = with(density) { expandedWidthPx.toDp() },
+                                height = with(density) { expandedHeightPx.toDp() }
+                            )
+                            .graphicsLayer {
+                                val alphaValue = ((progress - 0.2f) * 1.25f).coerceIn(0f, 1f)
+                                alpha = alphaValue
+                                
+                                val scale = lerp(0.92f, 1f, alphaValue)
+                                scaleX = scale
+                                scaleY = scale
+                            }
+                            .padding(horizontal = 22.dp, vertical = 20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ExpandedThemePickerContent(
+                            appTheme = appTheme,
+                            customColors = customColors,
+                            isCustomThemeThreeColors = isCustomThemeThreeColors,
+                            isDark = isDark,
+                            primaryTextColor = primaryTextColor,
+                            secondaryTextColor = secondaryTextColor,
+                            onSelectTheme = { viewModel.setAppTheme(it) },
+                            onDismiss = { isThemeExpanded = false }
+                        )
+                    }
+                }
+            }
+        }
+
+    }
+}
+
+@Composable
+fun CollapsedWebDavButton(primaryTextColor: Color) {
+    Row(
+        modifier = Modifier.padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Filled.Cloud, contentDescription = "WebDAV", tint = primaryTextColor)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text("连接 WebDAV 服务器", fontSize = 16.sp, color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+fun ExpandedWebDavForm(
+    initialUrl: String,
+    initialUser: String,
+    initialPass: String,
+    isDark: Boolean,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    onDismiss: () -> Unit,
+    onConnect: (String, String, String) -> Unit
+) {
+    var url by remember { mutableStateOf(if (initialUrl.isEmpty()) "http://" else initialUrl) }
+    var user by remember { mutableStateOf(initialUser) }
+    var pass by remember { mutableStateOf(initialPass) }
+
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor       = primaryTextColor,
+        unfocusedTextColor     = primaryTextColor,
+        focusedLabelColor      = primaryTextColor,
+        unfocusedLabelColor    = secondaryTextColor,
+        focusedBorderColor     = primaryTextColor.copy(alpha = 0.8f),
+        unfocusedBorderColor   = secondaryTextColor.copy(alpha = 0.4f),
+        cursorColor            = primaryTextColor,
+        focusedContainerColor  = if (isDark) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.20f),
+        unfocusedContainerColor = if (isDark) Color.White.copy(alpha = 0.06f) else Color.White.copy(alpha = 0.10f)
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "WebDAV 配置",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = primaryTextColor
+        )
+
+        OutlinedTextField(
+            value = url,
+            onValueChange = { url = it },
+            label = { Text("Server URL") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth(),
+            colors = fieldColors
+        )
+        OutlinedTextField(
+            value = user,
+            onValueChange = { user = it },
+            label = { Text("Username") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth(),
+            colors = fieldColors
+        )
+        OutlinedTextField(
+            value = pass,
+            onValueChange = { pass = it },
+            label = { Text("Password") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth(),
+            colors = fieldColors
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // Action buttons — iOS-style: hairline divider + text-only
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(0.6.dp)
+                .background(secondaryTextColor.copy(alpha = 0.25f))
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onDismiss() }
+                    .padding(vertical = 14.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("取消", color = secondaryTextColor, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(0.6.dp)
+                    .background(secondaryTextColor.copy(alpha = 0.25f))
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onConnect(url, user, pass) }
+                    .padding(vertical = 14.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("同步书库", color = if (isDark) Color(0xFF38BDF8) else Color(0xFF9C27B0), fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun CollapsedThemeButton(
+    appTheme: AppTheme,
+    settingsGradient: androidx.compose.ui.graphics.Brush,
+    primaryTextColor: Color,
+    secondaryTextColor: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(brush = settingsGradient)
+                    .border(1.2.dp, Color.White.copy(alpha = 0.7f), androidx.compose.foundation.shape.CircleShape)
+            )
+            Text(
+                "全局主题",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = primaryTextColor
+            )
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = appTheme.title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = secondaryTextColor
+            )
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowDown,
+                contentDescription = "Open",
+                tint = secondaryTextColor.copy(alpha = 0.7f),
+                modifier = Modifier
+                    .size(20.dp)
+                    .graphicsLayer { rotationZ = -90f }
+            )
+        }
+    }
+}
+
+@Composable
+fun ExpandedThemePickerContent(
+    appTheme: AppTheme,
+    customColors: List<Color>,
+    isCustomThemeThreeColors: Boolean,
+    isDark: Boolean,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    onSelectTheme: (AppTheme) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        // Dialog Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    "全局主题",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryTextColor
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    "选择应用的主题氛围色彩",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = secondaryTextColor
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(if (isDark) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.35f))
+                    .border(0.6.dp, Color.White.copy(alpha = 0.5f), androidx.compose.foundation.shape.CircleShape)
+                    .clickable { onDismiss() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("✕", color = primaryTextColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+        }
+
+        // Theme Grid (4 columns x 2 rows)
+        val availableThemes = AppTheme.values().filter { it != AppTheme.CUSTOM }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            availableThemes.chunked(4).forEach { rowThemes ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    rowThemes.forEach { theme ->
+                        val isSelected = theme == appTheme
+                        val scale by androidx.compose.animation.core.animateFloatAsState(
+                            targetValue = if (isSelected) 1.05f else 1.0f,
+                            animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
+                            label = "themeScale"
+                        )
+
+                        Column(
+                            modifier = Modifier
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                }
+                                .clickable(
+                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                    indication = null
+                                ) { 
+                                    onSelectTheme(theme)
+                                },
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 68.dp, height = 48.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(
+                                        getThemeGradient(
+                                            theme,
+                                            if (isCustomThemeThreeColors) customColors else customColors.take(2)
+                                        )
+                                    )
+                                    .then(
+                                        if (isSelected) {
+                                            Modifier.border(
+                                                width = 2.dp,
+                                                color = if (isDark) Color.White else Color(0xFF2B173A),
+                                                shape = RoundedCornerShape(14.dp)
+                                            )
+                                        } else {
+                                            Modifier.border(
+                                                width = 0.6.dp,
+                                                color = Color.White.copy(alpha = 0.5f),
+                                                shape = RoundedCornerShape(14.dp)
+                                            )
+                                        }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isSelected) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(androidx.compose.foundation.shape.CircleShape)
+                                            .background(Color.White.copy(alpha = 0.65f))
+                                            .border(0.5.dp, Color.White.copy(alpha = 0.8f), androidx.compose.foundation.shape.CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.CheckCircle,
+                                            contentDescription = "Selected",
+                                            tint = if (isDark) Color(0xFF0F172A) else Color(0xFF2B173A),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = theme.shortTitle,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                color = if (isSelected) primaryTextColor else secondaryTextColor
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

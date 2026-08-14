@@ -1,0 +1,180 @@
+.root {
+  --notification-font-size: 20px;
+
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.canvasShell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0a0a0a;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.canvasGrab {
+  cursor: grab;
+}
+
+.canvasGrabbing {
+  cursor: grabbing;
+}
+
+.backdrop {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.backdrop::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background: rgba(5, 10, 14, 0.28);
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+.backgroundImage {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(0) saturate(1) brightness(0.7);
+  transform: scale(1);
+  transition:
+    filter 220ms ease,
+    transform 220ms ease;
+}
+
+.backdropNight::after {
+  opacity: 1;
+}
+
+.backdropNight .backgroundImage {
+  filter: blur(24px) saturate(1.05) brightness(0.2);
+  transform: scale(1.06);
+}
+
+.nightModeToggle {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.92);
+  font: 600 13px/1 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  box-shadow: 0 0 22px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+.nightModeCheckbox {
+  width: 13px;
+  height: 13px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+}
+
+.nightModeToggleActive {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(17, 17, 17, 0.12);
+  color: #111;
+}
+
+.nightModeToggleActive .nightModeCheckbox {
+  background: currentColor;
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.86);
+}
+
+.actionLabel {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: var(--notification-font-size);
+  line-height: 1;
+  opacity: 0;
+  user-select: none;
+}
+
+.content {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  height: 100%;
+  padding: 0 20px;
+  color: white;
+  user-select: none;
+}
+
+.avatar {
+  display: grid;
+  width: 70px;
+  height: 70px;
+  place-items: center;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.9);
+  background: linear-gradient(325deg, rgba(82, 103, 117, 0.76), rgba(146, 164, 176, 0.72));
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.copy {
+  min-width: 0;
+}
+
+.heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  margin-bottom: 5px;
+}
+
+.heading strong {
+  overflow: hidden;
+  font-size: var(--notification-font-size);
+  line-height: 1.17;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heading span {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: calc(var(--notification-font-size) * 0.8);
+  white-space: nowrap;
+}
+
+.message {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: var(--notification-font-size);
+  line-height: 1.17;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}

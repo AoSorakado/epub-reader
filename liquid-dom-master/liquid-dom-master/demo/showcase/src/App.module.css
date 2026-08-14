@@ -1,0 +1,254 @@
+.root {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 30px;
+  padding: 50px 20px 40px;
+  color: #171717;
+  background: #fafafa;
+}
+
+.tabBar {
+  z-index: 10;
+  display: flex;
+  width: 100vw;
+  max-width: none;
+  gap: 4px;
+  justify-content: safe center;
+  justify-self: center;
+  margin-inline: calc(50% - 50vw);
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-inline: 20px;
+  scrollbar-width: none;
+}
+
+.tabBar::-webkit-scrollbar {
+  display: none;
+}
+
+.tabButton {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 28px;
+  corner-shape: squircle;
+  color: #525252;
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.tabButton:hover {
+  color: #171717;
+  background: #e8e8e8;
+}
+
+.tabButtonActive,
+.tabButtonActive:hover {
+  color: white;
+  background: #171717;
+}
+
+.mobilePicker {
+  display: none;
+}
+
+.unsupportedNote {
+  display: grid;
+  width: min(100%, 460px);
+  justify-self: center;
+  align-self: start;
+  margin-top: 80px;
+  padding: 34px;
+  border: 1px solid #e7dccd;
+  border-radius: 28px;
+  corner-shape: squircle;
+  color: #171717;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 248, 236, 0.8)),
+    #fff3dc;
+  box-shadow: 0 22px 80px rgba(120, 72, 20, 0.11);
+}
+
+.unsupportedTitle {
+  margin: 0;
+  font-size: 1.6rem;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.unsupportedCopy {
+  margin: 14px 0 18px;
+  color: #57534e;
+  line-height: 1.55;
+}
+
+.unsupportedFlag {
+  width: fit-content;
+  max-width: 100%;
+  padding: 9px 12px;
+  overflow-wrap: anywhere;
+  border-radius: 999px;
+  color: #171717;
+  background: rgba(23, 23, 23, 0.08);
+  font: inherit;
+  font-size: 0.875rem;
+  user-select: all;
+}
+
+.stage {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  align-items: start;
+  justify-items: center;
+}
+
+.showcaseFrame {
+  display: grid;
+  width: min(100%, var(--showcase-frame-width, 900px));
+  height: 530px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #e5e5e5;
+  border-radius: 70px;
+  corner-shape: squircle;
+  background: white;
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.07);
+}
+
+.sourceCaption {
+  margin: 0;
+  color: #737373;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.sourceCaption a {
+  color: inherit;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+.sourceCaption a:hover {
+  text-decoration: underline;
+}
+
+.footer {
+  display: grid;
+  gap: 6px;
+  justify-self: center;
+  max-width: min(100%, 520px);
+  color: #737373;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  text-align: center;
+  margin-top: 100px;
+}
+
+.footer p {
+  margin: 0;
+}
+
+.footer a {
+  color: #171717;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+.footer a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 850px) {
+  .root {
+    gap: 16px;
+    padding: 14px 0 24px;
+  }
+
+  .tabBar {
+    display: none;
+  }
+
+  .mobilePicker {
+    z-index: 20;
+    position: relative;
+    display: inline-grid;
+    width: auto;
+    justify-self: center;
+  }
+
+  .mobilePicker::after {
+    position: absolute;
+    top: 50%;
+    right: 13px;
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    color: white;
+    content: '';
+    pointer-events: none;
+    transform: translateY(-65%) rotate(45deg);
+  }
+
+  .mobilePickerLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .mobileSelect {
+    min-height: 34px;
+    padding: 8px 31px 8px 12px;
+    border: 0;
+    border-radius: 28px;
+    -webkit-appearance: none;
+    appearance: none;
+    color: white;
+    background: #171717;
+    corner-shape: squircle;
+    font: inherit;
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+
+  .mobileSelect:focus {
+    outline: none;
+  }
+
+  .mobileSelect option {
+    color: #171717;
+    background: white;
+  }
+
+  .stage {
+    width: 100%;
+    gap: 8px;
+    align-items: start;
+    justify-items: center;
+  }
+
+  .showcaseFrame {
+    justify-self: center;
+    height: 530px;
+  }
+
+  .sourceCaption {
+    width: min(100% - 28px, 460px);
+  }
+
+  .unsupportedNote {
+    width: min(100% - 28px, 460px);
+    margin-top: 46px;
+    padding: 26px;
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "liquid-dom",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "changeset": "changeset",
+    "dev:blending": "pnpm --parallel --filter @liquid-dom/core --filter @liquid-dom/react --filter blending dev",
+    "dev": "pnpm --parallel --filter @liquid-dom/core --filter editor dev",
+    "dev:minimal": "pnpm --parallel --filter @liquid-dom/core --filter @liquid-dom/react --filter minimal dev",
+    "dev:three": "pnpm --parallel --filter @liquid-dom/core --filter @liquid-dom/three --filter three-integration dev",
+    "dev:three-layout": "pnpm --filter three-layout dev",
+    "dev:three-react": "pnpm --parallel --filter @liquid-dom/core --filter @liquid-dom/react --filter @liquid-dom/three --filter three-react-integration dev",
+    "dev:three-r3f": "pnpm --parallel --filter @liquid-dom/core --filter @liquid-dom/react --filter @liquid-dom/three --filter @liquid-dom/r3f --filter three-r3f-integration dev",
+    "release:check": "pnpm -r --filter './packages/*' build && pnpm -r --filter './packages/*' --if-present test",
+    "release:publish": "changeset publish",
+    "release:version": "changeset version"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.0"
+  }
+}

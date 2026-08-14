@@ -1,0 +1,76 @@
+:root {
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  color: #171717;
+  background: #fafafa;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+.sdf-overlap-demo,
+.sdf-overlap-canvas-shell {
+  width: 100%;
+  height: 100%;
+}
+
+.sdf-overlap-demo {
+  display: block;
+}
+
+.canvas-shell {
+  position: relative;
+  overflow: hidden;
+}
+
+.sdf-overlap-canvas-shell {
+  background: #0a0a0a;
+}
+
+.demo-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sdf-overlap-checkerboard {
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.78) 25%, transparent 25% 75%, rgba(255, 255, 255, 0.78) 75%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.78) 25%, transparent 25% 75%, rgba(255, 255, 255, 0.78) 75%),
+    #111;
+  background-position: 0 0, 20px 20px, 0 0;
+  background-size: 40px 40px, 40px 40px, auto;
+}
+
+.sdf-overlap-background-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sdf-overlap-file-input {
+  display: none;
+}

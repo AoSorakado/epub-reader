@@ -1,0 +1,333 @@
+.root {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.canvasShell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.backdrop {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.backdrop::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background: rgba(5, 10, 14, 0.28);
+}
+
+.backgroundImage {
+  position: absolute;
+  inset: -24px;
+  display: block;
+  width: calc(100% + 48px);
+  height: calc(100% + 48px);
+  object-fit: cover;
+  filter: blur(24px) saturate(1.05) brightness(0.5);
+}
+
+.cellBars {
+  display: inline-flex;
+  align-items: end;
+  gap: 3px;
+  height: 24px;
+  transform: scale(0.8);
+}
+
+.cellBars span {
+  display: block;
+  width: 3px;
+  border-radius: 3px;
+  background: rgb(255, 255, 255);
+}
+
+.cellBars span:nth-child(1) {
+  height: 9px;
+}
+
+.cellBars span:nth-child(2) {
+  height: 14px;
+}
+
+.cellBars span:nth-child(3) {
+  height: 19px;
+}
+
+.cellBars span:nth-child(4) {
+  height: 24px;
+}
+
+.cardContent {
+  --button-hover-shadow: 0 0 18px rgba(0, 0, 0, 0.08);
+  --button-hover-transition: box-shadow 220ms ease, transform 220ms ease;
+
+  position: relative;
+  width: 100%;
+  height: 100%;
+  color: rgb(255, 255, 255);
+  user-select: none;
+}
+
+.connectivityCard,
+.mediaCard {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.connectivityCard {
+  --control-inset: 29px;
+  --large-button-size: 89px;
+  --small-button-size: 41px;
+  --small-button-gap: 8px;
+}
+
+.mediaCard {
+  --media-inset: 27px;
+  --album-size: 78px;
+}
+
+.iconButton,
+.mediaButton {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: rgb(255, 255, 255);
+  transition: var(--button-hover-transition);
+}
+
+.iconButton {
+  position: absolute;
+  font: inherit;
+}
+
+.iconButton:hover,
+.mediaButton:hover,
+.smallButtonGroup:hover {
+  transform: scale(1.08);
+}
+
+.iconButton:hover {
+  box-shadow: var(--button-hover-shadow);
+}
+
+.iconButton:active,
+.mediaButton:active,
+.smallButtonGroup:active {
+  transform: scale(0.94);
+}
+
+.iconButton:active {
+  box-shadow: none;
+}
+
+.airplaneButton,
+.airdropButton,
+.wifiButton {
+  width: var(--large-button-size);
+  height: var(--large-button-size);
+}
+
+.airplaneButton {
+  top: var(--control-inset);
+  left: var(--control-inset);
+  background: rgba(202, 216, 232, 0.38);
+}
+
+.airdropButton {
+  top: var(--control-inset);
+  right: var(--control-inset);
+  background: #1d9bf7;
+}
+
+.wifiButton {
+  bottom: var(--control-inset);
+  left: var(--control-inset);
+  background: #1d9bf7;
+}
+
+.smallButtonGroup {
+  position: absolute;
+  right: var(--control-inset);
+  bottom: var(--control-inset);
+  display: grid;
+  grid-template-columns: repeat(2, var(--small-button-size));
+  gap: var(--small-button-gap);
+  width: var(--large-button-size);
+  height: var(--large-button-size);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 20px;
+  transition: var(--button-hover-transition);
+}
+
+.groupButton {
+  display: grid;
+  width: var(--small-button-size);
+  height: var(--small-button-size);
+  place-items: center;
+  border-radius: 999px;
+  color: rgb(255, 255, 255);
+  transition: var(--button-hover-transition);
+}
+
+.smallButtonGroup:hover .groupButton {
+  box-shadow: var(--button-hover-shadow);
+}
+
+.smallButtonGroup:active .groupButton {
+  box-shadow: none;
+}
+
+.cellularButton {
+  background: #46d266;
+}
+
+.bluetoothButton {
+  background: #1d9bf7;
+}
+
+.satelliteButton {
+  background: rgba(200, 154, 70, 0.64);
+}
+
+.antennaButton {
+  background: rgba(192, 198, 154, 0.58);
+}
+
+.largeIcon {
+  width: 44px;
+  height: 44px;
+  stroke-width: 1.6;
+}
+
+.smallIcon {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.6;
+}
+
+.antennaIcon {
+  width: 26px;
+  height: 26px;
+  stroke-width: 1.6;
+  transform: scale(1.22);
+  transform-origin: center;
+}
+
+.albumArt {
+  position: absolute;
+  top: var(--media-inset);
+  left: var(--media-inset);
+  width: var(--album-size);
+  height: var(--album-size);
+  overflow: hidden;
+  border-radius: 22px;
+  corner-shape: squircle;
+  object-fit: cover;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.airplayButton {
+  top: 34px;
+  right: var(--media-inset);
+  width: 50px;
+  height: 50px;
+  background: rgba(147, 176, 203, 0.28);
+}
+
+.trackInfo {
+  position: absolute;
+  right: var(--media-inset);
+  bottom: 87px;
+  left: var(--media-inset);
+  display: grid;
+  gap: 2px;
+}
+
+.trackTitle,
+.trackSubtitle {
+  overflow: hidden;
+  line-height: 1.12;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.trackTitle {
+  font-size: 17px;
+  font-weight: 720;
+}
+
+.trackSubtitle {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 16px;
+  font-weight: 420;
+}
+
+.transport {
+  position: absolute;
+  right: 44px;
+  bottom: 26px;
+  left: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mediaButton {
+  background: transparent;
+}
+
+.playButton {
+  width: 45px;
+  height: 45px;
+}
+
+.playIcon {
+  width: 45px;
+  height: 45px;
+  stroke-width: 0;
+}
+
+.skipButton {
+  position: relative;
+  width: 36px;
+  height: 36px;
+}
+
+.skipIcon {
+  position: absolute;
+  inset: 0;
+  width: 36px;
+  height: 36px;
+  stroke-width: 2;
+}
+
+.skipButton span {
+  position: relative;
+  top: 1px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
