@@ -23,9 +23,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,21 +54,28 @@ fun GlobalLiquidToast(
     modifier: Modifier = Modifier
 ) {
     val currentToast by GlobalToastManager.currentToast.collectAsState()
+    var activeToast by remember { mutableStateOf<ToastMessage?>(null) }
+
+    LaunchedEffect(currentToast) {
+        if (currentToast != null) {
+            activeToast = currentToast
+        }
+    }
 
     AnimatedVisibility(
         visible = currentToast != null,
         enter = slideInVertically(
-            initialOffsetY = { -it },
-            animationSpec = spring(dampingRatio = 0.76f, stiffness = 320f)
-        ) + fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 360f)) + scaleIn(
-            initialScale = 0.88f,
+            initialOffsetY = { -it - 120 },
+            animationSpec = spring(dampingRatio = 0.72f, stiffness = 260f)
+        ) + fadeIn(animationSpec = spring(dampingRatio = 0.80f, stiffness = 280f)) + scaleIn(
+            initialScale = 0.82f,
             transformOrigin = TransformOrigin.Center
         ),
         exit = slideOutVertically(
-            targetOffsetY = { -it },
-            animationSpec = spring(dampingRatio = 0.82f, stiffness = 360f)
-        ) + fadeOut() + scaleOut(
-            targetScale = 0.88f,
+            targetOffsetY = { -it - 120 },
+            animationSpec = spring(dampingRatio = 0.82f, stiffness = 300f)
+        ) + fadeOut(animationSpec = spring(dampingRatio = 0.85f, stiffness = 300f)) + scaleOut(
+            targetScale = 0.82f,
             transformOrigin = TransformOrigin.Center
         ),
         modifier = modifier
@@ -74,7 +84,7 @@ fun GlobalLiquidToast(
             .padding(top = 10.dp, start = 20.dp, end = 20.dp)
             .wrapContentWidth(Alignment.CenterHorizontally)
     ) {
-        currentToast?.let { toast ->
+        activeToast?.let { toast ->
             val textColor = if (isDark) Color(0xFFF8FAFC) else Color(0xFF1E1E24)
             val iconTint = when (toast.type) {
                 is ToastType.Success -> Color(0xFF34C759)
