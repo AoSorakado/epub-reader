@@ -425,6 +425,7 @@ class ReaderViewModel(
             val currentNodes = _parsedChapters.value.take(chapterIndex).sumOf { it.nodes.size } + nodeIndex
             val progress = if (totalNodes > 0) currentNodes.toFloat() / totalNodes else 0f
 
+            val isFirstTimeFinished = (progress >= 0.99f && (book.totalProgress < 0.99f))
             val updatedBook = book.copy(
                 lastReadPosition = newPosition,
                 lastReadTime = System.currentTimeMillis(),
@@ -432,6 +433,14 @@ class ReaderViewModel(
             )
             dao.updateBook(updatedBook)
             _bookEntity.value = updatedBook
+
+            if (isFirstTimeFinished) {
+                com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                    text = "🎉 恭喜！您已读完《${book.title}》！",
+                    type = com.example.epubreader.ui.components.toast.ToastType.Success,
+                    durationMs = 4000L
+                )
+            }
         }
     }
 }

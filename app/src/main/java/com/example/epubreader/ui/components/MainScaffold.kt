@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -108,6 +109,10 @@ fun MainScaffold(navController: NavHostController) {
     }
 
     var isReaderActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        settingsViewModel.checkDailyStatus()
+    }
 
     val hideBottomBarRoutes = listOf("reader/{bookId}")
     val showBottomBar = currentRoute != null && !isReaderActive && !hideBottomBarRoutes.any { currentRoute.startsWith(it.substringBefore("/")) }

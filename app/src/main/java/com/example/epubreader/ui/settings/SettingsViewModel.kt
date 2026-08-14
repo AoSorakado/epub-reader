@@ -40,6 +40,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     )
     val appTheme: StateFlow<AppTheme> = _appTheme.asStateFlow()
 
+    private val _autoNightMode = MutableStateFlow(prefs.getBoolean("autoNightMode", false))
+    val autoNightMode: StateFlow<Boolean> = _autoNightMode.asStateFlow()
+
+    private val _userPreferredDayTheme = MutableStateFlow(
+        try {
+            val saved = prefs.getString("userPreferredDayTheme", AppTheme.OCEAN_WAVE.name) ?: AppTheme.OCEAN_WAVE.name
+            val theme = AppTheme.valueOf(saved)
+            if (theme == AppTheme.MIDNIGHT_GLASS) AppTheme.OCEAN_WAVE else theme
+        } catch (e: Exception) {
+            AppTheme.OCEAN_WAVE
+        }
+    )
+
     private val _immersiveStatusBar = MutableStateFlow(prefs.getBoolean("immersiveStatusBar", false))
     val immersiveStatusBar: StateFlow<Boolean> = _immersiveStatusBar.asStateFlow()
 
@@ -82,6 +95,107 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setAppTheme(theme: AppTheme) {
         _appTheme.value = theme
         prefs.edit().putString("appTheme", theme.name).apply()
+        if (theme != AppTheme.MIDNIGHT_GLASS) {
+            _userPreferredDayTheme.value = theme
+            prefs.edit().putString("userPreferredDayTheme", theme.name).apply()
+        }
+    }
+
+    fun setAutoNightMode(enabled: Boolean) {
+        _autoNightMode.value = enabled
+        prefs.edit().putBoolean("autoNightMode", enabled).apply()
+        val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val isNightTime = (currentHour >= 19 || currentHour < 7)
+        if (enabled) {
+            if (isNightTime) {
+                if (_appTheme.value != AppTheme.MIDNIGHT_GLASS) {
+                    _appTheme.value = AppTheme.MIDNIGHT_GLASS
+                    prefs.edit().putString("appTheme", AppTheme.MIDNIGHT_GLASS.name).apply()
+                }
+                com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                    text = "🌙 自动夜间模式已开启，已为您切换至暗夜护眼主题~",
+                    type = com.example.epubreader.ui.components.toast.ToastType.Info,
+                    durationMs = 3000L
+                )
+            } else {
+                if (_appTheme.value == AppTheme.MIDNIGHT_GLASS) {
+                    _appTheme.value = _userPreferredDayTheme.value
+                    prefs.edit().putString("appTheme", _userPreferredDayTheme.value.name).apply()
+                }
+                com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                    text = "☀️ 自动夜间模式已开启（将在 19:00 - 07:00 自动生效）",
+                    type = com.example.epubreader.ui.components.toast.ToastType.Info,
+                    durationMs = 3000L
+                )
+            }
+        } else {
+            // Revert back to preferred day theme if current theme was forced to midnight glass
+            if (_appTheme.value == AppTheme.MIDNIGHT_GLASS) {
+                _appTheme.value = _userPreferredDayTheme.value
+                prefs.edit().putString("appTheme", _userPreferredDayTheme.value.name).apply()
+            }
+            com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                text = "⛅ 自动夜间模式已关闭",
+                type = com.example.epubreader.ui.components.toast.ToastType.Info,
+                durationMs = 2500L
+            )
+        }
+    }
+
+    fun checkDailyStatus() {
+        val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val isNightTime = (currentHour >= 19 || currentHour < 7)
+
+        if (_autoNightMode.value) {
+            if (isNightTime) {
+                if (_appTheme.value != AppTheme.MIDNIGHT_GLASS) {
+                    _appTheme.value = AppTheme.MIDNIGHT_GLASS
+                    prefs.edit().putString("appTheme", AppTheme.MIDNIGHT_GLASS.name).apply()
+                }
+                val todayNightSlot = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date()) + "_night"
+                if (prefs.getString("lastAutoNightToastSlot", "") != todayNightSlot) {
+                    prefs.edit().putString("lastAutoNightToastSlot", todayNightSlot).apply()
+                    com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                        text = "🌙 晚上好！已自动为您切换至暗夜护眼主题，愿好书伴您入眠~",
+                        type = com.example.epubreader.ui.components.toast.ToastType.Info,
+                        durationMs = 3500L
+                    )
+                }
+            } else {
+                if (_appTheme.value == AppTheme.MIDNIGHT_GLASS) {
+                    val dayTheme = _userPreferredDayTheme.value
+                    _appTheme.value = dayTheme
+                    prefs.edit().putString("appTheme", dayTheme.name).apply()
+                }
+                val todayDaySlot = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date()) + "_day"
+                if (prefs.getString("lastAutoNightToastSlot", "") != todayDaySlot) {
+                    prefs.edit().putString("lastAutoNightToastSlot", todayDaySlot).apply()
+                    com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                        text = "☀️ 早上好！已自动为您切换至日间清新主题，祝您阅读愉快~",
+                        type = com.example.epubreader.ui.components.toast.ToastType.Info,
+                        durationMs = 3500L
+                    )
+                }
+            }
+        } else {
+            // General daily launch greeting
+            val todayDate = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date())
+            if (prefs.getString("lastDailyGreetingDate", "") != todayDate) {
+                prefs.edit().putString("lastDailyGreetingDate", todayDate).apply()
+                val greeting = when (currentHour) {
+                    in 5..10 -> "🌅 早上好！新的一天，从阅读一本好书开始吧~"
+                    in 11..13 -> "🌤️ 中午好！享受惬意的阅读时光~"
+                    in 14..18 -> "🍵 下午好！泡一杯茶，继续未完的篇章吧~"
+                    in 19..23 -> "🌙 晚上好！在书海中卸下一天的疲惫~"
+                    else -> "🌌 夜深了，注意护眼，愿好书伴您入眠~"
+                }
+                com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                    text = greeting,
+                    type = com.example.epubreader.ui.components.toast.ToastType.Info,
+                    durationMs = 3500L
+                )
+            }
+        }
     }
 
     fun setCustomThemeColors(isThreeColors: Boolean, c1: Color, c2: Color, c3: Color) {

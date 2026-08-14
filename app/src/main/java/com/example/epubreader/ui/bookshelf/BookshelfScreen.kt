@@ -139,9 +139,16 @@ fun BookshelfScreen(
     var activeContextMenuTarget by remember { mutableStateOf<ContextMenuTarget?>(null) }
     var lastTargetBounds by remember { mutableStateOf(Rect.Zero) }
     var showEditDialogForBook by remember { mutableStateOf<BookEntity?>(null) }
+    var activeEditBook by remember { mutableStateOf<BookEntity?>(null) }
     var showSortMenu by remember { mutableStateOf(false) }
     var sortButtonBounds by remember { mutableStateOf(Rect.Zero) }
     val seriesCoords = remember { mutableStateMapOf<String, LayoutCoordinates>() }
+
+    LaunchedEffect(showEditDialogForBook) {
+        if (showEditDialogForBook != null) {
+            activeEditBook = showEditDialogForBook
+        }
+    }
 
     LaunchedEffect(contextMenuTarget) {
         if (contextMenuTarget != null) {
@@ -1610,18 +1617,18 @@ fun BookshelfScreen(
 
         AnimatedVisibility(
             visible = showEditDialogForBook != null,
-            enter = fadeIn(spring(dampingRatio = 0.82f, stiffness = 300f)),
-            exit = fadeOut(spring(dampingRatio = 0.85f, stiffness = 320f)),
+            enter = fadeIn(spring(dampingRatio = 0.82f, stiffness = 320f)) + scaleIn(initialScale = 0.90f, animationSpec = spring(dampingRatio = 0.78f, stiffness = 320f)),
+            exit = fadeOut(spring(dampingRatio = 0.85f, stiffness = 340f)) + scaleOut(targetScale = 0.90f, animationSpec = spring(dampingRatio = 0.85f, stiffness = 340f)),
             modifier = Modifier.fillMaxSize()
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.25f))
+                    .background(Color.Black.copy(alpha = 0.32f))
                     .pointerInput(Unit) { detectTapGestures { showEditDialogForBook = null } },
                 contentAlignment = Alignment.Center
             ) {
-                showEditDialogForBook?.let { book ->
+                activeEditBook?.let { book ->
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(0.88f)

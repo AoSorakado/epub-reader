@@ -101,6 +101,7 @@ fun SettingsScreen(
     val syncState by viewModel.syncState.collectAsState()
     val syncMessage by viewModel.syncMessage.collectAsState()
     val appTheme by viewModel.appTheme.collectAsState()
+    val autoNightMode by viewModel.autoNightMode.collectAsState()
     val immersiveStatusBar by viewModel.immersiveStatusBar.collectAsState()
     val isCustomThemeThreeColors by viewModel.isCustomThemeThreeColors.collectAsState()
     val customColors by viewModel.customColors.collectAsState()
@@ -177,6 +178,8 @@ fun SettingsScreen(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
+                val themeAccent = getThemeAccentColor(appTheme, if (isCustomThemeThreeColors) customColors else customColors.take(2))
+
                 // THEME SELECTION SECTION
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("界面与外观", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = primaryTextColor)
@@ -213,10 +216,28 @@ fun SettingsScreen(
                     ) {
                         CollapsedThemeButton(appTheme = appTheme, settingsGradient = settingsGradient, primaryTextColor = primaryTextColor, secondaryTextColor = secondaryTextColor)
                     }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("自动夜间模式", fontSize = 16.sp, color = primaryTextColor)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("19:00 - 07:00 自动切换至暗夜护眼主题", fontSize = 12.sp, color = secondaryTextColor)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        LiquidToggle(
+                            selected = { autoNightMode },
+                            onSelect = { viewModel.setAutoNightMode(it) },
+                            backdrop = backgroundBackdrop,
+                            accentColor = themeAccent
+                        )
+                    }
                 }
 
                 // READER SETTINGS SECTION
-                val themeAccent = getThemeAccentColor(appTheme, if (isCustomThemeThreeColors) customColors else customColors.take(2))
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("阅读设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = primaryTextColor)
                     

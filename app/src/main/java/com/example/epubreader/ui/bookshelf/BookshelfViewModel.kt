@@ -101,6 +101,10 @@ class BookshelfViewModel(private val bookDao: BookDao, application: Application)
                         lastReadTime = 0
                     )
                     bookDao.insertBook(bookEntity)
+                    com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                        text = "📖 成功导入《${epubBook.title}》",
+                        type = com.example.epubreader.ui.components.toast.ToastType.Success
+                    )
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -119,6 +123,10 @@ class BookshelfViewModel(private val bookDao: BookDao, application: Application)
             bookDao.deleteBook(book)
             book.filePath?.let { File(it).delete() }
             book.coverImage?.let { File(it).delete() }
+            com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                text = "🗑️ 已从书架移除《${book.title}》",
+                type = com.example.epubreader.ui.components.toast.ToastType.Info
+            )
         }
     }
 
@@ -134,7 +142,7 @@ class BookshelfViewModel(private val bookDao: BookDao, application: Application)
                 var coverImagePath = book.coverImage
                 if (newCoverUri != null) {
                     val coversDir = File(context.filesDir, "covers").apply { mkdirs() }
-                    val coverFile = File(coversDir, "cover_.jpg")
+                    val coverFile = File(coversDir, "cover_${book.id}_${System.currentTimeMillis()}.jpg")
                     context.contentResolver.openInputStream(newCoverUri)?.use { input ->
                         FileOutputStream(coverFile).use { output ->
                             input.copyTo(output)
@@ -146,6 +154,10 @@ class BookshelfViewModel(private val bookDao: BookDao, application: Application)
                 }
                 val updatedBook = book.copy(title = newTitle, coverImage = coverImagePath)
                 bookDao.updateBook(updatedBook)
+                com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                    text = "✨ 《$newTitle》书籍信息已更新",
+                    type = com.example.epubreader.ui.components.toast.ToastType.Success
+                )
             }
         }
     }
