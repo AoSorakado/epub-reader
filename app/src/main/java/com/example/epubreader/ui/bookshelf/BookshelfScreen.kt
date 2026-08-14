@@ -576,13 +576,13 @@ fun BookshelfScreen(
             val currentTop = lerp(sourceBounds.top, targetTop, seriesExpandProgress)
             val currentWidth = lerp(sourceBounds.width, expandedWidthPx, seriesExpandProgress).coerceAtLeast(1f)
             val currentHeight = lerp(sourceBounds.height, expandedHeightPx, seriesExpandProgress).coerceAtLeast(1f)
-            val currentRadius = lerp(20f, 28f, seriesExpandProgress)
+            val currentRadius = lerp(20f, 28f, seriesExpandProgress).coerceAtLeast(0f)
 
             // Scrim
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.45f * seriesExpandProgress))
+                    .background(Color.Black.copy(alpha = (0.45f * seriesExpandProgress).coerceIn(0f, 1f)))
                     .clickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                         indication = null
@@ -606,13 +606,13 @@ fun BookshelfScreen(
                     }
                     .drawBackdrop(
                         backdrop = bookshelfBackdrop,
-                        shape = { RoundedCornerShape(with(density) { currentRadius.dp }) },
+                        shape = { RoundedCornerShape(with(density) { currentRadius.coerceAtLeast(0f).dp }) },
                         effects = {
                             vibrancy()
-                            blur(lerp(3f, 8f, seriesExpandProgress).dp.toPx())
+                            blur(lerp(3f, 8f, seriesExpandProgress).coerceAtLeast(0.1f).dp.toPx())
                             lens(
-                                refractionHeight = lerp(16f, 24f, seriesExpandProgress).dp.toPx(),
-                                refractionAmount = lerp(32f, 48f, seriesExpandProgress).dp.toPx(),
+                                refractionHeight = lerp(16f, 24f, seriesExpandProgress).coerceAtLeast(0.1f).dp.toPx(),
+                                refractionAmount = lerp(32f, 48f, seriesExpandProgress).coerceAtLeast(0.1f).dp.toPx(),
                                 chromaticAberration = true
                             )
                         },
@@ -632,8 +632,8 @@ fun BookshelfScreen(
                     Box(
                         modifier = Modifier
                             .requiredSize(
-                                width = with(density) { sourceBounds.width.toDp() },
-                                height = with(density) { sourceBounds.height.toDp() }
+                                width = with(density) { sourceBounds.width.coerceAtLeast(1f).toDp() },
+                                height = with(density) { sourceBounds.height.coerceAtLeast(1f).toDp() }
                             )
                             .graphicsLayer {
                                 alpha = (1f - seriesExpandProgress * 3f).coerceIn(0f, 1f)
@@ -772,13 +772,13 @@ fun BookshelfScreen(
             val currentTop = lerp(openingBookBounds.top, targetTop, bookOpenProgress)
             val currentWidth = lerp(openingBookBounds.width, targetWidth, bookOpenProgress).coerceAtLeast(1f)
             val currentHeight = lerp(openingBookBounds.height, targetHeight, bookOpenProgress).coerceAtLeast(1f)
-            val currentRadius = lerp(20f, 0f, bookOpenProgress)
+            val currentRadius = lerp(20f, 0f, bookOpenProgress).coerceAtLeast(0f)
 
             // Dynamic background scrim
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.55f * bookOpenProgress))
+                    .background(Color.Black.copy(alpha = (0.55f * bookOpenProgress).coerceIn(0f, 1f)))
             )
 
             // Fullscreen Morphing Glass Sheet
@@ -794,20 +794,20 @@ fun BookshelfScreen(
                     }
                     .drawBackdrop(
                         backdrop = bookshelfBackdrop,
-                        shape = { RoundedCornerShape(with(density) { currentRadius.dp }) },
+                        shape = { RoundedCornerShape(with(density) { currentRadius.coerceAtLeast(0f).dp }) },
                         effects = {
                             vibrancy()
-                            blur(lerp(3f, 16f, bookOpenProgress).dp.toPx())
+                            blur(lerp(3f, 16f, bookOpenProgress).coerceAtLeast(0.1f).dp.toPx())
                             lens(
-                                refractionHeight = lerp(16f, 32f, bookOpenProgress).dp.toPx(),
-                                refractionAmount = lerp(32f, 56f, bookOpenProgress).dp.toPx(),
+                                refractionHeight = lerp(16f, 32f, bookOpenProgress).coerceAtLeast(0.1f).dp.toPx(),
+                                refractionAmount = lerp(32f, 56f, bookOpenProgress).coerceAtLeast(0.1f).dp.toPx(),
                                 chromaticAberration = true
                             )
                         },
                         highlight = { Highlight.Plain },
                         onDrawSurface = {
                             val baseColor = if (isDark) Color(0xFF0F172A) else Color.White
-                            drawRect(baseColor.copy(alpha = lerp(0.12f, 0.95f, bookOpenProgress)))
+                            drawRect(baseColor.copy(alpha = lerp(0.12f, 0.95f, bookOpenProgress).coerceIn(0f, 1f)))
                         }
                     ),
                 contentAlignment = Alignment.Center
@@ -817,8 +817,8 @@ fun BookshelfScreen(
                     Box(
                         modifier = Modifier
                             .requiredSize(
-                                width = with(density) { openingBookBounds.width.toDp() },
-                                height = with(density) { openingBookBounds.height.toDp() }
+                                width = with(density) { openingBookBounds.width.coerceAtLeast(1f).toDp() },
+                                height = with(density) { openingBookBounds.height.coerceAtLeast(1f).toDp() }
                             )
                             .graphicsLayer {
                                 alpha = (1f - bookOpenProgress * 2.8f).coerceIn(0f, 1f)
@@ -1108,7 +1108,7 @@ fun BookshelfScreen(
                 val currentTop = androidx.compose.ui.util.lerp(btnBounds.top, dialogBounds.top, morphProgress)
                 val currentWidth = androidx.compose.ui.util.lerp(btnBounds.width, menuWidthPx, morphProgress).coerceAtLeast(1f)
                 val currentHeight = androidx.compose.ui.util.lerp(btnBounds.height, menuHeightPx, morphProgress).coerceAtLeast(1f)
-                val currentCornerRadius = androidx.compose.ui.util.lerp(btnBounds.height / 2f, with(density) { 24.dp.toPx() }, morphProgress)
+                val currentCornerRadius = androidx.compose.ui.util.lerp(btnBounds.height / 2f, with(density) { 24.dp.toPx() }, morphProgress).coerceAtLeast(0f)
 
                 Box(
                     modifier = Modifier
@@ -1122,13 +1122,13 @@ fun BookshelfScreen(
                         }
                         .drawBackdrop(
                             backdrop = bookshelfBackdrop,
-                            shape = { RoundedCornerShape(with(density) { currentCornerRadius.toDp() }) },
+                            shape = { RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }) },
                             effects = {
                                 vibrancy()
-                                blur(androidx.compose.ui.util.lerp(3f, 8f, morphProgress).dp.toPx())
+                                blur(androidx.compose.ui.util.lerp(3f, 8f, morphProgress).coerceAtLeast(0.1f).dp.toPx())
                                 lens(
-                                    refractionHeight = androidx.compose.ui.util.lerp(14f, 24f, morphProgress).dp.toPx(),
-                                    refractionAmount = androidx.compose.ui.util.lerp(28f, 48f, morphProgress).dp.toPx(),
+                                    refractionHeight = androidx.compose.ui.util.lerp(14f, 24f, morphProgress).coerceAtLeast(0.1f).dp.toPx(),
+                                    refractionAmount = androidx.compose.ui.util.lerp(28f, 48f, morphProgress).coerceAtLeast(0.1f).dp.toPx(),
                                     chromaticAberration = true
                                 )
                             },

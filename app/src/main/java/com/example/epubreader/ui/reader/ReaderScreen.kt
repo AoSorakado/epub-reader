@@ -473,7 +473,7 @@ fun ReaderScreen(
                 val currentTop = androidx.compose.ui.util.lerp(btnBounds.top, dialogBounds.top, morphProgress)
                 val currentWidth = androidx.compose.ui.util.lerp(btnBounds.width, dialogWidthPx, morphProgress).coerceAtLeast(1f)
                 val currentHeight = androidx.compose.ui.util.lerp(btnBounds.height, dialogHeightPx, morphProgress).coerceAtLeast(1f)
-                val currentCornerRadius = androidx.compose.ui.util.lerp(btnBounds.height / 2f, with(density) { 28.dp.toPx() }, morphProgress)
+                val currentCornerRadius = androidx.compose.ui.util.lerp(btnBounds.height / 2f, with(density) { 28.dp.toPx() }, morphProgress).coerceAtLeast(0f)
 
                 val glassTextColor = if (themeIndex == 2) Color.White else Color(0xFF1C1C1E)
                 val glassPanelColor = if (themeIndex == 2) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
@@ -490,13 +490,13 @@ fun ReaderScreen(
                         }
                         .drawBackdrop(
                             backdrop = readerBackdrop,
-                            shape = { RoundedCornerShape(with(density) { currentCornerRadius.toDp() }) },
+                            shape = { RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }) },
                             effects = {
                                 vibrancy()
-                                blur(androidx.compose.ui.util.lerp(3f, 8f, morphProgress).dp.toPx())
+                                blur(androidx.compose.ui.util.lerp(3f, 8f, morphProgress).coerceAtLeast(0.1f).dp.toPx())
                                 lens(
-                                    refractionHeight = androidx.compose.ui.util.lerp(14f, 24f, morphProgress).dp.toPx(),
-                                    refractionAmount = androidx.compose.ui.util.lerp(28f, 48f, morphProgress).dp.toPx(),
+                                    refractionHeight = androidx.compose.ui.util.lerp(14f, 24f, morphProgress).coerceAtLeast(0.1f).dp.toPx(),
+                                    refractionAmount = androidx.compose.ui.util.lerp(28f, 48f, morphProgress).coerceAtLeast(0.1f).dp.toPx(),
                                     chromaticAberration = true
                                 )
                             },
