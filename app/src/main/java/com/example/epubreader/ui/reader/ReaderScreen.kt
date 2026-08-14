@@ -4,8 +4,13 @@ import kotlinx.coroutines.launch
 
 import androidx.compose.ui.util.fastRoundToInt
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
@@ -40,6 +45,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -55,6 +61,9 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -216,6 +225,7 @@ fun ReaderScreen(
     val currentTheme = themeColors.getOrElse(themeIndex) { themeColors[0] }
     val bgColor = currentTheme.first
     val textColor = currentTheme.second
+    val isDark = themeIndex == 2
 
     val view = androidx.compose.ui.platform.LocalView.current
     val window = (view.context as? android.app.Activity)?.window
@@ -224,22 +234,13 @@ fun ReaderScreen(
 
     if (immersiveStatusBar && window != null) {
         val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, view)
-        var isFirstLaunch by remember { mutableStateOf(true) }
-        LaunchedEffect(showToolbars) {
-            if (showToolbars) {
-                insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            } else {
-                if (isFirstLaunch) {
-                    kotlinx.coroutines.delay(400)
-                    isFirstLaunch = false
-                }
-                insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
+        LaunchedEffect(Unit) {
+            insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+            insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         DisposableEffect(Unit) {
             onDispose {
-                insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                insetsController.show(androidx.core.view.WindowInsetsCompat.Type.statusBars())
             }
         }
     }
@@ -407,51 +408,164 @@ fun ReaderScreen(
 
         // --- Glass Overlays Layer ---
         
-        // 1. Top Toolbar (Back & Settings Buttons)
+        // 1. Top Toolbar (Back, Reading Progress Capsule, and Settings Buttons)
         AnimatedVisibility(
             visible = showToolbars,
             enter = slideInVertically(initialOffsetY = { -it }, animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
             exit = slideOutVertically(targetOffsetY = { -it }, animationSpec = androidx.compose.animation.core.tween(250)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(250)),
             modifier = Modifier.align(Alignment.TopCenter)
         ) {
+            val totalItems = flatItems.size
+            val currentItemIndex = listState.firstVisibleItemIndex
+            val calculatedProgress = if (totalItems > 0) {
+                (currentItemIndex.toFloat() / totalItems.toFloat()).coerceIn(0f, 1f)
+            } else {
+                bookEntity?.totalProgress ?: 0f
+            }
+            val progressPercent = (calculatedProgress * 100).toInt()
+            val remainingItems = (totalItems - currentItemIndex).coerceAtLeast(0)
+            val estimatedMinutesLeft = (remainingItems * 0.4f).roundToInt().coerceAtLeast(if (remainingItems > 0) 1 else 0)
+
+            val haptic = LocalHapticFeedback.current
+            var isCapsuleExpanded by remember { mutableStateOf(false) }
+
+            LaunchedEffect(showToolbars) {
+                if (!showToolbars) {
+                    isCapsuleExpanded = false
+                }
+            }
+
+            val topPadding = maxOf(
+                WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+                if (immersiveStatusBar) 28.dp else 12.dp
+            ) + 12.dp
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(WindowInsets.statusBars.asPaddingValues())
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(top = topPadding, start = 16.dp, end = 16.dp, bottom = 8.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                // 1. Back Button (Pinned to Left)
+                LiquidButton(
+                    onClick = {
+                        if (onBackClick != null) {
+                            onBackClick()
+                        } else {
+                            navController.popBackStack()
+                        }
+                    },
+                    backdrop = readerBackdrop,
+                    modifier = Modifier.align(Alignment.CenterStart)
                 ) {
-                    LiquidButton(
-                        onClick = {
-                            if (onBackClick != null) {
-                                onBackClick()
-                            } else {
-                                navController.popBackStack()
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = textColor)
+                }
+
+                // 2. Reading Progress Liquid Capsule (Pinned to Center, expands symmetrically to both sides)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .height(44.dp)
+                        .animateContentSize(
+                            animationSpec = spring(
+                                dampingRatio = 0.78f,
+                                stiffness = 340f
+                            ),
+                            alignment = Alignment.Center
+                        )
+                        .drawBackdrop(
+                            backdrop = readerBackdrop,
+                            shape = { RoundedCornerShape(50) },
+                            effects = {
+                                vibrancy()
+                                blur(2f.dp.toPx())
+                                lens(14f.dp.toPx(), 28f.dp.toPx(), chromaticAberration = true)
+                            },
+                            highlight = { Highlight.Plain },
+                            onDrawSurface = {
+                                drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
                             }
+                        )
+                        .border(
+                            width = 0.8.dp,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = if (isDark) 0.35f else 0.70f),
+                                    Color.White.copy(alpha = if (isDark) 0.12f else 0.30f)
+                                )
+                            ),
+                            shape = RoundedCornerShape(50)
+                        )
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onLongPress = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    isCapsuleExpanded = true
+                                },
+                                onTap = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    isCapsuleExpanded = !isCapsuleExpanded
+                                }
+                            )
+                        }
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AnimatedContent(
+                        targetState = isCapsuleExpanded,
+                        contentAlignment = Alignment.Center,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = spring(dampingRatio = 0.80f, stiffness = 360f)) + scaleIn(initialScale = 0.90f, transformOrigin = TransformOrigin.Center)) togetherWith
+                            (fadeOut(animationSpec = spring(dampingRatio = 0.80f, stiffness = 360f)) + scaleOut(targetScale = 0.90f, transformOrigin = TransformOrigin.Center))
                         },
-                        backdrop = readerBackdrop
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = textColor)
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    LiquidButton(
-                        onClick = { showSettings = !showSettings },
-                        backdrop = readerBackdrop,
-                        modifier = Modifier
-                            .onGloballyPositioned { coordinates ->
-                                settingsButtonBounds = coordinates.boundsInRoot()
+                        label = "capsuleAnimatedContent"
+                    ) { expanded ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AutoStories,
+                                contentDescription = null,
+                                tint = textColor.copy(alpha = 0.80f),
+                                modifier = Modifier.size(17.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            if (expanded) {
+                                Text(
+                                    text = "预计剩余 $estimatedMinutesLeft 分钟 · $progressPercent%",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = textColor,
+                                    maxLines = 1
+                                )
+                            } else {
+                                Text(
+                                    text = "$progressPercent%",
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor
+                                )
                             }
-                            .graphicsLayer {
-                                alpha = if (morphProgress > 0.001f) 0f else 1f
-                                scaleX = buttonPulseScale.value
-                                scaleY = buttonPulseScale.value
-                            }
-                    ) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = textColor)
+                        }
                     }
+                }
+
+                // 3. Settings Button (Pinned to Right)
+                LiquidButton(
+                    onClick = { showSettings = !showSettings },
+                    backdrop = readerBackdrop,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .onGloballyPositioned { coordinates ->
+                            settingsButtonBounds = coordinates.boundsInRoot()
+                        }
+                        .graphicsLayer {
+                            alpha = if (morphProgress > 0.001f) 0f else 1f
+                            scaleX = buttonPulseScale.value
+                            scaleY = buttonPulseScale.value
+                        }
+                ) {
+                    Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = textColor)
                 }
             }
         }

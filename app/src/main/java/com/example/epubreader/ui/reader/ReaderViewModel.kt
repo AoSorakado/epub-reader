@@ -24,6 +24,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
+import java.util.Calendar
+import com.example.epubreader.data.db.AppDatabase
+import com.example.epubreader.data.model.ReadingStatEntity
 
 sealed class ChapterNode {
     data class TextNode(val text: AnnotatedString) : ChapterNode()
@@ -275,7 +278,51 @@ class ReaderViewModel(
         }
     }
 
+    private var lastRecordedTime = System.currentTimeMillis()
+
+    fun flushReadingDuration() {
+        val now = System.currentTimeMillis()
+        val elapsed = now - lastRecordedTime
+        if (elapsed >= 1000L) {
+            lastRecordedTime = now
+            val statDao = AppDatabase.getDatabase(getApplication()).statDao()
+            val calendar = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val todayStart = calendar.timeInMillis
+
+            @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+            kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+                try {
+                    val existing = statDao.getStatForDay(todayStart)
+                    if (existing != null) {
+                        statDao.insertOrUpdate(existing.copy(readDurationMs = existing.readDurationMs + elapsed))
+                    } else {
+                        statDao.insertOrUpdate(
+                            ReadingStatEntity(
+                                date = todayStart,
+                                readDurationMs = elapsed,
+                                wordsRead = 0
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        flushReadingDuration()
+    }
+
     fun saveProgress(flatIndex: Int, offset: Int) {
+        flushReadingDuration()
         @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
             val book = _bookEntity.value ?: return@launch

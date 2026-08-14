@@ -12,6 +12,12 @@ import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.FolderOff
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,6 +40,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -102,6 +109,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 
+sealed class ContextMenuTarget {
+    data class Book(val book: BookEntity, val isInner: Boolean = false) : ContextMenuTarget()
+    data class Series(val series: Pair<String, List<BookEntity>>) : ContextMenuTarget()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookshelfScreen(
@@ -115,15 +127,30 @@ fun BookshelfScreen(
     val viewModel: BookshelfViewModel = viewModel(factory = BookshelfViewModelFactory(dao, context.applicationContext as android.app.Application))
 
     val books by viewModel.books.collectAsState()
+    val haptic = LocalHapticFeedback.current
     
     // Use globalBackdrop passed from MainScaffold for glass effects
     
     var rootCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var sourceBounds by remember { mutableStateOf(Rect.Zero) }
-    var showContextMenuForBook by remember { mutableStateOf<BookEntity?>(null) }
+    var contextMenuTarget by remember { mutableStateOf<ContextMenuTarget?>(null) }
     var showEditDialogForBook by remember { mutableStateOf<BookEntity?>(null) }
     var showSortMenu by remember { mutableStateOf(false) }
     var sortButtonBounds by remember { mutableStateOf(Rect.Zero) }
+    val seriesCoords = remember { mutableStateMapOf<String, LayoutCoordinates>() }
+
+    val isContextMenuOpen = (contextMenuTarget != null)
+    val contextMenuTransition = updateTransition(targetState = isContextMenuOpen, label = "ContextMenuTransition")
+    val contextMenuProgress by contextMenuTransition.animateFloat(
+        transitionSpec = {
+            if (targetState) {
+                spring(dampingRatio = 0.80f, stiffness = 240f)
+            } else {
+                spring(dampingRatio = 0.85f, stiffness = 280f)
+            }
+        },
+        label = "contextMenuProgress"
+    ) { if (it) 1f else 0f }
 
     val morphProgress by animateFloatAsState(
         targetValue = if (showSortMenu) 1f else 0f,
@@ -368,7 +395,7 @@ fun BookshelfScreen(
     val backgroundBlurRadius = maxOf(
         lerp(0f, 16f, seriesExpandProgress),
         lerp(0f, 16f, bookOpenProgress),
-        if (showContextMenuForBook != null) 16f else 0f
+        if (contextMenuTarget != null) 16f else 0f
     ).dp
 
     val layoutMethod by viewModel.layoutMethod.collectAsState()
@@ -480,12 +507,16 @@ fun BookshelfScreen(
                                         if (hasDragged && (dragOffset.x * dragOffset.x + dragOffset.y * dragOffset.y) > 400f) {
                                             viewModel.updateSortOrder(localBooks)
                                         } else {
-                                            showContextMenuForBook = item
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            contextMenuTarget = ContextMenuTarget.Book(item, isInner = false)
                                         }
                                         draggedItem = null
                                     },
                                     onDragCancel = { 
-                                        if (!hasDragged) showContextMenuForBook = item
+                                        if (!hasDragged) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            contextMenuTarget = ContextMenuTarget.Book(item, isInner = false)
+                                        }
                                         draggedItem = null 
                                     }
                                 )
@@ -513,18 +544,21 @@ fun BookshelfScreen(
                                         handleBookClick(item, layoutMethod == 1)
                                     },
                                     onLongPress = {
-                                        showContextMenuForBook = item
+                                        pressedBookId = null
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        contextMenuTarget = ContextMenuTarget.Book(item, isInner = false)
                                     }
                                 )
                             }
                         }
+                        val isItemContextMenuActive = (contextMenuTarget is ContextMenuTarget.Book && (contextMenuTarget as ContextMenuTarget.Book).book.id == item.id && !(contextMenuTarget as ContextMenuTarget.Book).isInner)
                         BookItem(
                             book = item, 
                             isListLayout = layoutMethod == 1, 
-                            isPressed = (pressedBookId == item.id), 
+                            isPressed = (pressedBookId == item.id && !isItemContextMenuActive), 
                             backdrop = globalBackdrop, 
                             isDark = isDark,
-                            isHidden = isOpeningThis,
+                            isHidden = isOpeningThis || isItemContextMenuActive,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor,
                             onPositioned = { coords ->
@@ -536,7 +570,8 @@ fun BookshelfScreen(
                     is Pair<*, *> -> {
                         @Suppress("UNCHECKED_CAST")
                         val series = item as Pair<String, List<BookEntity>>
-                        val isSeriesHidden = (displaySeries?.first == series.first && seriesExpandProgress > 0.001f)
+                        val isSeriesContextMenuActive = (contextMenuTarget is ContextMenuTarget.Series && (contextMenuTarget as ContextMenuTarget.Series).series.first == series.first)
+                        val isSeriesHidden = (displaySeries?.first == series.first && seriesExpandProgress > 0.001f) || isSeriesContextMenuActive
                         SeriesItem(
                             seriesName = series.first,
                             books = series.second,
@@ -547,11 +582,15 @@ fun BookshelfScreen(
                             isDark = isDark,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor,
+                            onPositioned = { coords ->
+                                seriesCoords[series.first] = coords
+                            },
                             onClick = { bounds ->
                                 handleSeriesClick(series, bounds)
                             },
                             onLongClick = {
-                                seriesLongPressTarget = series
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                contextMenuTarget = ContextMenuTarget.Series(series)
                             }
                         )
                     }
@@ -716,16 +755,17 @@ fun BookshelfScreen(
                             itemsIndexed(seriesBooks) { index, book ->
                                 val volumeNumber = index + 1
                                 val isBookOpeningThis = (openingBook?.id == book.id && bookOpenProgress > 0.001f)
+                                val isInnerContextMenuActive = (contextMenuTarget is ContextMenuTarget.Book && (contextMenuTarget as ContextMenuTarget.Book).book.id == book.id && (contextMenuTarget as ContextMenuTarget.Book).isInner)
                                 SeriesInnerBookRow(
                                     book = book,
                                     seriesTitle = seriesTitle,
                                     volumeNumber = volumeNumber,
-                                    isPressed = (pressedBookId == book.id),
+                                    isPressed = (pressedBookId == book.id && !isInnerContextMenuActive),
                                     isDark = isDark,
                                     themeAccent = themeAccent,
                                     primaryTextColor = primaryTextColor,
                                     secondaryTextColor = secondaryTextColor,
-                                    isHidden = isBookOpeningThis,
+                                    isHidden = isBookOpeningThis || isInnerContextMenuActive,
                                     onPositioned = { coords ->
                                         bookCoords[book.id] = coords
                                     },
@@ -741,7 +781,9 @@ fun BookshelfScreen(
                                                     handleBookClick(book, true)
                                                 },
                                                 onLongPress = {
-                                                    showContextMenuForBook = book
+                                                    pressedBookId = null
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    contextMenuTarget = ContextMenuTarget.Book(book, isInner = true)
                                                 }
                                             )
                                         }
@@ -972,110 +1014,247 @@ fun BookshelfScreen(
             }
         }
 
-        // Draw the book in focus exactly over its original position
-        if (showContextMenuForBook != null) {
-            val book = showContextMenuForBook!!
-            val coords = bookCoords[book.id]
-            val bounds = if (coords != null && rootCoords != null) {
-                try {
-                    rootCoords!!.localBoundingBoxOf(coords, clipBounds = false)
-                } catch (e: Exception) { Rect.Zero }
-            } else Rect.Zero
-            
-            if (bounds != Rect.Zero) {
-                val density = LocalDensity.current
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(bounds.left.toInt(), bounds.top.toInt()) }
-                        .size(
-                            width = with(density) { bounds.width.toDp() },
-                            height = with(density) { bounds.height.toDp() }
-                        )
-                ) {
-                    if (selectedSeries != null) {
-                        val seriesBooks = selectedSeries!!.second
-                        val index = seriesBooks.indexOfFirst { it.id == book.id }
-                        SeriesInnerBookRow(
-                            book = book,
-                            seriesTitle = selectedSeries!!.first,
-                            volumeNumber = if (index >= 0) index + 1 else 1,
-                            isPressed = (pressedBookId == book.id),
-                            isDark = isDark
-                        )
-                    } else {
-                        BookItem(
-                            book = book, 
-                            isListLayout = layoutMethod == 1, 
-                            isPressed = (pressedBookId == book.id), 
-                            backdrop = globalBackdrop,
-                            isDark = isDark,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor
-                        )
-                    }
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = showContextMenuForBook != null,
-            enter = fadeIn() + scaleIn(initialScale = 0.8f),
-            exit = fadeOut() + scaleOut(targetScale = 0.8f),
-            modifier = Modifier.fillMaxSize()
-        ) {
+        // ── Unified Tactile Context Menu Overlay ──────────────────────────────────────
+        if (contextMenuProgress > 0.001f || contextMenuTarget != null) {
+            // Soft Frosted Scrim
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(Unit) { detectTapGestures { showContextMenuForBook = null } }
-            ) {
-                showContextMenuForBook?.let { book ->
-                    val coords = bookCoords[book.id]
-                    val bounds = if (coords != null && rootCoords != null) {
-                        try {
-                            rootCoords!!.localBoundingBoxOf(coords, clipBounds = false)
-                        } catch (e: Exception) { Rect.Zero }
-                    } else Rect.Zero
-                    
-                    val density = LocalDensity.current
-                    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-                    
-                    Box(
-                        modifier = Modifier.offset {
-                            // Menu dimensions — must match GlassContextMenu width
-                            val menuWidthPx  = with(density) { 180.dp.toPx() }
-                            val menuHeightPx = with(density) {  90.dp.toPx() }
-                            val screenWidthPx  = with(density) { configuration.screenWidthDp.dp.toPx() }
-                            val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
-                            val margin  = with(density) { 12.dp.toPx() }
-                            val spacing = with(density) { 12.dp.toPx() }
-
-                            // Horizontally: center on the book, then clamp to screen
-                            val x = (bounds.left + bounds.width / 2f - menuWidthPx / 2f)
-                                .coerceIn(margin, screenWidthPx - menuWidthPx - margin)
-
-                            // Vertically: prefer BELOW the book; fall back to ABOVE
-                            var y = bounds.bottom + spacing
-                            if (y + menuHeightPx > screenHeightPx - margin) {
-                                y = bounds.top - menuHeightPx - spacing
-                            }
-                            y = y.coerceIn(margin, screenHeightPx - menuHeightPx - margin)
-
-                            IntOffset(x.toInt(), y.toInt())
-                        }
+                    .graphicsLayer { alpha = contextMenuProgress * 0.22f }
+                    .background(Color.Black)
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
                     ) {
-                        GlassContextMenu(
-                            backdrop = activeBackdrop,
-                            onEditClick = {
-                                showEditDialogForBook = book
-                                showContextMenuForBook = null
-                                selectedSeries = null
-                            },
-                            onDeleteClick = {
-                                bookToDelete = book
-                                showContextMenuForBook = null
-                            }
-                        )
+                        contextMenuTarget = null
                     }
+            )
+
+            // Target Bounds and Position
+            val targetBounds = when (val target = contextMenuTarget) {
+                is ContextMenuTarget.Book -> {
+                    val coords = bookCoords[target.book.id]
+                    if (coords != null && rootCoords != null) {
+                        try { rootCoords!!.localBoundingBoxOf(coords, clipBounds = false) } catch (e: Exception) { Rect.Zero }
+                    } else Rect.Zero
+                }
+                is ContextMenuTarget.Series -> {
+                    val coords = seriesCoords[target.series.first]
+                    if (coords != null && rootCoords != null) {
+                        try { rootCoords!!.localBoundingBoxOf(coords, clipBounds = false) } catch (e: Exception) { Rect.Zero }
+                    } else Rect.Zero
+                }
+                null -> Rect.Zero
+            }
+
+            if (targetBounds != Rect.Zero) {
+                val elevatedScale = lerp(1f, 1.05f, contextMenuProgress)
+
+                // 1. Focused Elevated Floating Item
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(targetBounds.left.toInt(), targetBounds.top.toInt()) }
+                        .size(
+                            width = with(density) { targetBounds.width.toDp() },
+                            height = with(density) { targetBounds.height.toDp() }
+                        )
+                        .graphicsLayer {
+                            scaleX = elevatedScale
+                            scaleY = elevatedScale
+                            shadowElevation = 18f * contextMenuProgress
+                        }
+                ) {
+                    when (val target = contextMenuTarget) {
+                        is ContextMenuTarget.Book -> {
+                            if (target.isInner) {
+                                val seriesBooks = selectedSeries?.second ?: emptyList()
+                                val index = seriesBooks.indexOfFirst { it.id == target.book.id }
+                                SeriesInnerBookRow(
+                                    book = target.book,
+                                    seriesTitle = selectedSeries?.first ?: "",
+                                    volumeNumber = if (index >= 0) index + 1 else 1,
+                                    isPressed = false,
+                                    isDark = isDark,
+                                    themeAccent = themeAccent,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor
+                                )
+                            } else {
+                                BookItem(
+                                    book = target.book,
+                                    isListLayout = layoutMethod == 1,
+                                    isPressed = false,
+                                    backdrop = globalBackdrop,
+                                    isDark = isDark,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor
+                                )
+                            }
+                        }
+                        is ContextMenuTarget.Series -> {
+                            SeriesItem(
+                                seriesName = target.series.first,
+                                books = target.series.second,
+                                rootCoords = rootCoords,
+                                backdrop = globalBackdrop,
+                                isListLayout = layoutMethod == 1,
+                                isDark = isDark,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                onClick = {}
+                            )
+                        }
+                        null -> {}
+                    }
+                }
+
+                // 2. Liquid Glass Floating Menu
+                val menuWidthPx = with(density) { 190.dp.toPx() }
+                val menuHeightPx = with(density) { 180.dp.toPx() }
+                val margin = with(density) { 16.dp.toPx() }
+                val spacing = with(density) { 12.dp.toPx() }
+
+                val menuLeft = (targetBounds.left + targetBounds.width / 2f - menuWidthPx / 2f)
+                    .coerceIn(margin, screenWidthPx - menuWidthPx - margin)
+
+                var menuTop = targetBounds.bottom + spacing
+                if (menuTop + menuHeightPx > screenHeightPx - margin) {
+                    menuTop = targetBounds.top - menuHeightPx - spacing
+                }
+                menuTop = menuTop.coerceIn(margin, screenHeightPx - menuHeightPx - margin)
+
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(menuLeft.toInt(), menuTop.toInt()) }
+                        .graphicsLayer {
+                            alpha = contextMenuProgress
+                            scaleX = lerp(0.85f, 1f, contextMenuProgress)
+                            scaleY = lerp(0.85f, 1f, contextMenuProgress)
+                        }
+                ) {
+                    val menuItems = when (val target = contextMenuTarget) {
+                        is ContextMenuTarget.Book -> {
+                            if (target.isInner) {
+                                listOf(
+                                    ContextMenuItem(
+                                        title = "立即阅读",
+                                        icon = Icons.Filled.AutoStories,
+                                        onClick = {
+                                            val b = target.book
+                                            contextMenuTarget = null
+                                            handleBookClick(b, true)
+                                        }
+                                    ),
+                                    ContextMenuItem(
+                                        title = "编辑此卷",
+                                        icon = Icons.Filled.Edit,
+                                        onClick = {
+                                            val b = target.book
+                                            contextMenuTarget = null
+                                            showEditDialogForBook = b
+                                        }
+                                    ),
+                                    ContextMenuItem(
+                                        title = "移出此系列",
+                                        icon = Icons.Filled.DriveFileMove,
+                                        onClick = {
+                                            val b = target.book
+                                            contextMenuTarget = null
+                                            viewModel.updateBook(b.copy(seriesName = null))
+                                            selectedSeries = null
+                                        }
+                                    ),
+                                    ContextMenuItem(
+                                        title = "删除此卷",
+                                        icon = Icons.Filled.Delete,
+                                        isDestructive = true,
+                                        onClick = {
+                                            val b = target.book
+                                            contextMenuTarget = null
+                                            bookToDelete = b
+                                        }
+                                    )
+                                )
+                            } else {
+                                listOf(
+                                    ContextMenuItem(
+                                        title = "立即阅读",
+                                        icon = Icons.Filled.AutoStories,
+                                        onClick = {
+                                            val b = target.book
+                                            contextMenuTarget = null
+                                            handleBookClick(b, layoutMethod == 1)
+                                        }
+                                    ),
+                                    ContextMenuItem(
+                                        title = "编辑书籍",
+                                        icon = Icons.Filled.Edit,
+                                        onClick = {
+                                            val b = target.book
+                                            contextMenuTarget = null
+                                            showEditDialogForBook = b
+                                        }
+                                    ),
+                                    ContextMenuItem(
+                                        title = "删除书籍",
+                                        icon = Icons.Filled.Delete,
+                                        isDestructive = true,
+                                        onClick = {
+                                            val b = target.book
+                                            contextMenuTarget = null
+                                            bookToDelete = b
+                                        }
+                                    )
+                                )
+                            }
+                        }
+                        is ContextMenuTarget.Series -> {
+                            listOf(
+                                ContextMenuItem(
+                                    title = "展开系列",
+                                    icon = Icons.Filled.FolderOpen,
+                                    onClick = {
+                                        val s = target.series
+                                        contextMenuTarget = null
+                                        val coords = seriesCoords[s.first]
+                                        val bounds = if (coords != null && rootCoords != null) {
+                                            try { rootCoords!!.localBoundingBoxOf(coords, clipBounds = false) } catch (e: Exception) { Rect.Zero }
+                                        } else Rect.Zero
+                                        handleSeriesClick(s, bounds)
+                                    }
+                                ),
+                                ContextMenuItem(
+                                    title = "解散系列",
+                                    icon = Icons.Filled.FolderOff,
+                                    onClick = {
+                                        val s = target.series
+                                        contextMenuTarget = null
+                                        s.second.forEach { book ->
+                                            viewModel.updateBook(book.copy(seriesName = null))
+                                        }
+                                    }
+                                ),
+                                ContextMenuItem(
+                                    title = "删除全系列",
+                                    icon = Icons.Filled.Delete,
+                                    isDestructive = true,
+                                    onClick = {
+                                        val s = target.series
+                                        contextMenuTarget = null
+                                        seriesLongPressTarget = s
+                                    }
+                                )
+                            )
+                        }
+                        null -> emptyList()
+                    }
+
+                    GlassContextMenu(
+                        backdrop = bookshelfBackdrop,
+                        items = menuItems,
+                        isDark = isDark,
+                        primaryTextColor = primaryTextColor
+                    )
                 }
             }
         }
@@ -1445,6 +1624,7 @@ fun SeriesItem(
     isDark: Boolean = false,
     primaryTextColor: Color = Color(0xFF1E1E24),
     secondaryTextColor: Color = Color(0xFF543866),
+    onPositioned: ((LayoutCoordinates) -> Unit)? = null,
     onClick: (Rect) -> Unit,
     onLongClick: (() -> Unit)? = null
 ) {
@@ -1465,6 +1645,7 @@ fun SeriesItem(
                 scaleY = scale
             }
             .onGloballyPositioned { coords ->
+                onPositioned?.invoke(coords)
                 rootCoords?.let { root ->
                     localBounds = root.localBoundingBoxOf(coords, clipBounds = false)
                 }

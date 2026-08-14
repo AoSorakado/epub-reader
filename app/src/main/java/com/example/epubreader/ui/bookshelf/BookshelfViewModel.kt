@@ -122,6 +122,12 @@ class BookshelfViewModel(private val bookDao: BookDao, application: Application)
         }
     }
 
+    fun updateBook(book: BookEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            bookDao.updateBook(book)
+        }
+    }
+
     fun updateBookInfo(book: BookEntity, newTitle: String, newCoverUri: Uri?, context: Context) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {

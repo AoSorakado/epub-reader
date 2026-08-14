@@ -259,6 +259,7 @@ fun SettingsScreen(
                 }
 
                 // READER SETTINGS SECTION
+                val themeAccent = getThemeAccentColor(appTheme, if (isCustomThemeThreeColors) customColors else customColors.take(2))
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("阅读设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = primaryTextColor)
                     
@@ -271,7 +272,8 @@ fun SettingsScreen(
                         LiquidToggle(
                             selected = { immersiveStatusBar },
                             onSelect = { viewModel.setImmersiveStatusBar(it) },
-                            backdrop = backgroundBackdrop
+                            backdrop = backgroundBackdrop,
+                            accentColor = themeAccent
                         )
                     }
                 }

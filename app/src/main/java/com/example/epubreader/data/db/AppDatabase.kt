@@ -13,7 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(entities = [BookEntity::class, ReadingStatEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
-    // TODO: add statDao() later
+    abstract fun statDao(): StatDao
 
     companion object {
         @Volatile

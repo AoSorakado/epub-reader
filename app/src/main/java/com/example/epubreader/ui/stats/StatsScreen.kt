@@ -1,11 +1,12 @@
 package com.example.epubreader.ui.stats
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,16 +18,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -35,8 +34,8 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.epubreader.data.db.AppDatabase
 import com.example.epubreader.data.model.BookEntity
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.example.epubreader.ui.theme.getThemeAccentColor
+import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -54,141 +53,176 @@ fun StatsScreen(
     globalBackdrop: com.kyant.backdrop.Backdrop
 ) {
     val context = LocalContext.current
-    val dao = AppDatabase.getDatabase(context).bookDao()
-    val viewModel: StatsViewModel = viewModel(factory = StatsViewModelFactory(dao))
+    val db = AppDatabase.getDatabase(context)
+    val bookDao = db.bookDao()
+    val statDao = db.statDao()
+    val viewModel: StatsViewModel = viewModel(factory = StatsViewModelFactory(bookDao, statDao))
+    
     val appTheme by settingsViewModel.appTheme.collectAsState()
+    val customColors by settingsViewModel.customColors.collectAsState()
+    val isCustomThemeThreeColors by settingsViewModel.isCustomThemeThreeColors.collectAsState()
+    
     val isDark = appTheme == com.example.epubreader.ui.theme.AppTheme.MIDNIGHT_GLASS
-    val primaryTextColor = if (isDark) Color(0xFFF8FAFC) else Color(0xFF2C3E50)
-    val secondaryTextColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF7F8C8D)
-    
+    val primaryTextColor = if (isDark) Color(0xFFF8FAFC) else Color(0xFF1E1E24)
+    val secondaryTextColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF543866).copy(alpha = 0.85f)
+    val themeAccent = getThemeAccentColor(appTheme, if (isCustomThemeThreeColors) customColors else customColors.take(2))
+
     val state by viewModel.stats.collectAsState()
-    
+
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Foreground content
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = 100.dp) // Leave space for bottom nav
+                .padding(bottom = 110.dp)
         ) {
-            Spacer(modifier = Modifier.height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp))
-            
-            Text(
-                text = "Reading Stats",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = primaryTextColor,
-                modifier = Modifier.padding(horizontal = 24.dp)
-            )
-            
-            Text(
-                text = "Your library at a glance",
-                fontSize = 16.sp,
-                color = secondaryTextColor,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-            )
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Dashboard Grid
+            Spacer(modifier = Modifier.height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp))
+
+            // Header Title
+            Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+                Text(
+                    text = "阅读统计",
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = primaryTextColor
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "记录每一次指尖沉浸的阅读时光",
+                    fontSize = 14.sp,
+                    color = secondaryTextColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 1. Reading Time Hero Highlights (2x2 Grid)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                StatCard(
+                LiquidStatCard(
                     modifier = Modifier.weight(1f),
-                    title = "Total Books",
-                    value = state.totalBooks,
+                    title = "累计阅读",
+                    value = "${state.totalReadingMinutes}",
+                    unit = "分钟",
+                    subtitle = if (state.totalReadingMinutes >= 60) "${state.totalReadingMinutes / 60}小时${state.totalReadingMinutes % 60}分" else "累计阅读时长",
+                    icon = Icons.Filled.Timer,
+                    iconColor = themeAccent,
+                    backdrop = globalBackdrop,
+                    primaryTextColor = primaryTextColor,
+                    secondaryTextColor = secondaryTextColor,
+                    isDark = isDark
+                )
+                LiquidStatCard(
+                    modifier = Modifier.weight(1f),
+                    title = "今日专注",
+                    value = "${state.todayReadingMinutes}",
+                    unit = "分钟",
+                    subtitle = if (state.todayReadingMinutes > 0) "保持好习惯" else "待开始阅读",
+                    icon = Icons.Filled.LocalFireDepartment,
+                    iconColor = Color(0xFFFF5722),
+                    backdrop = globalBackdrop,
+                    primaryTextColor = primaryTextColor,
+                    secondaryTextColor = secondaryTextColor,
+                    isDark = isDark
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                LiquidStatCard(
+                    modifier = Modifier.weight(1f),
+                    title = "藏书总数",
+                    value = "${state.totalBooks}",
+                    unit = "本",
+                    subtitle = "本地及云端",
                     icon = Icons.Filled.MenuBook,
+                    iconColor = Color(0xFF3B82F6),
                     backdrop = globalBackdrop,
-                    color = Color(0xFF3498DB),
                     primaryTextColor = primaryTextColor,
                     secondaryTextColor = secondaryTextColor,
                     isDark = isDark
                 )
-                StatCard(
+                LiquidStatCard(
                     modifier = Modifier.weight(1f),
-                    title = "Series",
-                    value = state.totalSeries,
+                    title = "系列丛书",
+                    value = "${state.totalSeries}",
+                    unit = "部",
+                    subtitle = "收录系列",
                     icon = Icons.Filled.LibraryBooks,
+                    iconColor = Color(0xFF8B5CF6),
                     backdrop = globalBackdrop,
-                    color = Color(0xFF9B59B6),
                     primaryTextColor = primaryTextColor,
                     secondaryTextColor = secondaryTextColor,
                     isDark = isDark
                 )
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "Finished",
-                    value = state.finishedBooks,
-                    icon = Icons.Filled.CheckCircle,
-                    backdrop = globalBackdrop,
-                    color = Color(0xFF2ECC71),
-                    primaryTextColor = primaryTextColor,
-                    secondaryTextColor = secondaryTextColor,
-                    isDark = isDark
-                )
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "Reading",
-                    value = state.readingBooks,
-                    icon = Icons.Filled.AutoGraph,
-                    backdrop = globalBackdrop,
-                    color = Color(0xFFE67E22),
-                    primaryTextColor = primaryTextColor,
-                    secondaryTextColor = secondaryTextColor,
-                    isDark = isDark
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            // Progress Ring Card
-            ProgressCard(
-                total = state.totalBooks,
-                finished = state.finishedBooks,
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 2. Weekly Reading Trend Line Chart (近 7 天阅读趋势)
+            WeeklyTrendChartCard(
+                weeklyTrend = state.weeklyTrend,
+                themeAccent = themeAccent,
                 backdrop = globalBackdrop,
                 primaryTextColor = primaryTextColor,
                 secondaryTextColor = secondaryTextColor,
                 isDark = isDark
             )
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            // Recent Books
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 3. Reading Progress & Status Distribution (阅读完成度环形图)
+            ProgressRingCard(
+                total = state.totalBooks,
+                finished = state.finishedBooks,
+                reading = state.readingBooks,
+                themeAccent = themeAccent,
+                backdrop = globalBackdrop,
+                primaryTextColor = primaryTextColor,
+                secondaryTextColor = secondaryTextColor,
+                isDark = isDark
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 4. Recent Books Activity (最近阅读 & 最新导入)
             if (state.recentlyRead != null || state.recentlyAdded != null) {
                 Text(
-                    text = "Recent Activity",
-                    fontSize = 20.sp,
+                    text = "最近动态",
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2C3E50),
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
+                    color = primaryTextColor,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
                 )
-                
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 LazyRow(
-                    contentPadding = PaddingValues(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     state.recentlyRead?.let { book ->
                         item {
-                            RecentBookCard(
-                                title = "Last Read",
+                            RecentBookLiquidCard(
+                                tag = "最近在读",
+                                tagColor = themeAccent,
                                 book = book,
                                 backdrop = globalBackdrop,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                isDark = isDark,
                                 onClick = { navController.navigate("reader/${book.id}") }
                             )
                         }
@@ -196,10 +230,14 @@ fun StatsScreen(
                     state.recentlyAdded?.let { book ->
                         if (book.id != state.recentlyRead?.id) {
                             item {
-                                RecentBookCard(
-                                    title = "New Arrival",
+                                RecentBookLiquidCard(
+                                    tag = "最新导入",
+                                    tagColor = Color(0xFF10B981),
                                     book = book,
                                     backdrop = globalBackdrop,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    isDark = isDark,
                                     onClick = { navController.navigate("reader/${book.id}") }
                                 )
                             }
@@ -212,64 +250,110 @@ fun StatsScreen(
 }
 
 @Composable
-fun StatCard(
+fun LiquidStatCard(
     modifier: Modifier = Modifier,
     title: String,
-    value: Int,
+    value: String,
+    unit: String,
+    subtitle: String? = null,
     icon: ImageVector,
+    iconColor: Color,
     backdrop: com.kyant.backdrop.Backdrop,
-    color: Color,
-    primaryTextColor: Color = Color(0xFF2C3E50),
-    secondaryTextColor: Color = Color(0xFF7F8C8D),
-    isDark: Boolean = false
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    isDark: Boolean
 ) {
-    // Number animation
-    var animationTarget by remember { mutableStateOf(0) }
-    LaunchedEffect(value) {
-        delay(100)
-        animationTarget = value
-    }
-    
-    val animatedValue by animateIntAsState(
-        targetValue = animationTarget,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessVeryLow)
-    )
-
     Box(
         modifier = modifier
-            .aspectRatio(1f)
-            .background(
-                color = if (isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.25f),
-                shape = RoundedCornerShape(24.dp)
+            .height(130.dp)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(22.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(12f.dp.toPx(), 24f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = {
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.18f else 0.06f)
+                    )
+                },
+                onDrawSurface = {
+                    drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
+                }
             )
-            .padding(20.dp)
+            .border(
+                width = 0.8.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (isDark) 0.35f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.12f else 0.30f)
+                    )
+                ),
+                shape = RoundedCornerShape(22.dp)
+            )
+            .padding(16.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(color.copy(alpha = 0.15f), CircleShape)
-                    .align(Alignment.End),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
-            }
-            
-            Column {
-                Text(
-                    text = animatedValue.toString(),
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Black,
-                    color = primaryTextColor
-                )
                 Text(
                     text = title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
                     color = secondaryTextColor
+                )
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(iconColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            Column {
+                Row(
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Text(
+                        text = value,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = primaryTextColor
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = unit,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = secondaryTextColor,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+
+                Text(
+                    text = subtitle ?: "",
+                    fontSize = 11.sp,
+                    color = secondaryTextColor.copy(alpha = 0.75f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -277,149 +361,437 @@ fun StatCard(
 }
 
 @Composable
-fun ProgressCard(
+fun WeeklyTrendChartCard(
+    weeklyTrend: List<DayReadingStat>,
+    themeAccent: Color,
+    backdrop: com.kyant.backdrop.Backdrop,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    isDark: Boolean
+) {
+    val maxMinutes = (weeklyTrend.maxOfOrNull { it.minutes } ?: 0).coerceAtLeast(30)
+    
+    val animatedProgress = remember { Animatable(0f) }
+    LaunchedEffect(weeklyTrend) {
+        animatedProgress.snapTo(0f)
+        animatedProgress.animateTo(
+            1f,
+            animationSpec = spring(dampingRatio = 0.85f, stiffness = 180f)
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(24.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(14f.dp.toPx(), 28f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = {
+                    Shadow(
+                        radius = 14.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
+                    )
+                },
+                onDrawSurface = {
+                    drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
+                }
+            )
+            .border(
+                width = 0.8.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (isDark) 0.35f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.12f else 0.30f)
+                    )
+                ),
+                shape = RoundedCornerShape(24.dp)
+            )
+            .padding(18.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp, 16.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(themeAccent)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "近 7 天阅读趋势",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
+                    )
+                }
+
+                val weekTotal = weeklyTrend.sumOf { it.minutes }
+                Text(
+                    text = "近7天合计 ${weekTotal} 分钟",
+                    fontSize = 12.sp,
+                    color = secondaryTextColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Chart Canvas
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(130.dp)
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    if (weeklyTrend.isEmpty()) return@Canvas
+
+                    val width = size.width
+                    val height = size.height
+                    val stepX = width / (weeklyTrend.size - 1).coerceAtLeast(1)
+
+                    val points = weeklyTrend.mapIndexed { index, stat ->
+                        val ratio = (stat.minutes.toFloat() / maxMinutes.toFloat()).coerceIn(0f, 1f)
+                        val animatedRatio = ratio * animatedProgress.value
+                        val x = index * stepX
+                        val y = height - (animatedRatio * (height - 24.dp.toPx())) - 12.dp.toPx()
+                        Offset(x, y)
+                    }
+
+                    // Build smooth cubic bezier path
+                    val path = Path().apply {
+                        if (points.isNotEmpty()) {
+                            moveTo(points.first().x, points.first().y)
+                            for (i in 0 until points.size - 1) {
+                                val p0 = points[i]
+                                val p1 = points[i + 1]
+                                val cx = (p0.x + p1.x) / 2f
+                                cubicTo(cx, p0.y, cx, p1.y, p1.x, p1.y)
+                            }
+                        }
+                    }
+
+                    // Build area fill path
+                    val fillPath = Path().apply {
+                        addPath(path)
+                        lineTo(points.last().x, height)
+                        lineTo(points.first().x, height)
+                        close()
+                    }
+
+                    // 1. Draw gradient fill
+                    drawPath(
+                        path = fillPath,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                themeAccent.copy(alpha = if (isDark) 0.35f else 0.25f),
+                                themeAccent.copy(alpha = 0f)
+                            )
+                        )
+                    )
+
+                    // 2. Draw smooth stroke line
+                    drawPath(
+                        path = path,
+                        color = themeAccent,
+                        style = Stroke(
+                            width = 3.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round
+                        )
+                    )
+
+                    // 3. Draw node points
+                    points.forEachIndexed { idx, point ->
+                        val stat = weeklyTrend[idx]
+                        // Outer glow circle
+                        drawCircle(
+                            color = Color.White,
+                            radius = 4.5.dp.toPx(),
+                            center = point
+                        )
+                        // Inner colored circle
+                        drawCircle(
+                            color = if (stat.minutes > 0) themeAccent else Color.Gray.copy(alpha = 0.5f),
+                            radius = 3.dp.toPx(),
+                            center = point
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // X-Axis Day Labels & Minutes
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                weeklyTrend.forEach { stat ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.width(36.dp)
+                    ) {
+                        Text(
+                            text = if (stat.minutes > 0) "${stat.minutes}m" else "-",
+                            fontSize = 11.sp,
+                            fontWeight = if (stat.minutes > 0) FontWeight.Bold else FontWeight.Normal,
+                            color = if (stat.minutes > 0) themeAccent else secondaryTextColor.copy(alpha = 0.5f)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stat.dayLabel,
+                            fontSize = 11.sp,
+                            color = secondaryTextColor
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProgressRingCard(
     total: Int,
     finished: Int,
+    reading: Int,
+    themeAccent: Color,
     backdrop: com.kyant.backdrop.Backdrop,
-    primaryTextColor: Color = Color(0xFF2C3E50),
-    secondaryTextColor: Color = Color(0xFF7F8C8D),
-    isDark: Boolean = false
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    isDark: Boolean
 ) {
-    val progress = if (total > 0) finished.toFloat() / total else 0f
-    
-    var animationTarget by remember { mutableStateOf(0f) }
-    LaunchedEffect(progress) {
-        delay(300)
-        animationTarget = progress
-    }
-    
+    val unread = (total - finished - reading).coerceAtLeast(0)
+    val progressRate = if (total > 0) finished.toFloat() / total.toFloat() else 0f
+
     val animatedProgress by animateFloatAsState(
-        targetValue = animationTarget,
-        animationSpec = tween(1500, easing = FastOutSlowInEasing)
+        targetValue = progressRate,
+        animationSpec = spring(dampingRatio = 0.85f, stiffness = 160f),
+        label = "progressRate"
     )
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .height(140.dp)
+            .padding(horizontal = 20.dp)
             .drawBackdrop(
                 backdrop = backdrop,
                 shape = { RoundedCornerShape(24.dp) },
                 effects = {
-                    blur(24f.dp.toPx())
                     vibrancy()
-                    lens(12f.dp.toPx(), 24f.dp.toPx(), chromaticAberration = true)
+                    blur(4f.dp.toPx())
+                    lens(14f.dp.toPx(), 28f.dp.toPx(), chromaticAberration = true)
                 },
-                shadow = { Shadow(color = Color.Black.copy(alpha = 0.15f), radius = 24.dp) },
-                onDrawSurface = { drawRect(if (isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.25f)) }
+                highlight = { Highlight.Plain },
+                shadow = {
+                    Shadow(
+                        radius = 14.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
+                    )
+                },
+                onDrawSurface = {
+                    drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
+                }
             )
-            .padding(horizontal = 24.dp),
-        contentAlignment = Alignment.Center
+            .border(
+                width = 0.8.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (isDark) 0.35f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.12f else 0.30f)
+                    )
+                ),
+                shape = RoundedCornerShape(24.dp)
+            )
+            .padding(20.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Circular Ring Chart
             Box(
-                modifier = Modifier.size(90.dp),
+                modifier = Modifier.size(96.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // Background track
-                androidx.compose.foundation.Canvas(modifier = Modifier.matchParentSize()) {
+                Canvas(modifier = Modifier.matchParentSize()) {
+                    // Track background
                     drawArc(
-                        color = if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE0E0E0),
+                        color = if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.06f),
                         startAngle = 0f,
                         sweepAngle = 360f,
                         useCenter = false,
-                        style = Stroke(width = 12.dp.toPx(), cap = StrokeCap.Round)
+                        style = Stroke(width = 10.dp.toPx(), cap = StrokeCap.Round)
+                    )
+
+                    // Active progress sweep
+                    if (animatedProgress > 0.001f) {
+                        drawArc(
+                            brush = Brush.sweepGradient(
+                                colors = listOf(themeAccent, Color(0xFF10B981), themeAccent)
+                            ),
+                            startAngle = -90f,
+                            sweepAngle = animatedProgress * 360f,
+                            useCenter = false,
+                            style = Stroke(width = 10.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                    }
+                }
+
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "${(animatedProgress * 100).roundToInt()}%",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Black,
+                        color = primaryTextColor
+                    )
+                    Text(
+                        text = "完成度",
+                        fontSize = 10.sp,
+                        color = secondaryTextColor
                     )
                 }
-                
-                // Progress track
-                androidx.compose.foundation.Canvas(modifier = Modifier.matchParentSize()) {
-                    drawArc(
-                        brush = Brush.sweepGradient(
-                            colors = listOf(Color(0xFF3498DB), Color(0xFF2ECC71), Color(0xFF3498DB))
-                        ),
-                        startAngle = -90f,
-                        sweepAngle = animatedProgress * 360f,
-                        useCenter = false,
-                        style = Stroke(width = 12.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                }
-                
-                Text(
-                    text = "${(animatedProgress * 100).roundToInt()}%",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = primaryTextColor
-                )
             }
-            
-            Spacer(modifier = Modifier.width(24.dp))
-            
-            Column {
+
+            Spacer(modifier = Modifier.width(20.dp))
+
+            // Stats Breakdown Column
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Completion Rate",
-                    fontSize = 18.sp,
+                    text = "藏书阅读进度",
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = primaryTextColor
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "$finished out of $total books finished.",
-                    fontSize = 14.sp,
-                    color = secondaryTextColor
-                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    StatusPill(label = "已读完", count = finished, color = Color(0xFF10B981), isDark = isDark)
+                    StatusPill(label = "在读中", count = reading, color = Color(0xFFF59E0B), isDark = isDark)
+                    StatusPill(label = "未开始", count = unread, color = Color.Gray, isDark = isDark)
+                }
             }
         }
     }
 }
 
 @Composable
-fun RecentBookCard(
-    title: String,
+fun StatusPill(
+    label: String,
+    count: Int,
+    color: Color,
+    isDark: Boolean
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(color)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+            )
+        }
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = "$count 本",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isDark) Color.White else Color(0xFF1E1E24)
+        )
+    }
+}
+
+@Composable
+fun RecentBookLiquidCard(
+    tag: String,
+    tagColor: Color,
     book: BookEntity,
     backdrop: com.kyant.backdrop.Backdrop,
-    primaryTextColor: Color = Color(0xFF2C3E50),
-    secondaryTextColor: Color = Color(0xFF7F8C8D),
-    isDark: Boolean = false,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    isDark: Boolean,
     onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
-            .width(200.dp)
+            .width(190.dp)
             .height(260.dp)
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(22.dp))
             .clickable(onClick = onClick)
             .drawBackdrop(
                 backdrop = backdrop,
-                shape = { RoundedCornerShape(24.dp) },
+                shape = { RoundedCornerShape(22.dp) },
                 effects = {
-                    blur(24f.dp.toPx())
                     vibrancy()
-                    lens(8f.dp.toPx(), 16f.dp.toPx(), chromaticAberration = true)
+                    blur(4f.dp.toPx())
+                    lens(10f.dp.toPx(), 20f.dp.toPx(), chromaticAberration = true)
                 },
-                shadow = { Shadow(color = Color.Black.copy(alpha = 0.2f), radius = 16.dp) },
-                onDrawSurface = { drawRect(if (isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.25f)) }
+                highlight = { Highlight.Plain },
+                shadow = {
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
+                    )
+                },
+                onDrawSurface = {
+                    drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
+                }
             )
-            .padding(16.dp)
+            .border(
+                width = 0.8.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (isDark) 0.35f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.12f else 0.30f)
+                    )
+                ),
+                shape = RoundedCornerShape(22.dp)
+            )
+            .padding(14.dp)
     ) {
         Column {
-            Text(
-                text = title,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isDark) Color(0xFF38BDF8) else Color(0xFF3498DB),
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(tagColor.copy(alpha = 0.15f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = tag,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = tagColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
             val coverPath = book.coverImage
-            if (coverPath != null) {
+            if (coverPath != null && java.io.File(coverPath).exists()) {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
-                        .data(coverPath)
+                        .data(java.io.File(coverPath))
                         .crossfade(true)
                         .build(),
                     contentDescription = "Cover",
@@ -428,7 +800,6 @@ fun RecentBookCard(
                         .fillMaxWidth()
                         .weight(1f)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color.LightGray)
                 )
             } else {
                 Box(
@@ -436,28 +807,35 @@ fun RecentBookCard(
                         .fillMaxWidth()
                         .weight(1f)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(if (isDark) Color.White.copy(alpha = 0.1f) else Color(0xFFE0E0E0)),
+                        .background(if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.05f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.MenuBook, contentDescription = null, tint = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Gray)
+                    Icon(
+                        Icons.Filled.MenuBook,
+                        contentDescription = null,
+                        tint = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Gray
+                    )
                 }
             }
-            
-            Spacer(modifier = Modifier.height(12.dp))
+
+            Spacer(modifier = Modifier.height(10.dp))
+
             Text(
                 text = book.title,
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 color = primaryTextColor,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
+
+            val dateFormat = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+            val dateStr = if (tag == "最新导入") dateFormat.format(Date(book.addedTime)) else dateFormat.format(Date(book.lastReadTime))
             
-            val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-            val dateStr = if (title == "New Arrival") dateFormat.format(Date(book.addedTime)) else dateFormat.format(Date(book.lastReadTime))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = dateStr,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 color = secondaryTextColor,
                 maxLines = 1
             )

@@ -48,12 +48,16 @@ fun LiquidToggle(
     selected: () -> Boolean,
     onSelect: (Boolean) -> Unit,
     backdrop: Backdrop,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    accentColor: Color = Color.Unspecified
 ) {
     val isLightTheme = !isSystemInDarkTheme()
-    val accentColor =
+    val resolvedAccentColor = if (accentColor != Color.Unspecified) {
+        accentColor
+    } else {
         if (isLightTheme) Color(0xFF34C759)
         else Color(0xFF30D158)
+    }
     val trackColor =
         if (isLightTheme) Color(0xFF787878).copy(0.2f)
         else Color(0xFF787880).copy(0.36f)
@@ -123,7 +127,7 @@ fun LiquidToggle(
                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
                 .drawBehind {
                     val fraction = dampedDragAnimation.value
-                    drawRect(lerp(trackColor, accentColor, fraction))
+                    drawRect(lerp(trackColor, resolvedAccentColor, fraction))
                 }
                 .size(64f.dp, 28f.dp)
         )
