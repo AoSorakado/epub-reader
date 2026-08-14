@@ -152,49 +152,46 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     _appTheme.value = AppTheme.MIDNIGHT_GLASS
                     prefs.edit().putString("appTheme", AppTheme.MIDNIGHT_GLASS.name).apply()
                 }
-                val todayNightSlot = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date()) + "_night"
-                if (prefs.getString("lastAutoNightToastSlot", "") != todayNightSlot) {
-                    prefs.edit().putString("lastAutoNightToastSlot", todayNightSlot).apply()
-                    com.example.epubreader.ui.components.toast.GlobalToastManager.show(
-                        text = "🌙 晚上好！已自动为您切换至暗夜护眼主题，愿好书伴您入眠~",
-                        type = com.example.epubreader.ui.components.toast.ToastType.Info,
-                        durationMs = 3500L
-                    )
+                val nightGreeting = when (currentHour) {
+                    in 19..23 -> "🌙 晚上好！已为您切换至暗夜护眼主题，愿好书伴您度过宁静夜晚~"
+                    else -> "🌌 夜深了，已为您切换至暗夜护眼主题，愿好书伴您入眠~"
                 }
+                com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                    text = nightGreeting,
+                    type = com.example.epubreader.ui.components.toast.ToastType.Info,
+                    durationMs = 3500L
+                )
             } else {
                 if (_appTheme.value == AppTheme.MIDNIGHT_GLASS) {
                     val dayTheme = _userPreferredDayTheme.value
                     _appTheme.value = dayTheme
                     prefs.edit().putString("appTheme", dayTheme.name).apply()
                 }
-                val todayDaySlot = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date()) + "_day"
-                if (prefs.getString("lastAutoNightToastSlot", "") != todayDaySlot) {
-                    prefs.edit().putString("lastAutoNightToastSlot", todayDaySlot).apply()
-                    com.example.epubreader.ui.components.toast.GlobalToastManager.show(
-                        text = "☀️ 早上好！已自动为您切换至日间清新主题，祝您阅读愉快~",
-                        type = com.example.epubreader.ui.components.toast.ToastType.Info,
-                        durationMs = 3500L
-                    )
-                }
-            }
-        } else {
-            // General daily launch greeting
-            val todayDate = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date())
-            if (prefs.getString("lastDailyGreetingDate", "") != todayDate) {
-                prefs.edit().putString("lastDailyGreetingDate", todayDate).apply()
-                val greeting = when (currentHour) {
-                    in 5..10 -> "🌅 早上好！新的一天，从阅读一本好书开始吧~"
-                    in 11..13 -> "🌤️ 中午好！享受惬意的阅读时光~"
-                    in 14..18 -> "🍵 下午好！泡一杯茶，继续未完的篇章吧~"
-                    in 19..23 -> "🌙 晚上好！在书海中卸下一天的疲惫~"
-                    else -> "🌌 夜深了，注意护眼，愿好书伴您入眠~"
+                val dayGreeting = when (currentHour) {
+                    in 5..10 -> "🌅 早上好！已为您切换至日间清新主题，新的一天从好书开始~"
+                    in 11..13 -> "🌤️ 中午好！已为您切换至日间清新主题，享受惬意阅读时光~"
+                    else -> "🍵 下午好！已为您切换至日间清新主题，祝您阅读愉快~"
                 }
                 com.example.epubreader.ui.components.toast.GlobalToastManager.show(
-                    text = greeting,
+                    text = dayGreeting,
                     type = com.example.epubreader.ui.components.toast.ToastType.Info,
                     durationMs = 3500L
                 )
             }
+        } else {
+            // General launch greeting (shown on every app launch)
+            val greeting = when (currentHour) {
+                in 5..10 -> "🌅 早上好！新的一天，从阅读一本好书开始吧~"
+                in 11..13 -> "🌤️ 中午好！享受惬意的阅读时光~"
+                in 14..18 -> "🍵 下午好！泡一杯茶，继续未完的篇章吧~"
+                in 19..23 -> "🌙 晚上好！在书海中卸下一天的疲惫~"
+                else -> "🌌 夜深了，注意护眼，愿好书伴您入眠~"
+            }
+            com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                text = greeting,
+                type = com.example.epubreader.ui.components.toast.ToastType.Info,
+                durationMs = 3500L
+            )
         }
     }
 
