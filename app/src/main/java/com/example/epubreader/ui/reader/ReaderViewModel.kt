@@ -64,6 +64,92 @@ class ReaderViewModel(
     private val _flatItems = MutableStateFlow<List<FlatReaderItem>>(emptyList())
     val flatItems: StateFlow<List<FlatReaderItem>> = _flatItems.asStateFlow()
 
+    private val _cumulativeCharCounts = MutableStateFlow<List<Int>>(emptyList())
+    val cumulativeCharCounts: StateFlow<List<Int>> = _cumulativeCharCounts.asStateFlow()
+
+    private val _totalCharCount = MutableStateFlow(0)
+    val totalCharCount: StateFlow<Int> = _totalCharCount.asStateFlow()
+
+    // Dynamic Reading Speed Tracking (CPM = Characters Per Minute, default: 450 CPM)
+    private var sessionStartTime = System.currentTimeMillis()
+    private var sessionStartCharIndex = 0
+    private var isSessionTracking = false
+
+    private val _readingSpeedCpm = MutableStateFlow(prefs.getFloat("readingSpeedCpm", 450f))
+    val readingSpeedCpm: StateFlow<Float> = _readingSpeedCpm.asStateFlow()
+
+    fun updateReadingPosition(itemIndex: Int) {
+        val cumulative = _cumulativeCharCounts.value
+        if (cumulative.isEmpty()) return
+        val clampedIndex = itemIndex.coerceIn(0, cumulative.size - 1)
+        val currentCharPos = cumulative[clampedIndex]
+
+        val now = System.currentTimeMillis()
+        if (!isSessionTracking) {
+            sessionStartTime = now
+            sessionStartCharIndex = currentCharPos
+            isSessionTracking = true
+            return
+        }
+
+        val elapsedMs = now - sessionStartTime
+        if (elapsedMs >= 30_000L) {
+            val charsRead = currentCharPos - sessionStartCharIndex
+            if (charsRead in 50..10_000) {
+                val currentSessionCpm = (charsRead.toFloat() / (elapsedMs.toFloat() / 60_000f)).coerceIn(150f, 1500f)
+                val newCpm = (_readingSpeedCpm.value * 0.80f) + (currentSessionCpm * 0.20f)
+                _readingSpeedCpm.value = newCpm
+                prefs.edit().putFloat("readingSpeedCpm", newCpm).apply()
+                
+                sessionStartTime = now
+                sessionStartCharIndex = currentCharPos
+            }
+        }
+    }
+
+    fun getEstimatedRemainingTimeText(currentIndex: Int): String {
+        val cumulative = _cumulativeCharCounts.value
+        val total = _totalCharCount.value
+        if (cumulative.isEmpty() || total <= 0) return "预计计算中..."
+
+        val clampedIndex = currentIndex.coerceIn(0, cumulative.size - 1)
+        val currentCharPos = cumulative[clampedIndex]
+        val remainingChars = (total - currentCharPos).coerceAtLeast(0)
+
+        val cpm = _readingSpeedCpm.value.coerceIn(150f, 1500f)
+        val remainingMinutes = kotlin.math.ceil(remainingChars.toFloat() / cpm).toInt()
+
+        return when {
+            remainingChars <= 50 || remainingMinutes <= 0 -> "预计剩余不到 1 分钟"
+            remainingMinutes < 60 -> "预计剩余 $remainingMinutes 分钟"
+            else -> {
+                val hours = remainingMinutes / 60
+                val mins = remainingMinutes % 60
+                if (mins > 0) "预计剩余 ${hours}小时${mins}分" else "预计剩余 ${hours}小时"
+            }
+        }
+    }
+
+    private fun recomputeCharacterCounts(items: List<FlatReaderItem>) {
+        val cumulative = ArrayList<Int>(items.size)
+        var sum = 0
+        for (item in items) {
+            cumulative.add(sum)
+            val count = when (item) {
+                is FlatReaderItem.Title -> item.title.length
+                is FlatReaderItem.Node -> {
+                    when (val node = item.node) {
+                        is ChapterNode.TextNode -> node.text.text.length
+                        is ChapterNode.ImageNode -> 50
+                    }
+                }
+            }
+            sum += count
+        }
+        _cumulativeCharCounts.value = cumulative
+        _totalCharCount.value = sum
+    }
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -242,7 +328,7 @@ class ReaderViewModel(
                         if (index % 5 == 0 || index == totalChapters - 1) {
                             val parsedList = resultList.toList()
                             _parsedChapters.value = parsedList
-                            _flatItems.value = parsedList.flatMapIndexed { cIdx, ch ->
+                            val flattened = parsedList.flatMapIndexed { cIdx, ch ->
                                 val list = mutableListOf<FlatReaderItem>()
                                 if (ch.title.isNotBlank() && ch.title != "Chapter") {
                                     list.add(FlatReaderItem.Title(cIdx, ch.title))
@@ -252,6 +338,8 @@ class ReaderViewModel(
                                 }
                                 list
                             }
+                            _flatItems.value = flattened
+                            recomputeCharacterCounts(flattened)
                         }
                     }
                 } catch (e: Exception) {

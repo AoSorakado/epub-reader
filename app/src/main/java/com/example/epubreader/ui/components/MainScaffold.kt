@@ -233,5 +233,14 @@ fun MainScaffold(navController: NavHostController) {
                 }
             }
         }
+
+        // Layer 4: Global Floating Liquid Toast Notification Capsule
+        val isDark = appTheme == com.example.epubreader.ui.theme.AppTheme.MIDNIGHT_GLASS
+        com.example.epubreader.ui.components.toast.GlobalLiquidToast(
+            backdrop = contentBackdrop,
+            isDark = isDark,
+            themeAccent = themeAccent,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
     }
 }

@@ -423,8 +423,47 @@ fun ReaderScreen(
                 bookEntity?.totalProgress ?: 0f
             }
             val progressPercent = (calculatedProgress * 100).toInt()
-            val remainingItems = (totalItems - currentItemIndex).coerceAtLeast(0)
-            val estimatedMinutesLeft = (remainingItems * 0.4f).roundToInt().coerceAtLeast(if (remainingItems > 0) 1 else 0)
+            val estimatedTimeText = viewModel.getEstimatedRemainingTimeText(currentItemIndex)
+
+            LaunchedEffect(currentItemIndex) {
+                viewModel.updateReadingPosition(currentItemIndex)
+            }
+
+            // Continuous Reading Health / Eye Rest Reminder (60 min, 90 min, 120 min)
+            LaunchedEffect(Unit) {
+                var elapsedSeconds = 0L
+                val milestonesNotified = mutableSetOf<Long>()
+                while (true) {
+                    kotlinx.coroutines.delay(1000L)
+                    elapsedSeconds++
+                    when {
+                        elapsedSeconds >= 3600L && 3600L !in milestonesNotified -> {
+                            milestonesNotified.add(3600L)
+                            com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                                text = "☕ 您已专注阅读 1 小时，请注意放松眼睛，眺望远方~",
+                                type = com.example.epubreader.ui.components.toast.ToastType.Health,
+                                durationMs = 3000L
+                            )
+                        }
+                        elapsedSeconds >= 5400L && 5400L !in milestonesNotified -> {
+                            milestonesNotified.add(5400L)
+                            com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                                text = "🌿 您已连续阅读 1.5 小时，建议起身活动一下哦~",
+                                type = com.example.epubreader.ui.components.toast.ToastType.Health,
+                                durationMs = 3000L
+                            )
+                        }
+                        elapsedSeconds >= 7200L && 7200L !in milestonesNotified -> {
+                            milestonesNotified.add(7200L)
+                            com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                                text = "✨ 您已沉浸阅读 2 小时，给眼睛放个小假吧~",
+                                type = com.example.epubreader.ui.components.toast.ToastType.Health,
+                                durationMs = 3000L
+                            )
+                        }
+                    }
+                }
+            }
 
             val haptic = LocalHapticFeedback.current
             var isCapsuleExpanded by remember { mutableStateOf(false) }
@@ -532,7 +571,7 @@ fun ReaderScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             if (expanded) {
                                 Text(
-                                    text = "预计剩余 $estimatedMinutesLeft 分钟 · $progressPercent%",
+                                    text = "$estimatedTimeText · $progressPercent%",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = textColor,

@@ -159,56 +159,13 @@ fun SettingsScreen(
                 .background(brush = settingsGradient)
                 .layerBackdrop(settingsBackdrop),
             topBar = {
-                Column {
-                    TopAppBar(
-                        title = { Text("配置", color = primaryTextColor, fontWeight = FontWeight.Bold) },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent,
-                            titleContentColor = primaryTextColor
-                        )
+                TopAppBar(
+                    title = { Text("配置", color = primaryTextColor, fontWeight = FontWeight.Bold) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = primaryTextColor
                     )
-                    
-                    // Top Sync Status Banner
-                    AnimatedVisibility(
-                        visible = syncState != SyncState.IDLE,
-                        enter = expandVertically(),
-                        exit = shrinkVertically()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    when (syncState) {
-                                        SyncState.SYNCING -> Color(0xFF007BFF).copy(alpha = 0.8f)
-                                        SyncState.SUCCESS -> Color(0xFF4CAF50).copy(alpha = 0.8f)
-                                        SyncState.ERROR -> Color(0xFFE53935).copy(alpha = 0.8f)
-                                        else -> Color.Transparent
-                                    }
-                                )
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            if (syncState == SyncState.SYNCING) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                            } else if (syncState == SyncState.SUCCESS || syncState == SyncState.ERROR) {
-                                Icon(
-                                    imageVector = Icons.Filled.Sync,
-                                    contentDescription = "Status",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                            }
-                            Text(syncMessage, color = Color.White, fontSize = 14.sp)
-                        }
-                    }
-                }
+                )
             },
             containerColor = Color.Transparent,
             contentColor = primaryTextColor

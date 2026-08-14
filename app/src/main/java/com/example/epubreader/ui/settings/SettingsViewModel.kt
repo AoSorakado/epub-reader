@@ -105,7 +105,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         
         viewModelScope.launch(Dispatchers.IO) {
             _syncState.value = SyncState.SYNCING
-            _syncMessage.value = "Connecting to WebDAV..."
+            _syncMessage.value = "正在连接 WebDAV..."
+            com.example.epubreader.ui.components.toast.GlobalToastManager.showSyncing("正在连接 WebDAV 服务器...")
             try {
                 // Save credentials for future use
                 prefs.edit()
@@ -121,15 +122,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                 // Recursive scan function
                 suspend fun scanDirectory(path: String, currentFolderName: String?) {
-                    _syncMessage.value = "Scanning ${currentFolderName ?: "root"}..."
+                    val folderLabel = currentFolderName ?: "根目录"
+                    _syncMessage.value = "正在扫描 $folderLabel..."
+                    com.example.epubreader.ui.components.toast.GlobalToastManager.showSyncing("WebDAV 扫描中: $folderLabel...")
                     val resources = client.listFiles(path)
                     for (res in resources) {
                         if (res.isDirectory) {
                             // The folder name is the res.name
                             scanDirectory(res.path, res.name)
                         } else if (res.name.endsWith(".epub", ignoreCase = true)) {
-                            // Series name is the folder name we are currently inside. 
-                            // If we are at the root, currentFolderName is null.
                             val seriesName = currentFolderName
                             
                             // Check if already in DB
@@ -140,7 +141,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             }
 
                             // 2. Extract Cover Streamingly
-                            _syncMessage.value = "Extracting cover for ${res.name}..."
+                            _syncMessage.value = "正在提取封面: ${res.name}..."
                             var coverImagePath: String? = null
                             try {
                                 client.streamFile(res.path) { inputStream ->
@@ -153,35 +154,48 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                                     }
                                 }
                             } catch (e: Exception) {
-                                e.printStackTrace() // Ignore cover extraction errors to keep syncing
+                                e.printStackTrace()
                             }
 
                             val book = BookEntity(
                                 title = res.name.removeSuffix(".epub").replace("-", " ").replace("_", " "),
                                 author = "Unknown",
                                 coverImage = coverImagePath,
-                                filePath = res.path, // Full path on server
+                                filePath = res.path,
                                 isWebDav = true,
                                 seriesName = seriesName
                             )
                             bookDao.insertBook(book)
                             foundCount++
-                            _syncMessage.value = "Found $foundCount new books..."
+                            _syncMessage.value = "已发现 $foundCount 本新书..."
+                            com.example.epubreader.ui.components.toast.GlobalToastManager.showSyncing("WebDAV 同步中: 已导入 $foundCount 本新书...")
                         }
                     }
                 }
 
                 scanDirectory("", null)
-                _syncMessage.value = "Sync Complete: Added $foundCount books!"
+                val successText = if (foundCount > 0) "WebDAV 同步完成，已导入 $foundCount 本书籍" else "WebDAV 同步完成，藏书已是最新"
+                _syncMessage.value = successText
                 _syncState.value = SyncState.SUCCESS
+                com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                    text = successText,
+                    type = com.example.epubreader.ui.components.toast.ToastType.Success,
+                    durationMs = 3000L
+                )
                 
                 // Reset state after 3 seconds
                 kotlinx.coroutines.delay(3000)
                 _syncState.value = SyncState.IDLE
             } catch (e: Exception) {
                 e.printStackTrace()
-                _syncMessage.value = "Sync Failed: ${e.message}"
+                val errorText = "WebDAV 同步失败: ${e.localizedMessage ?: "连接超时或认证错误"}"
+                _syncMessage.value = errorText
                 _syncState.value = SyncState.ERROR
+                com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                    text = errorText,
+                    type = com.example.epubreader.ui.components.toast.ToastType.Error,
+                    durationMs = 3500L
+                )
                 
                 kotlinx.coroutines.delay(3000)
                 _syncState.value = SyncState.IDLE
