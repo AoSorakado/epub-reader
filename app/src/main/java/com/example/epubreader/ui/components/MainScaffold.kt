@@ -143,27 +143,24 @@ fun MainScaffold(navController: NavHostController) {
                 arguments = listOf(androidx.navigation.navArgument("bookId") { type = androidx.navigation.NavType.LongType }),
                 enterTransition = {
                     androidx.compose.animation.scaleIn(
-                        initialScale = 0.7f,
-                        animationSpec = androidx.compose.animation.core.tween(400, easing = androidx.compose.animation.core.EaseOutQuint)
-                    ) + androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(400))
+                        initialScale = 0.88f,
+                        animationSpec = androidx.compose.animation.core.tween(320, easing = androidx.compose.animation.core.EaseOutCubic)
+                    ) + androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(300))
                 },
                 exitTransition = {
                     androidx.compose.animation.scaleOut(
-                        targetScale = 0.7f,
-                        animationSpec = androidx.compose.animation.core.tween(300, easing = androidx.compose.animation.core.EaseInQuint)
-                    ) + androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(300))
+                        targetScale = 0.88f,
+                        animationSpec = androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.EaseInCubic)
+                    ) + androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(240))
                 },
                 popEnterTransition = {
-                    androidx.compose.animation.scaleIn(
-                        initialScale = 0.7f,
-                        animationSpec = androidx.compose.animation.core.tween(400, easing = androidx.compose.animation.core.EaseOutQuint)
-                    ) + androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(400))
+                    androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(250))
                 },
                 popExitTransition = {
                     androidx.compose.animation.scaleOut(
-                        targetScale = 0.7f,
-                        animationSpec = androidx.compose.animation.core.tween(300, easing = androidx.compose.animation.core.EaseInQuint)
-                    ) + androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(300))
+                        targetScale = 0.88f,
+                        animationSpec = androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.EaseInCubic)
+                    ) + androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(240))
                 }
             ) { backStackEntry ->
                 val bookId = backStackEntry.arguments?.getLong("bookId") ?: return@composable
