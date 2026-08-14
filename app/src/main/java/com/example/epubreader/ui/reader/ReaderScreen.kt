@@ -103,14 +103,35 @@ import androidx.compose.ui.platform.LocalDensity
 fun ReaderScreen(
     navController: NavController,
     bookId: Long,
-    backgroundBackdrop: com.kyant.backdrop.Backdrop
+    backgroundBackdrop: com.kyant.backdrop.Backdrop,
+    onBackClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val dao = AppDatabase.getDatabase(context).bookDao()
-    val viewModel: ReaderViewModel = viewModel(factory = ReaderViewModelFactory(bookId, dao, context.applicationContext as Application))
+    val viewModel: ReaderViewModel = viewModel(
+        key = "reader_$bookId",
+        factory = ReaderViewModelFactory(bookId, dao, context.applicationContext as Application)
+    )
+
+    var showToolbars by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var settingsButtonBounds by remember { mutableStateOf(Rect.Zero) }
+
+    androidx.activity.compose.BackHandler(enabled = true) {
+        if (showSettings) {
+            showSettings = false
+        } else if (showToolbars) {
+            showToolbars = false
+        } else {
+            if (onBackClick != null) {
+                onBackClick()
+            } else {
+                navController.popBackStack()
+            }
+        }
+    }
 
     LaunchedEffect(bookId) {
-        kotlinx.coroutines.delay(400) // Wait for enter transition to finish smoothly
         viewModel.loadBook(context)
     }
 
@@ -130,10 +151,6 @@ fun ReaderScreen(
     val appTheme by settingsViewModel.appTheme.collectAsState()
     val isCustomThemeThreeColors by settingsViewModel.isCustomThemeThreeColors.collectAsState()
     val customColors by settingsViewModel.customColors.collectAsState()
-
-    var showToolbars by remember { mutableStateOf(false) }
-    var showSettings by remember { mutableStateOf(false) }
-    var settingsButtonBounds by remember { mutableStateOf(Rect.Zero) }
 
     val morphProgress by animateFloatAsState(
         targetValue = if (showSettings) 1f else 0f,
@@ -408,7 +425,13 @@ fun ReaderScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     LiquidButton(
-                        onClick = { navController.popBackStack() },
+                        onClick = {
+                            if (onBackClick != null) {
+                                onBackClick()
+                            } else {
+                                navController.popBackStack()
+                            }
+                        },
                         backdrop = readerBackdrop
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = textColor)

@@ -74,6 +74,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.util.lerp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
+import com.example.epubreader.ui.components.Screen
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.epubreader.data.db.AppDatabase
@@ -105,7 +107,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 fun BookshelfScreen(
     navController: NavController,
     settingsViewModel: SettingsViewModel,
-    globalBackdrop: com.kyant.backdrop.backdrops.LayerBackdrop
+    globalBackdrop: com.kyant.backdrop.backdrops.LayerBackdrop,
+    onReaderActiveChanged: ((Boolean) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val dao = AppDatabase.getDatabase(context).bookDao()
@@ -125,26 +128,12 @@ fun BookshelfScreen(
     val morphProgress by animateFloatAsState(
         targetValue = if (showSortMenu) 1f else 0f,
         animationSpec = if (showSortMenu) {
-            spring(dampingRatio = 0.72f, stiffness = 240f)
+            spring(dampingRatio = 0.82f, stiffness = 220f)
         } else {
-            spring(dampingRatio = 0.78f, stiffness = 195f)
+            spring(dampingRatio = 0.86f, stiffness = 260f)
         },
         label = "sortMorphProgress"
     )
-
-    // Button Jelly Pulse upon collapse
-    val sortButtonPulseScale = remember { androidx.compose.animation.core.Animatable(1f) }
-
-    LaunchedEffect(showSortMenu) {
-        if (!showSortMenu && morphProgress > 0f) {
-            kotlinx.coroutines.delay(260)
-            sortButtonPulseScale.snapTo(1.18f)
-            sortButtonPulseScale.animateTo(
-                1f,
-                spring(dampingRatio = 0.42f, stiffness = 320f)
-            )
-        }
-    }
 
     val coroutineScope = rememberCoroutineScope()
     
@@ -254,44 +243,39 @@ fun BookshelfScreen(
     var isNavigating by remember { mutableStateOf(false) }
     var bookToDelete by remember { mutableStateOf<BookEntity?>(null) }
     var seriesLongPressTarget by remember { mutableStateOf<Pair<String, List<BookEntity>>?>(null) }
-
-    // Book Open Morphing State
     var openingBook by remember { mutableStateOf<BookEntity?>(null) }
     var openingBookBounds by remember { mutableStateOf(Rect.Zero) }
-    var activeOpeningBook by remember { mutableStateOf<BookEntity?>(null) }
-    if (openingBook != null) {
-        activeOpeningBook = openingBook
-    }
+    var openingBookIsListLayout by remember { mutableStateOf(false) }
+    var isOpeningBookExpanded by remember { mutableStateOf(false) }
 
-    val isOpeningBook = openingBook != null
-    val bookOpenTransition = updateTransition(targetState = isOpeningBook, label = "BookOpenTransition")
+    val isOpeningBookActive = openingBook != null
+    val bookOpenTransition = updateTransition(targetState = isOpeningBookExpanded, label = "BookOpenTransition")
     val bookOpenProgress by bookOpenTransition.animateFloat(
         transitionSpec = {
             if (targetState) {
-                spring(dampingRatio = 0.74f, stiffness = 260f)
+                spring(dampingRatio = 0.80f, stiffness = 180f)
             } else {
-                spring(dampingRatio = 0.82f, stiffness = 340f)
+                spring(dampingRatio = 0.85f, stiffness = 210f)
             }
         },
         label = "bookOpenProgress"
     ) { if (it) 1f else 0f }
 
-    LaunchedEffect(bookOpenProgress) {
-        if (bookOpenProgress >= 0.96f && isOpeningBook && activeOpeningBook != null && !isNavigating) {
-            isNavigating = true
-            val targetId = activeOpeningBook!!.id
-            navController.navigate("reader/$targetId")
+    LaunchedEffect(bookOpenProgress, isOpeningBookExpanded) {
+        val isReading = isOpeningBookExpanded || bookOpenProgress > 0.001f
+        onReaderActiveChanged?.invoke(isReading)
+        if (!isOpeningBookExpanded && bookOpenProgress <= 0.001f && openingBook != null) {
+            openingBook = null
         }
     }
 
-    // Reset debounce & opening state when returning to the screen
-    LaunchedEffect(Unit) { 
-        isNavigating = false 
-        openingBook = null
-    }
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val density = LocalDensity.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
 
-    val handleBookClick: (BookEntity) -> Unit = { book ->
-        if (!isNavigating && openingBook == null) {
+    val handleBookClick: (BookEntity, Boolean) -> Unit = { book, isList ->
+        if (!isOpeningBookActive) {
             val coords = bookCoords[book.id]
             val bounds = if (coords != null && rootCoords != null) {
                 try {
@@ -300,11 +284,19 @@ fun BookshelfScreen(
             } else Rect.Zero
 
             if (bounds != Rect.Zero) {
-                openingBookBounds = bounds
                 openingBook = book
+                openingBookBounds = bounds
+                openingBookIsListLayout = isList
+                isOpeningBookExpanded = true
             } else {
-                isNavigating = true
-                navController.navigate("reader/${book.id}")
+                val fallbackBounds = Rect(
+                    screenWidthPx * 0.1f, screenHeightPx * 0.3f,
+                    screenWidthPx * 0.9f, screenHeightPx * 0.7f
+                )
+                openingBook = book
+                openingBookBounds = fallbackBounds
+                openingBookIsListLayout = isList
+                isOpeningBookExpanded = true
             }
         }
     }
@@ -317,6 +309,10 @@ fun BookshelfScreen(
     val primaryTextColor = if (isDark) Color(0xFFF8FAFC) else Color(0xFF1E1E24)
     val secondaryTextColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF543866).copy(alpha = 0.8f)
 
+    val themeAccent = getThemeAccentColor(
+        theme = appTheme,
+        customColors = if (isCustomThemeThreeColors) customColors else customColors.take(2)
+    )
     val bookshelfGradient = getThemeGradient(
         theme = appTheme,
         customColors = if (isCustomThemeThreeColors) customColors else customColors.take(2)
@@ -332,30 +328,49 @@ fun BookshelfScreen(
     val sortDialogBackdrop = rememberLayerBackdrop()
     val activeBackdrop = globalBackdrop
     
-    // State to keep content alive during the exit animation
     var displaySeries by remember { mutableStateOf<Pair<String, List<BookEntity>>?>(null) }
-    if (selectedSeries != null) {
-        displaySeries = selectedSeries
-    }
+    var isSeriesExpanded by remember { mutableStateOf(false) }
 
-    val isSeriesExpanded = selectedSeries != null && openingBook == null
     val seriesTransition = updateTransition(targetState = isSeriesExpanded, label = "SeriesMorphTransition")
     val seriesExpandProgress by seriesTransition.animateFloat(
         transitionSpec = {
             if (targetState) {
-                spring(dampingRatio = 0.72f, stiffness = 280f)
+                spring(dampingRatio = 0.82f, stiffness = 180f)
             } else {
-                spring(dampingRatio = 0.82f, stiffness = 340f)
+                spring(dampingRatio = 0.86f, stiffness = 220f)
             }
         },
         label = "seriesMorphProgress"
     ) { if (it) 1f else 0f }
 
-    val backgroundBlurRadius by androidx.compose.animation.core.animateDpAsState(
-        targetValue = if (seriesExpandProgress > 0.01f || bookOpenProgress > 0.01f || showContextMenuForBook != null) 16.dp else 0.dp,
-        animationSpec = androidx.compose.animation.core.tween(300),
-        label = "BackgroundBlur"
-    )
+    LaunchedEffect(seriesExpandProgress, isSeriesExpanded) {
+        if (!isSeriesExpanded && seriesExpandProgress <= 0.001f && displaySeries != null) {
+            displaySeries = null
+            selectedSeries = null
+        }
+    }
+
+    val handleSeriesClick: (Pair<String, List<BookEntity>>, Rect) -> Unit = { series, bounds ->
+        if (!isOpeningBookActive && !isSeriesExpanded) {
+            sourceBounds = bounds
+            selectedSeries = series
+            displaySeries = series
+            isSeriesExpanded = true
+        }
+    }
+
+    val handleSeriesDismiss: () -> Unit = {
+        if (!isOpeningBookActive && isSeriesExpanded) {
+            isSeriesExpanded = false
+        }
+    }
+
+    val backgroundBlurRadius = maxOf(
+        lerp(0f, 16f, seriesExpandProgress),
+        lerp(0f, 16f, bookOpenProgress),
+        if (showContextMenuForBook != null) 16f else 0f
+    ).dp
+
     val layoutMethod by viewModel.layoutMethod.collectAsState()
 
     Box(modifier = Modifier
@@ -388,7 +403,6 @@ fun BookshelfScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(end = 8.dp)
                         ) {
-                            // Liquid Layout Switcher Button
                             LiquidButton(
                                 onClick = { viewModel.setLayoutMethod(if (layoutMethod == 0) 1 else 0) },
                                 backdrop = globalBackdrop,
@@ -402,7 +416,6 @@ fun BookshelfScreen(
                                 )
                             }
 
-                            // Liquid Sort Button
                             LiquidButton(
                                 onClick = { showSortMenu = true },
                                 backdrop = globalBackdrop,
@@ -415,8 +428,6 @@ fun BookshelfScreen(
                                     }
                                     .graphicsLayer {
                                         alpha = if (morphProgress > 0.001f) 0f else 1f
-                                        scaleX = sortButtonPulseScale.value
-                                        scaleY = sortButtonPulseScale.value
                                     }
                             ) {
                                 Icon(
@@ -446,11 +457,12 @@ fun BookshelfScreen(
             LazyVerticalGrid(
                 columns = if (layoutMethod == 0) GridCells.Fixed(3) else GridCells.Fixed(1),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 80.dp) // Leave space for bottom bar
+                contentPadding = PaddingValues(bottom = 80.dp)
             ) {
             items(groupedItems) { item ->
                 when (item) {
                     is BookEntity -> {
+                        val isOpeningThis = (openingBook?.id == item.id && bookOpenProgress > 0.001f)
                         val pointerModifier = if (sortMethod == 2) {
                             Modifier.pointerInput(item.id) {
                                 var hasDragged = false
@@ -485,7 +497,7 @@ fun BookshelfScreen(
                                         pressedBookId = null
                                     },
                                     onTap = {
-                                        handleBookClick(item)
+                                        handleBookClick(item, layoutMethod == 1)
                                     }
                                 )
                             }
@@ -498,7 +510,7 @@ fun BookshelfScreen(
                                         pressedBookId = null
                                     },
                                     onTap = {
-                                        handleBookClick(item)
+                                        handleBookClick(item, layoutMethod == 1)
                                     },
                                     onLongPress = {
                                         showContextMenuForBook = item
@@ -512,31 +524,31 @@ fun BookshelfScreen(
                             isPressed = (pressedBookId == item.id), 
                             backdrop = globalBackdrop, 
                             isDark = isDark,
+                            isHidden = isOpeningThis,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor,
-                            modifier = pointerModifier.onGloballyPositioned { coords -> 
-                                bookCoords[item.id] = coords 
-                            }
+                            onPositioned = { coords ->
+                                bookCoords[item.id] = coords
+                            },
+                            modifier = pointerModifier
                         )
                     }
                     is Pair<*, *> -> {
                         @Suppress("UNCHECKED_CAST")
                         val series = item as Pair<String, List<BookEntity>>
+                        val isSeriesHidden = (displaySeries?.first == series.first && seriesExpandProgress > 0.001f)
                         SeriesItem(
                             seriesName = series.first,
                             books = series.second,
                             rootCoords = rootCoords,
                             backdrop = globalBackdrop,
-                            isHidden = (series.first == selectedSeries?.first && seriesExpandProgress > 0.35f),
+                            isHidden = isSeriesHidden,
                             isListLayout = layoutMethod == 1,
                             isDark = isDark,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor,
                             onClick = { bounds ->
-                                if (!isNavigating && openingBook == null) {
-                                    sourceBounds = bounds
-                                    selectedSeries = series
-                                }
+                                handleSeriesClick(series, bounds)
                             },
                             onLongClick = {
                                 seriesLongPressTarget = series
@@ -552,19 +564,11 @@ fun BookshelfScreen(
                 }
             }
         }
-        } // Close LazyVerticalGrid Box
+        }
         
-        } // Close Scaffold content block
-    } // Close Inner Box
+        }
+    }
 
-        val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-        val density = LocalDensity.current
-        val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
-        val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
-
-        // ==========================================
-        // 1. Fluid Series Morphing Container (Glass Expand/Collapse)
-        // ==========================================
         if (seriesExpandProgress > 0.001f && displaySeries != null) {
             val (seriesTitle, seriesBooks) = displaySeries!!
             val expandedWidthPx = minOf(screenWidthPx * 0.92f, with(density) { 480.dp.toPx() })
@@ -578,22 +582,18 @@ fun BookshelfScreen(
             val currentHeight = lerp(sourceBounds.height, expandedHeightPx, seriesExpandProgress).coerceAtLeast(1f)
             val currentRadius = lerp(20f, 28f, seriesExpandProgress).coerceAtLeast(0f)
 
-            // Scrim
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = (0.45f * seriesExpandProgress).coerceIn(0f, 1f)))
+                    .background(Color.Black.copy(alpha = (0.10f * seriesExpandProgress).coerceIn(0f, 1f)))
                     .clickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                         indication = null
                     ) {
-                        if (!isNavigating && openingBook == null) {
-                            selectedSeries = null
-                        }
+                        handleSeriesDismiss()
                     }
             )
 
-            // Morphing Glass Container
             Box(
                 modifier = Modifier
                     .layout { measurable, _ ->
@@ -611,38 +611,42 @@ fun BookshelfScreen(
                             vibrancy()
                             blur(lerp(3f, 8f, seriesExpandProgress).coerceAtLeast(0.1f).dp.toPx())
                             lens(
-                                refractionHeight = lerp(16f, 24f, seriesExpandProgress).coerceAtLeast(0.1f).dp.toPx(),
-                                refractionAmount = lerp(32f, 48f, seriesExpandProgress).coerceAtLeast(0.1f).dp.toPx(),
+                                refractionHeight = lerp(14f, 24f, seriesExpandProgress).coerceAtLeast(0.1f).dp.toPx(),
+                                refractionAmount = lerp(28f, 48f, seriesExpandProgress).coerceAtLeast(0.1f).dp.toPx(),
                                 chromaticAberration = true
                             )
                         },
                         highlight = { Highlight.Plain },
+                        shadow = {
+                            Shadow(
+                                radius = lerp(10f, 24f, seriesExpandProgress).dp,
+                                color = Color.Black.copy(alpha = lerp(0.06f, 0.14f, seriesExpandProgress))
+                            )
+                        },
                         onDrawSurface = {
                             drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
-                        },
-                        exportedBackdrop = seriesDialogBackdrop
+                        }
                     )
                     .clickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                         indication = null
-                    ) { /* Consume clicks inside dialog */ }
+                    ) { }
             ) {
-                // Collapsed Stage Thumbnail (fades out)
-                if (seriesExpandProgress < 0.35f) {
+                if (seriesExpandProgress < 0.40f) {
+                    val collapsedAlpha = (1f - (seriesExpandProgress / 0.35f)).coerceIn(0f, 1f)
                     Box(
                         modifier = Modifier
-                            .requiredSize(
-                                width = with(density) { sourceBounds.width.coerceAtLeast(1f).toDp() },
-                                height = with(density) { sourceBounds.height.coerceAtLeast(1f).toDp() }
-                            )
+                            .fillMaxSize()
+                            .padding(10.dp)
                             .graphicsLayer {
-                                alpha = (1f - seriesExpandProgress * 3f).coerceIn(0f, 1f)
+                                alpha = collapsedAlpha
                             },
                         contentAlignment = Alignment.Center
                     ) {
                         SeriesItemContent(
                             seriesName = seriesTitle,
                             books = seriesBooks,
+                            isListLayout = layoutMethod == 1,
                             isDark = isDark,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor
@@ -650,7 +654,6 @@ fun BookshelfScreen(
                     }
                 }
 
-                // Expanded Stage Content (fades in)
                 if (seriesExpandProgress > 0.15f) {
                     val contentAlpha = ((seriesExpandProgress - 0.20f) / 0.80f).coerceIn(0f, 1f)
                     val contentScale = lerp(0.92f, 1f, contentAlpha)
@@ -683,21 +686,10 @@ fun BookshelfScreen(
                             Box(
                                 modifier = Modifier
                                     .size(34.dp)
-                                    .drawBackdrop(
-                                        backdrop = seriesDialogBackdrop,
-                                        shape = { androidx.compose.foundation.shape.CircleShape },
-                                        effects = {
-                                            vibrancy()
-                                            lens(
-                                                refractionHeight = 8f.dp.toPx(),
-                                                refractionAmount = 14f.dp.toPx(),
-                                                chromaticAberration = true
-                                            )
-                                        },
-                                        highlight = { Highlight.Plain },
-                                        onDrawSurface = { drawRect(Color.White.copy(alpha = if (isDark) 0.10f else 0.18f)) }
-                                    )
-                                    .clickable { selectedSeries = null },
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(if (isDark) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.35f))
+                                    .border(0.6.dp, Color.White.copy(alpha = 0.5f), androidx.compose.foundation.shape.CircleShape)
+                                    .clickable { handleSeriesDismiss() },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text("✕", color = primaryTextColor, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, fontSize = 14.sp)
@@ -723,18 +715,21 @@ fun BookshelfScreen(
                         ) {
                             itemsIndexed(seriesBooks) { index, book ->
                                 val volumeNumber = index + 1
+                                val isBookOpeningThis = (openingBook?.id == book.id && bookOpenProgress > 0.001f)
                                 SeriesInnerBookRow(
                                     book = book,
                                     seriesTitle = seriesTitle,
                                     volumeNumber = volumeNumber,
                                     isPressed = (pressedBookId == book.id),
                                     isDark = isDark,
-                                    backdrop = seriesDialogBackdrop,
-                                    listState = seriesBooksState,
+                                    themeAccent = themeAccent,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    isHidden = isBookOpeningThis,
+                                    onPositioned = { coords ->
+                                        bookCoords[book.id] = coords
+                                    },
                                     modifier = Modifier
-                                        .onGloballyPositioned { coords -> 
-                                            bookCoords[book.id] = coords 
-                                        }
                                         .pointerInput(book.id) {
                                             detectTapGestures(
                                                 onPress = {
@@ -743,7 +738,7 @@ fun BookshelfScreen(
                                                     pressedBookId = null
                                                 },
                                                 onTap = {
-                                                    handleBookClick(book)
+                                                    handleBookClick(book, true)
                                                 },
                                                 onLongPress = {
                                                     showContextMenuForBook = book
@@ -758,11 +753,8 @@ fun BookshelfScreen(
             }
         }
 
-        // ==========================================
-        // 2. Fluid Book Open Morphing Overlay (Card -> Full Screen Reader)
-        // ==========================================
-        if (bookOpenProgress > 0.001f && activeOpeningBook != null) {
-            val book = activeOpeningBook!!
+        if (bookOpenProgress > 0.001f && openingBook != null) {
+            val book = openingBook!!
             val targetLeft = 0f
             val targetTop = 0f
             val targetWidth = screenWidthPx
@@ -774,14 +766,12 @@ fun BookshelfScreen(
             val currentHeight = lerp(openingBookBounds.height, targetHeight, bookOpenProgress).coerceAtLeast(1f)
             val currentRadius = lerp(20f, 0f, bookOpenProgress).coerceAtLeast(0f)
 
-            // Dynamic background scrim
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = (0.55f * bookOpenProgress).coerceIn(0f, 1f)))
             )
 
-            // Fullscreen Morphing Glass Sheet
             Box(
                 modifier = Modifier
                     .layout { measurable, _ ->
@@ -793,7 +783,7 @@ fun BookshelfScreen(
                         }
                     }
                     .drawBackdrop(
-                        backdrop = bookshelfBackdrop,
+                        backdrop = globalBackdrop,
                         shape = { RoundedCornerShape(with(density) { currentRadius.coerceAtLeast(0f).dp }) },
                         effects = {
                             vibrancy()
@@ -812,23 +802,20 @@ fun BookshelfScreen(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                // Collapsed Book Thumbnail (fading out smoothly in first 35%)
                 if (bookOpenProgress < 0.40f) {
+                    val collapsedAlpha = (1f - (bookOpenProgress / 0.35f)).coerceIn(0f, 1f)
                     Box(
                         modifier = Modifier
-                            .requiredSize(
-                                width = with(density) { openingBookBounds.width.coerceAtLeast(1f).toDp() },
-                                height = with(density) { openingBookBounds.height.coerceAtLeast(1f).toDp() }
-                            )
+                            .fillMaxSize()
+                            .padding(10.dp)
                             .graphicsLayer {
-                                alpha = (1f - bookOpenProgress * 2.8f).coerceIn(0f, 1f)
+                                alpha = collapsedAlpha
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        BookItem(
+                        BookItemContent(
                             book = book,
-                            isListLayout = layoutMethod == 1,
-                            backdrop = globalBackdrop,
+                            isListLayout = openingBookIsListLayout,
                             isDark = isDark,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor
@@ -836,64 +823,149 @@ fun BookshelfScreen(
                     }
                 }
 
-                // Expanded Reader Atmosphere View (fading in and expanding gently)
-                if (bookOpenProgress > 0.15f) {
-                    val contentAlpha = ((bookOpenProgress - 0.20f) / 0.80f).coerceIn(0f, 1f)
-                    val contentScale = lerp(0.88f, 1f, contentAlpha)
+                if (bookOpenProgress > 0.15f && bookOpenProgress < 0.95f) {
+                    val atmosphereAlpha = if (bookOpenProgress < 0.70f) {
+                        ((bookOpenProgress - 0.15f) / 0.45f).coerceIn(0f, 1f)
+                    } else {
+                        (1f - ((bookOpenProgress - 0.70f) / 0.25f)).coerceIn(0f, 1f)
+                    }
+                    val contentScale = lerp(0.92f, 1f, bookOpenProgress)
 
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                alpha = contentAlpha
-                                scaleX = contentScale
-                                scaleY = contentScale
+                    if (openingBookIsListLayout) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    alpha = atmosphereAlpha
+                                    scaleX = contentScale
+                                    scaleY = contentScale
+                                }
+                                .padding(horizontal = 24.dp, vertical = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (book.coverImage != null && File(book.coverImage).exists()) {
+                                val coverWidth = lerp(60f, 130f, bookOpenProgress).dp
+                                Box(
+                                    modifier = Modifier
+                                        .width(coverWidth)
+                                        .aspectRatio(0.7f)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .shadow(elevation = 12.dp, shape = RoundedCornerShape(12.dp))
+                                ) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(File(book.coverImage))
+                                            .crossfade(false)
+                                            .build(),
+                                        contentDescription = "Cover",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
                             }
-                            .padding(28.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        if (book.coverImage != null && File(book.coverImage).exists()) {
-                            Box(
-                                modifier = Modifier
-                                    .widthIn(max = 200.dp)
-                                    .aspectRatio(0.7f)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .shadow(elevation = 16.dp, shape = RoundedCornerShape(16.dp))
+                            Spacer(modifier = Modifier.width(20.dp))
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.Center
                             ) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(File(book.coverImage))
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = "Cover",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
+                                Text(
+                                    text = book.title,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
+                                    color = primaryTextColor,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = book.author ?: "未知作者",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = secondaryTextColor
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = "正在载入阅读...",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF),
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text(
-                            text = book.title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
-                            color = primaryTextColor,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = book.author ?: "未知作者",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = secondaryTextColor
-                        )
-                        Spacer(modifier = Modifier.height(18.dp))
-                        Text(
-                            text = "正在载入阅读...",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF),
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    alpha = atmosphereAlpha
+                                    scaleX = contentScale
+                                    scaleY = contentScale
+                                }
+                                .padding(28.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            if (book.coverImage != null && File(book.coverImage).exists()) {
+                                Box(
+                                    modifier = Modifier
+                                        .widthIn(max = 200.dp)
+                                        .aspectRatio(0.7f)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .shadow(elevation = 16.dp, shape = RoundedCornerShape(16.dp))
+                                ) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(File(book.coverImage))
+                                            .crossfade(false)
+                                            .build(),
+                                        contentDescription = "Cover",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Text(
+                                text = book.title,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
+                                color = primaryTextColor,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = book.author ?: "未知作者",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = secondaryTextColor
+                            )
+                            Spacer(modifier = Modifier.height(18.dp))
+                            Text(
+                                text = "正在载入阅读...",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF),
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+                
+                if (bookOpenProgress >= 0.70f) {
+                    val readerAlpha = ((bookOpenProgress - 0.70f) / 0.30f).coerceIn(0f, 1f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = readerAlpha
+                            }
+                    ) {
+                        com.example.epubreader.ui.reader.ReaderScreen(
+                            navController = navController,
+                            bookId = book.id,
+                            backgroundBackdrop = bookshelfBackdrop,
+                            onBackClick = {
+                                isOpeningBookExpanded = false // Smoothly collapses back to book card on bookshelf!
+                            }
                         )
                     }
                 }
@@ -928,8 +1000,7 @@ fun BookshelfScreen(
                             seriesTitle = selectedSeries!!.first,
                             volumeNumber = if (index >= 0) index + 1 else 1,
                             isPressed = (pressedBookId == book.id),
-                            isDark = isDark,
-                            backdrop = seriesDialogBackdrop
+                            isDark = isDark
                         )
                     } else {
                         BookItem(
@@ -1142,17 +1213,16 @@ fun BookshelfScreen(
                             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                             indication = null,
                             onClick = {} // Prevent taps from dismissing through to scrim
-                        )
-                        .padding(8.dp),
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     // Morphing Icon: Sort icon centered inside button, fades out as it expands
-                    if (morphProgress < 0.6f) {
+                    if (morphProgress < 0.5f) {
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
+                                .fillMaxSize()
                                 .graphicsLayer {
-                                    alpha = (1f - morphProgress * 2.5f).coerceIn(0f, 1f)
+                                    alpha = (1f - (morphProgress / 0.35f)).coerceIn(0f, 1f)
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -1166,12 +1236,13 @@ fun BookshelfScreen(
                     }
 
                     // Morphing Content: Unified Segmented Glass Slider (Single Glass Capsule on Single Track)
-                    if (morphProgress > 0.2f) {
+                    if (morphProgress > 0.15f) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
+                                .padding(8.dp)
                                 .graphicsLayer {
-                                    alpha = ((morphProgress - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                                    alpha = ((morphProgress - 0.20f) / 0.80f).coerceIn(0f, 1f)
                                 }
                         ) {
                             val sortOptions = listOf(
@@ -1362,6 +1433,7 @@ fun BookshelfScreen(
     } // Close root Box
 } // Close BookshelfScreen
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SeriesItem(
     seriesName: String,
@@ -1429,166 +1501,14 @@ fun SeriesItem(
             )
             .padding(10.dp)
     ) {
-        if (isListLayout) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(80.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp, 80.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                ) {
-                    val maxVisible = minOf(3, books.size)
-                    for (i in maxVisible - 1 downTo 0) {
-                        val book = books[i]
-                        val rank = maxVisible - 1 - i
-                        val offsetDp = rank * 4
-                        val scaleVal = 1f - (rank * 0.05f)
-                        
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .offset(y = (-offsetDp).dp, x = offsetDp.dp)
-                                .graphicsLayer {
-                                    scaleX = scaleVal
-                                    scaleY = scaleVal
-                                }
-                                .clip(RoundedCornerShape(8.dp)),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shadowElevation = (maxVisible - i).dp
-                        ) {
-                            if (book.coverImage != null && File(book.coverImage).exists()) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current).data(File(book.coverImage)).crossfade(true).build(),
-                                    contentDescription = "Cover", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = seriesName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                        color = primaryTextColor,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${books.size} 册全集",
-                        color = secondaryTextColor,
-                        fontSize = 12.sp,
-                        maxLines = 1
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "系列合集",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)
-                    )
-                }
-            }
-        } else {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .aspectRatio(0.7f)
-                        .fillMaxWidth()
-                ) {
-                    val maxVisible = minOf(3, books.size)
-                    for (i in maxVisible - 1 downTo 0) {
-                        val book = books[i]
-                        val rank = maxVisible - 1 - i
-                        val offsetDx = (rank * 7).dp
-                        val offsetDy = (-rank * 5).dp
-                        val scaleVal = 1f - (rank * 0.05f)
-                        val rotVal = when (rank) {
-                            1 -> 3.5f
-                            2 -> -3f
-                            else -> 0f
-                        }
-                        
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .offset(x = offsetDx, y = offsetDy)
-                                .graphicsLayer {
-                                    scaleX = scaleVal
-                                    scaleY = scaleVal
-                                    rotationZ = rotVal
-                                }
-                                .clip(RoundedCornerShape(8.dp))
-                                .border(0.6.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shadowElevation = (6 - rank * 2).dp
-                        ) {
-                            if (book.coverImage != null && File(book.coverImage).exists()) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(File(book.coverImage))
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = "Cover",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                    Text("暂无封面", style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                        }
-                    }
-                    
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(4.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.Black.copy(alpha = 0.45f))
-                            .border(0.6.dp, Color.White.copy(alpha = 0.40f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text("${books.size} 册", color = Color.White, fontSize = 10.5.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(10.dp))
-                
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(38.dp),
-                    contentAlignment = Alignment.TopStart
-                ) {
-                    Text(
-                        text = seriesName,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                        ),
-                        color = primaryTextColor,
-                        maxLines = 2,
-                        minLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
+        SeriesItemContent(
+            seriesName = seriesName,
+            books = books,
+            isListLayout = isListLayout,
+            isDark = isDark,
+            primaryTextColor = primaryTextColor,
+            secondaryTextColor = secondaryTextColor
+        )
     }
 }
 
@@ -1596,98 +1516,287 @@ fun SeriesItem(
 fun SeriesItemContent(
     seriesName: String,
     books: List<BookEntity>,
+    isListLayout: Boolean = false,
     isDark: Boolean = false,
     primaryTextColor: Color = Color(0xFF1E1E24),
     secondaryTextColor: Color = Color(0xFF543866)
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
+    if (isListLayout) {
+        Row(
             modifier = Modifier
-                .aspectRatio(0.7f)
-                .fillMaxWidth(),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .height(80.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            val maxVisible = minOf(3, books.size)
-            for (i in maxVisible - 1 downTo 0) {
-                val book = books[i]
-                val rank = maxVisible - 1 - i
-                val offsetDx = (rank * 7).dp
-                val offsetDy = (-rank * 5).dp
-                val scaleVal = 1f - (rank * 0.05f)
-                val rotVal = when (rank) {
-                    1 -> 3.5f
-                    2 -> -3f
-                    else -> 0f
-                }
-                
-                Surface(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .offset(x = offsetDx, y = offsetDy)
-                        .graphicsLayer {
-                            scaleX = scaleVal
-                            scaleY = scaleVal
-                            rotationZ = rotVal
-                        }
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(0.6.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shadowElevation = (6 - rank * 2).dp
-                ) {
-                    if (book.coverImage != null && File(book.coverImage).exists()) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(File(book.coverImage))
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = "Cover",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Text("暂无封面", style = MaterialTheme.typography.bodySmall)
+            Box(
+                modifier = Modifier
+                    .size(56.dp, 80.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            ) {
+                val maxVisible = minOf(3, books.size)
+                for (i in maxVisible - 1 downTo 0) {
+                    val book = books[i]
+                    val rank = maxVisible - 1 - i
+                    val offsetDp = rank * 4
+                    val scaleVal = 1f - (rank * 0.05f)
+                    
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .offset(y = (-offsetDp).dp, x = offsetDp.dp)
+                            .graphicsLayer {
+                                scaleX = scaleVal
+                                scaleY = scaleVal
+                            }
+                            .clip(RoundedCornerShape(8.dp)),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shadowElevation = (maxVisible - i).dp
+                    ) {
+                        if (book.coverImage != null && File(book.coverImage).exists()) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current).data(File(book.coverImage)).crossfade(false).build(),
+                                contentDescription = "Cover", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
+                            )
                         }
                     }
                 }
             }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = seriesName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    color = primaryTextColor
+                )
+            }
+        }
+    } else {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .aspectRatio(0.7f)
+                    .fillMaxWidth()
+            ) {
+                val maxVisible = minOf(3, books.size)
+                for (i in maxVisible - 1 downTo 0) {
+                    val book = books[i]
+                    val rank = maxVisible - 1 - i
+                    val offsetDx = (rank * 7).dp
+                    val offsetDy = (-rank * 5).dp
+                    val scaleVal = 1f - (rank * 0.05f)
+                    val rotVal = when (rank) {
+                        1 -> 3.5f
+                        2 -> -3f
+                        else -> 0f
+                    }
+                    
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .offset(x = offsetDx, y = offsetDy)
+                            .graphicsLayer {
+                                scaleX = scaleVal
+                                scaleY = scaleVal
+                                rotationZ = rotVal
+                            }
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(0.6.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shadowElevation = (6 - rank * 2).dp
+                    ) {
+                        if (book.coverImage != null && File(book.coverImage).exists()) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(File(book.coverImage))
+                                    .crossfade(false)
+                                    .build(),
+                                contentDescription = "Cover",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                Text("暂无封面", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+                
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .border(0.6.dp, Color.White.copy(alpha = 0.40f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("${books.size} 册", color = Color.White, fontSize = 10.5.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(10.dp))
             
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(4.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.45f))
-                    .border(0.6.dp, Color.White.copy(alpha = 0.40f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                    .fillMaxWidth()
+                    .height(38.dp),
+                contentAlignment = Alignment.TopStart
             ) {
-                Text("${books.size} 册", color = Color.White, fontSize = 10.5.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                Text(
+                    text = seriesName,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    ),
+                    color = primaryTextColor,
+                    maxLines = 2,
+                    minLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
-        
-        Spacer(modifier = Modifier.height(10.dp))
-        
-        Box(
+    }
+}
+
+@Composable
+fun BookItemContent(
+    book: BookEntity,
+    isListLayout: Boolean = false,
+    isDark: Boolean = false,
+    primaryTextColor: Color = Color(0xFF1E1E24),
+    secondaryTextColor: Color = Color(0xFF543866)
+) {
+    if (isListLayout) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(38.dp),
-            contentAlignment = Alignment.TopStart
+                .height(80.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = seriesName,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                ),
-                color = primaryTextColor,
-                maxLines = 2,
-                minLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            Box(
+                modifier = Modifier
+                    .size(56.dp, 80.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            ) {
+                if (book.coverImage != null && File(book.coverImage).exists()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(File(book.coverImage))
+                            .crossfade(false)
+                            .build(),
+                        contentDescription = "Cover",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.15f))
+                    ) {
+                        Text("暂无", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = book.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    color = primaryTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = book.author ?: "未知作者",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = secondaryTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = if (book.isWebDav) "云端同步" else "本地导入",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)
+                )
+            }
+        }
+    } else {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .aspectRatio(0.7f)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+            ) {
+                if (book.coverImage != null && File(book.coverImage).exists()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(File(book.coverImage))
+                            .crossfade(false)
+                            .build(),
+                        contentDescription = "Cover",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.15f))
+                    ) {
+                        Text("暂无封面", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(10.dp))
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(38.dp),
+                contentAlignment = Alignment.TopStart
+            ) {
+                Text(
+                    text = book.title,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    ),
+                    color = primaryTextColor,
+                    maxLines = 2,
+                    minLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
@@ -1702,6 +1811,8 @@ fun BookItem(
     isDark: Boolean = false,
     primaryTextColor: Color = Color(0xFF1E1E24),
     secondaryTextColor: Color = Color(0xFF543866),
+    isHidden: Boolean = false,
+    onPositioned: ((LayoutCoordinates) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val scale by animateFloatAsState(
@@ -1714,7 +1825,11 @@ fun BookItem(
         modifier = modifier
             .padding(6.dp)
             .fillMaxWidth()
+            .onGloballyPositioned { coords ->
+                onPositioned?.invoke(coords)
+            }
             .graphicsLayer {
+                alpha = if (isHidden) 0f else 1f
                 scaleX = scale
                 scaleY = scale
             }
@@ -1734,133 +1849,18 @@ fun BookItem(
                     ) 
                 },
                 onDrawSurface = { 
-                    drawRect(Color.White.copy(alpha = 0.12f)) 
+                    drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f)) 
                 }
             )
             .padding(10.dp)
     ) {
-        if (isListLayout) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(80.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp, 80.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                ) {
-                    if (book.coverImage != null && File(book.coverImage).exists()) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(File(book.coverImage))
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = "Cover",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.15f))
-                        ) {
-                            Text("暂无", style = MaterialTheme.typography.bodySmall, color = Color.White)
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.width(16.dp))
-                
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = book.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                        color = primaryTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = book.author ?: "未知作者",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = secondaryTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = if (book.isWebDav) "云端同步" else "本地导入",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)
-                    )
-                }
-            }
-        } else {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .aspectRatio(0.7f)
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                ) {
-                    if (book.coverImage != null && File(book.coverImage).exists()) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(File(book.coverImage))
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = "Cover",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.15f))
-                        ) {
-                            Text("暂无封面", style = MaterialTheme.typography.bodySmall, color = Color.White)
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(10.dp))
-                
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(38.dp),
-                    contentAlignment = Alignment.TopStart
-                ) {
-                    Text(
-                        text = book.title,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                        ),
-                        color = primaryTextColor,
-                        maxLines = 2,
-                        minLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
+        BookItemContent(
+            book = book,
+            isListLayout = isListLayout,
+            isDark = isDark,
+            primaryTextColor = primaryTextColor,
+            secondaryTextColor = secondaryTextColor
+        )
     }
 }
 
@@ -1871,8 +1871,11 @@ fun SeriesInnerBookRow(
     volumeNumber: Int,
     isPressed: Boolean = false,
     isDark: Boolean = false,
-    backdrop: com.kyant.backdrop.Backdrop? = null,
-    listState: androidx.compose.foundation.lazy.LazyListState? = null,
+    themeAccent: Color = Color(0xFF007AFF),
+    primaryTextColor: Color = Color(0xFF1E1E24),
+    secondaryTextColor: Color = Color(0xFF543866),
+    isHidden: Boolean = false,
+    onPositioned: ((LayoutCoordinates) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val compactTitle = book.title
@@ -1895,74 +1898,41 @@ fun SeriesInnerBookRow(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 84.dp)
+            .onGloballyPositioned { coords ->
+                onPositioned?.invoke(coords)
+            }
             .graphicsLayer {
+                alpha = if (isHidden) 0f else 1f
                 scaleX = scale
                 scaleY = scale
             }
-            .then(
-                if (backdrop != null) {
-                    Modifier
-                        .drawWithContent {
-                            listState?.firstVisibleItemScrollOffset
-                            listState?.firstVisibleItemIndex
-                            drawContent()
-                        }
-                        .drawBackdrop(
-                            backdrop = backdrop,
-                            shape = { RoundedCornerShape(18.dp) },
-                            effects = {
-                                vibrancy()
-                                blur(2f.dp.toPx())
-                                lens(
-                                    refractionHeight = 10f.dp.toPx(),
-                                    refractionAmount = 18f.dp.toPx(),
-                                    chromaticAberration = true,
-                                    depthEffect = true
-                                )
-                            },
-                            highlight = { Highlight.Default },
-                            shadow = {
-                                Shadow(
-                                    radius = 6.dp,
-                                    color = Color.Black.copy(alpha = 0.08f)
-                                )
-                            },
-                            innerShadow = {
-                                InnerShadow(
-                                    radius = 8.dp,
-                                    alpha = if (isPressed) 0.45f else 0.22f
-                                )
-                            },
-                            onDrawSurface = {
-                                drawRect(Color.White.copy(alpha = if (isPressed) 0.24f else 0.14f))
-                            }
-                        )
-                } else {
-                    Modifier
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(
-                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = 0.45f),
-                                    Color.White.copy(alpha = 0.25f)
-                                )
-                            )
-                        )
-                        .border(
-                            width = 0.6.dp,
-                            color = Color.White.copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(18.dp)
-                        )
-                }
+            .clip(RoundedCornerShape(18.dp))
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (isDark) (if (isPressed) 0.20f else 0.12f) else (if (isPressed) 0.45f else 0.32f)),
+                        Color.White.copy(alpha = if (isDark) (if (isPressed) 0.12f else 0.06f) else (if (isPressed) 0.28f else 0.16f))
+                    )
+                )
+            )
+            .border(
+                width = 0.8.dp,
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (isDark) 0.35f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.15f else 0.35f)
+                    )
+                ),
+                shape = RoundedCornerShape(18.dp)
             )
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val volumeColor = if (isDark) Color(0xFF38BDF8) else Color(0xFF6C4A70).copy(alpha = 0.90f)
-            val titleColor = if (isDark) Color(0xFFF8FAFC) else Color(0xFF231130)
-            val subtitleColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF765D7A).copy(alpha = 0.85f)
+            val volumeColor = if (isDark) Color(0xFF38BDF8) else themeAccent
+            val titleColor = if (isDark) Color(0xFFF8FAFC) else primaryTextColor
+            val subtitleColor = if (isDark) Color(0xFF94A3B8) else secondaryTextColor
 
             Text(
                 text = volumeNumber.toString().padStart(2, '0'),
@@ -1980,7 +1950,7 @@ fun SeriesInnerBookRow(
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(File(book.coverImage))
-                            .crossfade(true)
+                            .crossfade(false)
                             .build(),
                         contentDescription = "Cover",
                         contentScale = ContentScale.Crop,

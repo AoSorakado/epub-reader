@@ -18,6 +18,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.layout.Row
@@ -105,8 +107,10 @@ fun MainScaffold(navController: NavHostController) {
         drawContent()
     }
 
+    var isReaderActive by remember { mutableStateOf(false) }
+
     val hideBottomBarRoutes = listOf("reader/{bookId}")
-    val showBottomBar = currentRoute != null && !hideBottomBarRoutes.any { currentRoute.startsWith(it.substringBefore("/")) }
+    val showBottomBar = currentRoute != null && !isReaderActive && !hideBottomBarRoutes.any { currentRoute.startsWith(it.substringBefore("/")) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Layer 1: Background with pure harmonious theme gradient
@@ -130,7 +134,12 @@ fun MainScaffold(navController: NavHostController) {
             popExitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300)) }
         ) {
             composable(Screen.Bookshelf.route) { 
-                BookshelfScreen(navController, settingsViewModel, backgroundBackdrop) 
+                BookshelfScreen(
+                    navController = navController,
+                    settingsViewModel = settingsViewModel,
+                    globalBackdrop = backgroundBackdrop,
+                    onReaderActiveChanged = { isReaderActive = it }
+                ) 
             }
             composable(Screen.Stats.route) { 
                 StatsScreen(navController, settingsViewModel, backgroundBackdrop) 
@@ -142,25 +151,16 @@ fun MainScaffold(navController: NavHostController) {
                 route = "reader/{bookId}",
                 arguments = listOf(androidx.navigation.navArgument("bookId") { type = androidx.navigation.NavType.LongType }),
                 enterTransition = {
-                    androidx.compose.animation.scaleIn(
-                        initialScale = 0.88f,
-                        animationSpec = androidx.compose.animation.core.tween(320, easing = androidx.compose.animation.core.EaseOutCubic)
-                    ) + androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(300))
+                    androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(220))
                 },
                 exitTransition = {
-                    androidx.compose.animation.scaleOut(
-                        targetScale = 0.88f,
-                        animationSpec = androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.EaseInCubic)
-                    ) + androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(240))
+                    androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(150))
                 },
                 popEnterTransition = {
-                    androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(250))
+                    androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(150))
                 },
                 popExitTransition = {
-                    androidx.compose.animation.scaleOut(
-                        targetScale = 0.88f,
-                        animationSpec = androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.EaseInCubic)
-                    ) + androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(240))
+                    androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(120))
                 }
             ) { backStackEntry ->
                 val bookId = backStackEntry.arguments?.getLong("bookId") ?: return@composable
