@@ -325,6 +325,8 @@ fun BookshelfScreen(
     var openingBook by remember { mutableStateOf<BookEntity?>(null) }
     var openingBookBounds by remember { mutableStateOf(Rect.Zero) }
     var openingBookIsListLayout by remember { mutableStateOf(false) }
+    var openingBookIsInner by remember { mutableStateOf(false) }
+    var openingInnerSeriesInfo by remember { mutableStateOf<Pair<String, Int>?>(null) }
     var isOpeningBookExpanded by remember { mutableStateOf(false) }
 
     val isOpeningBookActive = openingBook != null
@@ -332,9 +334,9 @@ fun BookshelfScreen(
     val bookOpenProgress by bookOpenTransition.animateFloat(
         transitionSpec = {
             if (targetState) {
-                spring(dampingRatio = 0.80f, stiffness = 180f)
+                spring(dampingRatio = 0.82f, stiffness = 220f)
             } else {
-                spring(dampingRatio = 0.85f, stiffness = 210f)
+                spring(dampingRatio = 0.88f, stiffness = 260f)
             }
         },
         label = "bookOpenProgress"
@@ -345,6 +347,8 @@ fun BookshelfScreen(
         onReaderActiveChanged?.invoke(isReading)
         if (!isOpeningBookExpanded && bookOpenProgress <= 0.001f && openingBook != null) {
             openingBook = null
+            openingBookIsInner = false
+            openingInnerSeriesInfo = null
         }
     }
 
@@ -353,7 +357,7 @@ fun BookshelfScreen(
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
 
-    val handleBookClick: (BookEntity, Boolean) -> Unit = { book, isList ->
+    val handleBookClick: (BookEntity, Boolean, Boolean, String, Int) -> Unit = { book, isList, isInner, sTitle, volNum ->
         if (!isOpeningBookActive) {
             val coords = bookCoords[book.id]
             val bounds = if (coords != null && rootCoords != null) {
@@ -362,21 +366,15 @@ fun BookshelfScreen(
                 } catch (e: Exception) { Rect.Zero }
             } else Rect.Zero
 
-            if (bounds != Rect.Zero) {
-                openingBook = book
-                openingBookBounds = bounds
-                openingBookIsListLayout = isList
-                isOpeningBookExpanded = true
-            } else {
-                val fallbackBounds = Rect(
-                    screenWidthPx * 0.1f, screenHeightPx * 0.3f,
-                    screenWidthPx * 0.9f, screenHeightPx * 0.7f
-                )
-                openingBook = book
-                openingBookBounds = fallbackBounds
-                openingBookIsListLayout = isList
-                isOpeningBookExpanded = true
-            }
+            openingBook = book
+            openingBookBounds = if (bounds != Rect.Zero && bounds.width > 10f) bounds else Rect(
+                screenWidthPx * 0.1f, screenHeightPx * 0.3f,
+                screenWidthPx * 0.9f, screenHeightPx * 0.7f
+            )
+            openingBookIsListLayout = isList
+            openingBookIsInner = isInner
+            openingInnerSeriesInfo = if (isInner) Pair(sTitle, volNum) else null
+            isOpeningBookExpanded = true
         }
     }
 
@@ -607,7 +605,7 @@ fun BookshelfScreen(
                                 bookCoords[item.id] = coords
                             },
                             onClick = {
-                                handleBookClick(item, layoutMethod == 1)
+                                handleBookClick(item, layoutMethod == 1, false, "", 1)
                             },
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -824,7 +822,11 @@ fun BookshelfScreen(
                                         bookCoords[book.id] = coords
                                     },
                                     onClick = {
-                                        handleBookClick(book, true)
+                                        val seriesBooks = selectedSeries?.second ?: emptyList()
+                                        val index = seriesBooks.indexOfFirst { it.id == book.id }
+                                        val volNum = if (index >= 0) index + 1 else 1
+                                        val sTitle = selectedSeries?.first ?: (book.seriesName ?: "")
+                                        handleBookClick(book, true, true, sTitle, volNum)
                                     },
                                     onLongClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -892,19 +894,34 @@ fun BookshelfScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(10.dp)
+                            .padding(horizontal = if (openingBookIsInner) 14.dp else 10.dp, vertical = if (openingBookIsInner) 10.dp else 10.dp)
                             .graphicsLayer {
                                 alpha = collapsedAlpha
                             },
-                        contentAlignment = Alignment.Center
+                        contentAlignment = if (openingBookIsInner || openingBookIsListLayout) Alignment.CenterStart else Alignment.Center
                     ) {
-                        BookItemContent(
-                            book = book,
-                            isListLayout = openingBookIsListLayout,
-                            isDark = isDark,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor
-                        )
+                        if (openingBookIsInner) {
+                            val (sTitle, volNum) = openingInnerSeriesInfo ?: Pair(book.seriesName ?: "", 1)
+                            SeriesInnerBookRow(
+                                book = book,
+                                seriesTitle = sTitle,
+                                volumeNumber = volNum,
+                                backdrop = globalBackdrop,
+                                isPressed = false,
+                                isDark = isDark,
+                                themeAccent = themeAccent,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor
+                            )
+                        } else {
+                            BookItemContent(
+                                book = book,
+                                isListLayout = openingBookIsListLayout,
+                                isDark = isDark,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor
+                            )
+                        }
                     }
                 }
 
@@ -1197,10 +1214,14 @@ fun BookshelfScreen(
                                         icon = Icons.Filled.AutoStories,
                                         onClick = {
                                             val b = target.book
+                                            val seriesBooks = selectedSeries?.second ?: emptyList()
+                                            val index = seriesBooks.indexOfFirst { it.id == b.id }
+                                            val volNum = if (index >= 0) index + 1 else 1
+                                            val sTitle = selectedSeries?.first ?: (b.seriesName ?: "")
                                             contextMenuTarget = null
                                             activeContextMenuTarget = null
                                             lastTargetBounds = Rect.Zero
-                                            handleBookClick(b, true)
+                                            handleBookClick(b, true, true, sTitle, volNum)
                                         }
                                     ),
                                     ContextMenuItem(
@@ -1260,7 +1281,7 @@ fun BookshelfScreen(
                                             contextMenuTarget = null
                                             activeContextMenuTarget = null
                                             lastTargetBounds = Rect.Zero
-                                            handleBookClick(b, layoutMethod == 1)
+                                            handleBookClick(b, layoutMethod == 1, false, "", 1)
                                         }
                                     ),
                                     ContextMenuItem(
