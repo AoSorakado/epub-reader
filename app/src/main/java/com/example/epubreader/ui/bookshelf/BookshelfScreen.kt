@@ -442,6 +442,7 @@ fun BookshelfScreen(
 
     val backgroundBlurRadius = maxOf(
         lerp(0f, 16f, seriesExpandProgress),
+        lerp(0f, 16f, editExpandProgress),
         lerp(0f, 16f, bookOpenProgress),
         if (contextMenuTarget != null) 16f else 0f
     ).dp
@@ -456,6 +457,7 @@ fun BookshelfScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(bookshelfGradient)
+                .blur(backgroundBlurRadius)
                 .layerBackdrop(bookshelfBackdrop)
         ) {
         Scaffold(
@@ -1257,10 +1259,14 @@ fun BookshelfScreen(
                                         icon = Icons.Filled.Edit,
                                         onClick = {
                                             val b = target.book
+                                            val bounds = if (effectiveTargetBounds != Rect.Zero && effectiveTargetBounds.width > 10f) effectiveTargetBounds else Rect.Zero
+                                            editSourceBounds = bounds
+                                            showEditDialogForBook = b
+                                            activeEditBook = b
+                                            isEditExpanded = true
                                             contextMenuTarget = null
                                             activeContextMenuTarget = null
                                             lastTargetBounds = Rect.Zero
-                                            showEditDialogForBook = b
                                         }
                                     ),
                                     ContextMenuItem(
@@ -1668,7 +1674,7 @@ fun BookshelfScreen(
             }
         }
 
-        if (editExpandProgress > 0.001f && activeEditBook != null) {
+        if ((isEditExpanded || editExpandProgress > 0.001f) && activeEditBook != null) {
             val book = activeEditBook!!
             val expandedWidthPx = minOf(screenWidthPx * 0.90f, with(density) { 420.dp.toPx() })
             val expandedHeightPx = minOf(screenHeightPx * 0.82f, with(density) { 560.dp.toPx() })
@@ -1830,16 +1836,10 @@ fun SeriesItem(
         label = "seriesPressScale"
     )
 
-    val alphaAnim by animateFloatAsState(
-        targetValue = if (isHidden) 0f else 1f,
-        animationSpec = spring(dampingRatio = 0.85f, stiffness = 320f),
-        label = "seriesAlpha"
-    )
-
     Box(
         modifier = modifier
             .graphicsLayer {
-                alpha = alphaAnim
+                alpha = if (isHidden) 0f else 1f
                 scaleX = scale
                 scaleY = scale
             }
@@ -2395,12 +2395,6 @@ fun BookItem(
         label = "bookPressScale"
     )
 
-    val alphaAnim by animateFloatAsState(
-        targetValue = if (isHidden) 0f else 1f,
-        animationSpec = spring(dampingRatio = 0.85f, stiffness = 320f),
-        label = "bookAlpha"
-    )
-
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -2408,7 +2402,7 @@ fun BookItem(
                 onPositioned?.invoke(coords)
             }
             .graphicsLayer {
-                alpha = alphaAnim
+                alpha = if (isHidden) 0f else 1f
                 scaleX = scale
                 scaleY = scale
             }
@@ -2506,12 +2500,6 @@ fun SeriesInnerBookRow(
         label = "seriesBookPressScale"
     )
 
-    val alphaAnim by animateFloatAsState(
-        targetValue = if (isHidden) 0f else 1f,
-        animationSpec = spring(dampingRatio = 0.85f, stiffness = 320f),
-        label = "seriesBookAlpha"
-    )
-
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -2520,7 +2508,7 @@ fun SeriesInnerBookRow(
                 onPositioned?.invoke(coords)
             }
             .graphicsLayer {
-                alpha = alphaAnim
+                alpha = if (isHidden) 0f else 1f
                 scaleX = scale
                 scaleY = scale
             }
