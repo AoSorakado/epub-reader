@@ -1006,6 +1006,15 @@ fun ReaderScreen(
                                     fontSize = 14.sp
                                 )
 
+                                val isGlobalDark = appTheme == com.example.epubreader.ui.theme.AppTheme.MIDNIGHT_GLASS
+                                val globalThemeAccent = com.example.epubreader.ui.theme.getThemeAccentColor(
+                                    theme = appTheme,
+                                    customColors = if (isCustomThemeThreeColors) customColors else customColors.take(2)
+                                )
+
+                                val themeSelectedBg = globalThemeAccent.copy(alpha = if (isGlobalDark) 0.32f else 0.22f)
+                                val themeUnselectedBg = if (isGlobalDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.40f)
+
                                 // 1. Theme Color Selection
                                 Text("阅读主题", style = headerStyle)
                                 Spacer(modifier = Modifier.height(14.dp))
@@ -1018,9 +1027,6 @@ fun ReaderScreen(
                                     val sepiaColor = if (isCustomTheme) customColors.getOrElse(1) { Color(0xFFF4ECD8) } else Color(0xFFF4ECD8)
                                     val darkColor = if (isCustomTheme) customColors.getOrElse(2) { Color(0xFF1C1C1E) } else Color(0xFF1C1C1E)
 
-                                    val themeSelectedBg = if (themeIndex == 2) Color(0xFF38BDF8).copy(0.28f) else if (themeIndex == 1) Color(0xFFC07020).copy(0.22f) else Color(0xFF007AFF).copy(0.18f)
-                                    val themeUnselectedBg = if (themeIndex == 2) Color.White.copy(0.08f) else Color.White.copy(0.55f)
-
                                     LiquidButton(
                                         onClick = { viewModel.setTheme(0) },
                                         backdrop = readerBackdrop,
@@ -1030,7 +1036,12 @@ fun ReaderScreen(
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Box(modifier = Modifier.size(14.dp).background(lightColor, CircleShape).border(1.dp, Color.Black.copy(0.1f), CircleShape))
                                             Spacer(modifier = Modifier.width(8.dp))
-                                            Text("默认", style = buttonTextStyle, fontWeight = if (themeIndex == 0) FontWeight.ExtraBold else FontWeight.Medium)
+                                            Text(
+                                                "默认",
+                                                style = buttonTextStyle,
+                                                color = if (themeIndex == 0) globalThemeAccent else glassTextColor,
+                                                fontWeight = if (themeIndex == 0) FontWeight.ExtraBold else FontWeight.Medium
+                                            )
                                         }
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -1043,7 +1054,12 @@ fun ReaderScreen(
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Box(modifier = Modifier.size(14.dp).background(sepiaColor, CircleShape))
                                             Spacer(modifier = Modifier.width(8.dp))
-                                            Text("羊皮纸", style = buttonTextStyle, fontWeight = if (themeIndex == 1) FontWeight.ExtraBold else FontWeight.Medium)
+                                            Text(
+                                                "羊皮纸",
+                                                style = buttonTextStyle,
+                                                color = if (themeIndex == 1) globalThemeAccent else glassTextColor,
+                                                fontWeight = if (themeIndex == 1) FontWeight.ExtraBold else FontWeight.Medium
+                                            )
                                         }
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -1056,21 +1072,20 @@ fun ReaderScreen(
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Box(modifier = Modifier.size(14.dp).background(darkColor, CircleShape))
                                             Spacer(modifier = Modifier.width(8.dp))
-                                            Text("夜间", style = buttonTextStyle, fontWeight = if (themeIndex == 2) FontWeight.ExtraBold else FontWeight.Medium)
+                                            Text(
+                                                "夜间",
+                                                style = buttonTextStyle,
+                                                color = if (themeIndex == 2) globalThemeAccent else glassTextColor,
+                                                fontWeight = if (themeIndex == 2) FontWeight.ExtraBold else FontWeight.Medium
+                                            )
                                         }
                                     }
                                 }
 
                                 Spacer(modifier = Modifier.height(24.dp))
 
-                                val sliderAccentColor = if (isCustomThemeThreeColors) {
-                                    customColors.firstOrNull() ?: MaterialTheme.colorScheme.primary
-                                } else when (themeIndex) {
-                                    1 -> Color(0xFFC07020)
-                                    2 -> Color(0xFF38BDF8)
-                                    else -> Color(0xFF007AFF)
-                                }
-                                val sliderTrackColor = if (themeIndex == 2) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.08f)
+                                val sliderAccentColor = globalThemeAccent
+                                val sliderTrackColor = if (isGlobalDark) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.08f)
 
                                 // 2. Font Size Control
                                 Row(
@@ -1079,7 +1094,7 @@ fun ReaderScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text("字号大小", style = headerStyle)
-                                    Text("${localTextSize.toInt()}sp", style = headerStyle.copy(fontWeight = FontWeight.Bold, color = glassTextColor))
+                                    Text("${localTextSize.toInt()}sp", style = headerStyle.copy(fontWeight = FontWeight.ExtraBold, color = globalThemeAccent))
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
                                 LiquidSlider(
@@ -1101,7 +1116,7 @@ fun ReaderScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text("行高间距", style = headerStyle)
-                                    Text(String.format(java.util.Locale.US, "%.1fx", localLineHeight), style = headerStyle.copy(fontWeight = FontWeight.Bold, color = glassTextColor))
+                                    Text(String.format(java.util.Locale.US, "%.1fx", localLineHeight), style = headerStyle.copy(fontWeight = FontWeight.ExtraBold, color = globalThemeAccent))
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
                                 LiquidSlider(
@@ -1123,7 +1138,7 @@ fun ReaderScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text("段落间距", style = headerStyle)
-                                    Text("${localParagraphSpacing.toInt()}dp", style = headerStyle.copy(fontWeight = FontWeight.Bold, color = glassTextColor))
+                                    Text("${localParagraphSpacing.toInt()}dp", style = headerStyle.copy(fontWeight = FontWeight.ExtraBold, color = globalThemeAccent))
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
                                 LiquidSlider(
@@ -1138,8 +1153,8 @@ fun ReaderScreen(
 
                                 Spacer(modifier = Modifier.height(24.dp))
 
-                                val activeSurface = if (themeIndex == 2) Color(0xFF38BDF8).copy(0.28f) else if (themeIndex == 1) Color(0xFFC07020).copy(0.22f) else Color(0xFF007AFF).copy(0.18f)
-                                val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.08f) else Color.White.copy(0.55f)
+                                val activeSurface = globalThemeAccent.copy(alpha = if (isGlobalDark) 0.32f else 0.22f)
+                                val inactiveSurface = if (isGlobalDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.40f)
 
                                 // 5. Simplified / Traditional Chinese Converter
                                 Text("简繁转换", style = headerStyle)
@@ -1154,7 +1169,12 @@ fun ReaderScreen(
                                         surfaceColor = if (chineseMode == 0) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
                                     ) {
-                                        Text("原文", style = buttonTextStyle, fontWeight = if (chineseMode == 0) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Text(
+                                            "原文",
+                                            style = buttonTextStyle,
+                                            color = if (chineseMode == 0) globalThemeAccent else glassTextColor,
+                                            fontWeight = if (chineseMode == 0) FontWeight.ExtraBold else FontWeight.SemiBold
+                                        )
                                     }
                                     LiquidButton(
                                         onClick = { viewModel.setChineseMode(1) },
@@ -1162,7 +1182,12 @@ fun ReaderScreen(
                                         surfaceColor = if (chineseMode == 1) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
                                     ) {
-                                        Text("简体", style = buttonTextStyle, fontWeight = if (chineseMode == 1) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Text(
+                                            "简体",
+                                            style = buttonTextStyle,
+                                            color = if (chineseMode == 1) globalThemeAccent else glassTextColor,
+                                            fontWeight = if (chineseMode == 1) FontWeight.ExtraBold else FontWeight.SemiBold
+                                        )
                                     }
                                     LiquidButton(
                                         onClick = { viewModel.setChineseMode(2) },
@@ -1170,7 +1195,12 @@ fun ReaderScreen(
                                         surfaceColor = if (chineseMode == 2) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
                                     ) {
-                                        Text("繁體", style = buttonTextStyle, fontWeight = if (chineseMode == 2) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Text(
+                                            "繁體",
+                                            style = buttonTextStyle,
+                                            color = if (chineseMode == 2) globalThemeAccent else glassTextColor,
+                                            fontWeight = if (chineseMode == 2) FontWeight.ExtraBold else FontWeight.SemiBold
+                                        )
                                     }
                                 }
 
@@ -1189,7 +1219,12 @@ fun ReaderScreen(
                                         surfaceColor = if (customFontUri == null) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
                                     ) {
-                                        Text("系统默认", style = buttonTextStyle, fontWeight = if (customFontUri == null) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Text(
+                                            "系统默认",
+                                            style = buttonTextStyle,
+                                            color = if (customFontUri == null) globalThemeAccent else glassTextColor,
+                                            fontWeight = if (customFontUri == null) FontWeight.ExtraBold else FontWeight.SemiBold
+                                        )
                                     }
 
                                     LiquidButton(
@@ -1201,6 +1236,7 @@ fun ReaderScreen(
                                         Text(
                                             if (customFontUri != null) "自定义字体" else "选择字体",
                                             style = buttonTextStyle,
+                                            color = if (customFontUri != null) globalThemeAccent else glassTextColor,
                                             fontWeight = if (customFontUri != null) FontWeight.ExtraBold else FontWeight.SemiBold,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
@@ -1223,7 +1259,12 @@ fun ReaderScreen(
                                         surfaceColor = if (pageTurnMode == 0) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
                                     ) {
-                                        Text("上下滚动", style = buttonTextStyle, fontWeight = if (pageTurnMode == 0) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Text(
+                                            "上下滚动",
+                                            style = buttonTextStyle,
+                                            color = if (pageTurnMode == 0) globalThemeAccent else glassTextColor,
+                                            fontWeight = if (pageTurnMode == 0) FontWeight.ExtraBold else FontWeight.SemiBold
+                                        )
                                     }
                                     LiquidButton(
                                         onClick = { 
@@ -1237,7 +1278,12 @@ fun ReaderScreen(
                                         surfaceColor = if (pageTurnMode == 1) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
                                     ) {
-                                        Text("左右翻页", style = buttonTextStyle, fontWeight = if (pageTurnMode == 1) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Text(
+                                            "左右翻页",
+                                            style = buttonTextStyle,
+                                            color = if (pageTurnMode == 1) globalThemeAccent else glassTextColor,
+                                            fontWeight = if (pageTurnMode == 1) FontWeight.ExtraBold else FontWeight.SemiBold
+                                        )
                                     }
                                 }
 
@@ -1260,6 +1306,7 @@ fun ReaderScreen(
                                                 Text(
                                                     name,
                                                     style = buttonTextStyle.copy(fontSize = 12.5.sp),
+                                                    color = if (pageAnimStyle == index) globalThemeAccent else glassTextColor,
                                                     fontWeight = if (pageAnimStyle == index) FontWeight.ExtraBold else FontWeight.SemiBold
                                                 )
                                             }
@@ -1323,7 +1370,12 @@ fun ReaderScreen(
                     pages.getOrNull(pagedCurrentIndex)?.chapterIndex ?: 0
                 }
 
-                val glassTextColor = if (themeIndex == 2) Color.White else Color(0xFF1C1C1E)
+                val isGlobalDark = appTheme == com.example.epubreader.ui.theme.AppTheme.MIDNIGHT_GLASS
+                val globalThemeAccent = com.example.epubreader.ui.theme.getThemeAccentColor(
+                    theme = appTheme,
+                    customColors = if (isCustomThemeThreeColors) customColors else customColors.take(2)
+                )
+                val glassTextColor = if (isGlobalDark) Color.White else Color(0xFF1C1C1E)
 
                 Box(
                     modifier = Modifier
@@ -1349,7 +1401,7 @@ fun ReaderScreen(
                             },
                             highlight = { Highlight.Plain },
                             onDrawSurface = {
-                                drawRect(Color.White.copy(alpha = if (themeIndex == 2) 0.10f else 0.12f))
+                                drawRect(Color.White.copy(alpha = if (isGlobalDark) 0.10f else 0.12f))
                             },
                             exportedBackdrop = bottomSheetBackdrop
                         )
@@ -1426,7 +1478,7 @@ fun ReaderScreen(
                                         modifier = Modifier
                                             .size(34.dp)
                                             .clip(CircleShape)
-                                            .background(if (themeIndex == 2) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.35f))
+                                            .background(if (isGlobalDark) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.35f))
                                             .border(0.6.dp, Color.White.copy(alpha = 0.5f), CircleShape)
                                             .clickable { showTocSheet = false },
                                         contentAlignment = Alignment.Center
@@ -1493,7 +1545,7 @@ fun ReaderScreen(
                                                     onClick = onItemClick,
                                                     backdrop = readerBackdrop,
                                                     shape = RoundedCornerShape(12.dp),
-                                                    surfaceColor = if (themeIndex == 2) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.38f),
+                                                    surfaceColor = globalThemeAccent.copy(alpha = if (isGlobalDark) 0.32f else 0.22f),
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .defaultMinSize(minHeight = 44.dp)
@@ -1504,7 +1556,7 @@ fun ReaderScreen(
                                                             text = "${(idx + 1).toString().padStart(2, '0')}",
                                                             fontSize = 12.sp,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = MaterialTheme.colorScheme.primary,
+                                                            color = globalThemeAccent,
                                                             modifier = Modifier.width(28.dp)
                                                         )
                                                     } else {
@@ -1512,7 +1564,7 @@ fun ReaderScreen(
                                                             modifier = Modifier
                                                                 .padding(end = 8.dp)
                                                                 .size(5.dp)
-                                                                .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                                                .background(globalThemeAccent, CircleShape)
                                                         )
                                                     }
 
@@ -1520,7 +1572,7 @@ fun ReaderScreen(
                                                         text = tocItem.title,
                                                         fontSize = if (tocItem.level == 0) 14.5.sp else 13.5.sp,
                                                         fontWeight = FontWeight.ExtraBold,
-                                                        color = MaterialTheme.colorScheme.primary,
+                                                        color = globalThemeAccent,
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis,
                                                         modifier = Modifier.weight(1f)
@@ -1530,7 +1582,7 @@ fun ReaderScreen(
                                                     Box(
                                                         modifier = Modifier
                                                             .size(6.dp)
-                                                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                                            .background(globalThemeAccent, CircleShape)
                                                     )
                                                 }
                                             } else {
@@ -1602,7 +1654,7 @@ fun ReaderScreen(
                                                     onClick = onChapterClick,
                                                     backdrop = readerBackdrop,
                                                     shape = RoundedCornerShape(12.dp),
-                                                    surfaceColor = if (themeIndex == 2) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.38f),
+                                                    surfaceColor = globalThemeAccent.copy(alpha = if (isGlobalDark) 0.32f else 0.22f),
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .defaultMinSize(minHeight = 44.dp)
@@ -1611,7 +1663,7 @@ fun ReaderScreen(
                                                         text = "${(idx + 1).toString().padStart(2, '0')}",
                                                         fontSize = 12.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.primary,
+                                                        color = globalThemeAccent,
                                                         modifier = Modifier.width(28.dp)
                                                     )
 
@@ -1619,7 +1671,7 @@ fun ReaderScreen(
                                                         text = chapter.title.ifBlank { "第 ${idx + 1} 章" },
                                                         fontSize = 14.sp,
                                                         fontWeight = FontWeight.ExtraBold,
-                                                        color = MaterialTheme.colorScheme.primary,
+                                                        color = globalThemeAccent,
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis,
                                                         modifier = Modifier.weight(1f)
@@ -1629,7 +1681,7 @@ fun ReaderScreen(
                                                     Box(
                                                         modifier = Modifier
                                                             .size(6.dp)
-                                                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                                            .background(globalThemeAccent, CircleShape)
                                                     )
                                                 }
                                             } else {
