@@ -76,6 +76,9 @@ dependencies {
     // OpenCC for Chinese Conversion
     implementation("com.github.houbb:opencc4j:1.13.1")
 
+    // PageCurl for realistic book simulation animation
+    implementation("io.github.oleksandrbalan:pagecurl:1.5.1")
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
