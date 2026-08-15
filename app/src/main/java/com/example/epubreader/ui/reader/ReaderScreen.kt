@@ -726,6 +726,8 @@ fun ReaderScreen(
                 // Left: 目录 TOC LiquidButton (Frosted glass with List icon & "目录")
                 LiquidButton(
                     onClick = {
+                        showToolbars = false
+                        showSettings = false
                         showTocSheet = true
                     },
                     backdrop = readerBackdrop,
@@ -753,11 +755,9 @@ fun ReaderScreen(
                     }
                 }
 
-                // Right: Current Chapter Name Glass Pill
+                // Right: Current Chapter Name Glass Pill (Display only, non-clickable)
                 LiquidButton(
-                    onClick = {
-                        showTocSheet = true
-                    },
+                    onClick = {},
                     backdrop = readerBackdrop,
                     surfaceColor = if (themeIndex == 2) Color.White.copy(0.10f) else Color.White.copy(0.20f),
                     shape = RoundedCornerShape(22.dp),
