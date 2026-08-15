@@ -319,21 +319,27 @@ fun ReaderScreen(
             }
 
             var pagedCurrentIndex by remember { mutableStateOf(0) }
+            var hasInitializedPagedIndex by remember { mutableStateOf(false) }
 
             LaunchedEffect(pages.isNotEmpty()) {
-                if (pages.isNotEmpty() && pagedCurrentIndex == 0 && initialFlatIndex > 0) {
-                    val matched = pages.indexOfFirst { it.flatItemIndex >= initialFlatIndex }
-                    if (matched >= 0) {
-                        pagedCurrentIndex = matched
+                if (pages.isNotEmpty() && !hasInitializedPagedIndex) {
+                    hasInitializedPagedIndex = true
+                    if (initialFlatIndex > 0) {
+                        val matched = pages.indexOfFirst { it.flatItemIndex >= initialFlatIndex }
+                        if (matched >= 0) {
+                            pagedCurrentIndex = matched
+                        }
                     }
                 }
             }
 
             fun onPagedIndexChanged(newPage: Int) {
-                pagedCurrentIndex = newPage
-                val current = pages.getOrNull(newPage)
-                if (current != null) {
-                    viewModel.saveProgress(current.flatItemIndex, 0)
+                if (newPage != pagedCurrentIndex) {
+                    pagedCurrentIndex = newPage
+                    val current = pages.getOrNull(newPage)
+                    if (current != null) {
+                        viewModel.saveProgress(current.flatItemIndex, 0)
+                    }
                 }
             }
 

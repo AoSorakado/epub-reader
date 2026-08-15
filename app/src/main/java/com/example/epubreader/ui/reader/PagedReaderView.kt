@@ -1,12 +1,12 @@
 package com.example.epubreader.ui.reader
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -14,18 +14,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PagedReaderView(
     pages: List<ReaderPage>,
@@ -56,468 +56,191 @@ fun PagedReaderView(
     }
 
     val coroutineScope = rememberCoroutineScope()
-    val dragOffset = remember { Animatable(0f) }
-    var isDragging by remember { mutableStateOf(false) }
+    val initialPage = currentPageIndex.coerceIn(0, pages.size - 1)
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { pages.size })
 
-    val safeCurrentPage = currentPageIndex.coerceIn(0, pages.size - 1)
+    // Sync external target index (e.g. initial load or chapter jump)
+    LaunchedEffect(currentPageIndex) {
+        if (currentPageIndex in 0 until pages.size && currentPageIndex != pagerState.currentPage) {
+            pagerState.scrollToPage(currentPageIndex)
+        }
+    }
+
+    // Sync internal page changes back to ViewModel
+    LaunchedEffect(pagerState.currentPage) {
+        onPageChanged(pagerState.currentPage)
+    }
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(bgColor)
     ) {
-        val widthPx = constraints.maxWidth.toFloat()
-        val heightPx = constraints.maxHeight.toFloat()
+        HorizontalPager(
+            state = pagerState,
+            beyondViewportPageCount = 1,
+            userScrollEnabled = true,
+            modifier = Modifier.fillMaxSize()
+        ) { pageIndex ->
+            val page = pages.getOrNull(pageIndex) ?: return@HorizontalPager
+            
+            // pageOffset:
+            // 0.0 = current page
+            // +1.0 = next page (to the right)
+            // -1.0 = previous page (to the left)
+            val pageOffset = (pageIndex - pagerState.currentPage) + pagerState.currentPageOffsetFraction
 
-        fun turnToPage(targetPage: Int, animated: Boolean = true) {
-            val clamped = targetPage.coerceIn(0, pages.size - 1)
-            if (clamped == safeCurrentPage) {
-                coroutineScope.launch {
-                    dragOffset.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
-                }
-                return
-            }
-
-            if (!animated || pageAnimStyle == 4) {
-                coroutineScope.launch {
-                    dragOffset.snapTo(0f)
-                    onPageChanged(clamped)
-                }
-                return
-            }
-
-            val isNext = clamped > safeCurrentPage
-            val targetOffset = if (isNext) -widthPx else widthPx
-
-            coroutineScope.launch {
-                dragOffset.animateTo(
-                    targetOffset,
-                    spring(dampingRatio = 0.82f, stiffness = 320f)
-                )
-                onPageChanged(clamped)
-                dragOffset.snapTo(0f)
-            }
-        }
-
-        val velocityTracker = remember { VelocityTracker() }
-
-        val gestureModifier = Modifier
-            .fillMaxSize()
-            .pointerInput(safeCurrentPage, pages.size, pageAnimStyle) {
-                detectTapGestures(
-                    onTap = { offset ->
-                        val tapX = offset.x
-                        when {
-                            tapX < widthPx * 0.28f -> {
-                                if (safeCurrentPage > 0) turnToPage(safeCurrentPage - 1)
-                            }
-                            tapX > widthPx * 0.72f -> {
-                                if (safeCurrentPage < pages.size - 1) turnToPage(safeCurrentPage + 1)
-                            }
-                            else -> {
-                                onToggleToolbars()
-                            }
-                        }
-                    }
-                )
-            }
-            .pointerInput(safeCurrentPage, pages.size, pageAnimStyle) {
-                detectDragGestures(
-                    onDragStart = {
-                        isDragging = true
-                        velocityTracker.resetTracking()
-                    },
-                    onDragEnd = {
-                        isDragging = false
-                        val velocity = velocityTracker.calculateVelocity().x
-                        val currentOffset = dragOffset.value
-
-                        val shouldGoNext = (currentOffset < -widthPx * 0.18f || velocity < -600f) && safeCurrentPage < pages.size - 1
-                        val shouldGoPrev = (currentOffset > widthPx * 0.18f || velocity > 600f) && safeCurrentPage > 0
-
-                        when {
-                            shouldGoNext -> turnToPage(safeCurrentPage + 1, animated = pageAnimStyle != 4)
-                            shouldGoPrev -> turnToPage(safeCurrentPage - 1, animated = pageAnimStyle != 4)
-                            else -> {
-                                coroutineScope.launch {
-                                    dragOffset.animateTo(
-                                        0f,
-                                        spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    onDragCancel = {
-                        isDragging = false
-                        coroutineScope.launch {
-                            dragOffset.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
-                        }
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        velocityTracker.addPosition(change.uptimeMillis, change.position)
-                        coroutineScope.launch {
-                            val newOffset = (dragOffset.value + dragAmount.x)
-                                .coerceIn(
-                                    if (safeCurrentPage >= pages.size - 1) -widthPx * 0.15f else -widthPx,
-                                    if (safeCurrentPage <= 0) widthPx * 0.15f else widthPx
-                                )
-                            dragOffset.snapTo(newOffset)
-                        }
-                    }
-                )
-            }
-
-        Box(modifier = gestureModifier) {
-            val offsetVal = dragOffset.value
-            val progress = (offsetVal / widthPx).coerceIn(-1f, 1f)
-
-            when (pageAnimStyle) {
-                // 0: 仿真 / 拟真 3D 翻页 (Simulation / 3D Page Curl)
+            val pageGraphicsModifier = when (pageAnimStyle) {
+                // 0: 仿真 / 拟真 (3D Page Curl with Spine Rotation & Gradient lighting)
                 0 -> {
-                    if (offsetVal < 0) {
-                        // Turning Next: Underneath page is Next Page (opaque paper background)
-                        if (safeCurrentPage + 1 < pages.size) {
-                            SinglePageRender(
-                                page = pages[safeCurrentPage + 1],
-                                totalPages = pages.size,
-                                bookTitle = bookTitle,
-                                bgColor = bgColor,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                textSize = textSize,
-                                lineHeightMult = lineHeightMult,
-                                paragraphSpacing = paragraphSpacing,
-                                customFontFamily = customFontFamily,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .drawWithContent {
-                                        drawContent()
-                                        // Shadow on incoming page cast by turning page
-                                        val shadowAlpha = (1f - abs(progress)) * 0.22f
-                                        drawRect(Color.Black.copy(alpha = shadowAlpha))
-                                    }
-                            )
+                    Modifier
+                        .graphicsLayer {
+                            val clampedOffset = pageOffset.coerceIn(-1f, 1f)
+                            if (clampedOffset < 0f) {
+                                // Turning forward: Left page rotating into depth around spine
+                                translationX = -clampedOffset * size.width * 0.65f
+                                cameraDistance = 16000f
+                                transformOrigin = TransformOrigin(0f, 0.5f)
+                                rotationY = clampedOffset * 72f
+                                shadowElevation = (16f * abs(clampedOffset)).dp.toPx()
+                            } else if (clampedOffset > 0f) {
+                                // Turning backward: Right page coming in or under
+                                translationX = -clampedOffset * size.width
+                                cameraDistance = 16000f
+                                transformOrigin = TransformOrigin(0f, 0.5f)
+                                rotationY = -72f + (1f - clampedOffset) * 72f
+                                shadowElevation = (16f * (1f - clampedOffset)).dp.toPx()
+                            } else {
+                                translationX = 0f
+                                rotationY = 0f
+                            }
                         }
-
-                        // Current Page flipping with 3D rotation, drop shadow & fold spine lighting
-                        SinglePageRender(
-                            page = pages[safeCurrentPage],
-                            totalPages = pages.size,
-                            bookTitle = bookTitle,
-                            bgColor = bgColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            textSize = textSize,
-                            lineHeightMult = lineHeightMult,
-                            paragraphSpacing = paragraphSpacing,
-                            customFontFamily = customFontFamily,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .shadow(elevation = (16 * abs(progress)).dp, shape = RectangleShape, clip = false)
-                                .graphicsLayer {
-                                    cameraDistance = 12000f
-                                    transformOrigin = TransformOrigin(0f, 0.5f)
-                                    rotationY = progress * 65f
-                                    translationX = offsetVal * 0.35f
-                                }
-                                .drawWithContent {
-                                    drawContent()
-                                    // Curl fold edge highlight and shadow
-                                    val foldX = size.width * (1f + progress)
-                                    if (abs(progress) > 0.01f) {
-                                        drawRect(
-                                            brush = Brush.horizontalGradient(
-                                                colors = listOf(
-                                                    Color.Transparent,
-                                                    Color.Black.copy(alpha = 0.15f * abs(progress)),
-                                                    Color.White.copy(alpha = 0.30f * abs(progress)),
-                                                    Color.Transparent
-                                                ),
-                                                startX = (foldX - 90f).coerceAtLeast(0f),
-                                                endX = foldX + 50f
-                                            )
-                                        )
-                                    }
-                                }
-                        )
-                    } else if (offsetVal > 0) {
-                        // Turning Prev: Current page is under, Previous page flips in from left
-                        SinglePageRender(
-                            page = pages[safeCurrentPage],
-                            totalPages = pages.size,
-                            bookTitle = bookTitle,
-                            bgColor = bgColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            textSize = textSize,
-                            lineHeightMult = lineHeightMult,
-                            paragraphSpacing = paragraphSpacing,
-                            customFontFamily = customFontFamily,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .drawWithContent {
-                                    drawContent()
-                                    val shadowAlpha = progress * 0.22f
-                                    drawRect(Color.Black.copy(alpha = shadowAlpha))
-                                }
-                        )
-
-                        if (safeCurrentPage - 1 >= 0) {
-                            SinglePageRender(
-                                page = pages[safeCurrentPage - 1],
-                                totalPages = pages.size,
-                                bookTitle = bookTitle,
-                                bgColor = bgColor,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                textSize = textSize,
-                                lineHeightMult = lineHeightMult,
-                                paragraphSpacing = paragraphSpacing,
-                                customFontFamily = customFontFamily,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .shadow(elevation = (16 * progress).dp, shape = RectangleShape, clip = false)
-                                    .graphicsLayer {
-                                        cameraDistance = 12000f
-                                        transformOrigin = TransformOrigin(0f, 0.5f)
-                                        rotationY = -65f + (progress * 65f)
-                                        translationX = -widthPx + (offsetVal * 0.65f)
-                                    }
-                            )
+                        .zIndex(if (pageOffset <= 0f) 2f else 1f)
+                        .drawWithContent {
+                            drawContent()
+                            val clampedOffset = pageOffset.coerceIn(-1f, 1f)
+                            if (clampedOffset < 0f) {
+                                // Light and shadow along spine fold
+                                val progress = abs(clampedOffset)
+                                val foldX = size.width * (1f - progress)
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.16f * progress),
+                                            Color.White.copy(alpha = 0.32f * progress),
+                                            Color.Transparent
+                                        ),
+                                        startX = (foldX - 90f).coerceAtLeast(0f),
+                                        endX = foldX + 50f
+                                    )
+                                )
+                            } else if (clampedOffset > 0f) {
+                                // Underneath shadow
+                                val progress = 1f - pageOffset.coerceIn(0f, 1f)
+                                drawRect(Color.Black.copy(alpha = (1f - progress) * 0.22f))
+                            }
                         }
-                    } else {
-                        SinglePageRender(
-                            page = pages[safeCurrentPage],
-                            totalPages = pages.size,
-                            bookTitle = bookTitle,
-                            bgColor = bgColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            textSize = textSize,
-                            lineHeightMult = lineHeightMult,
-                            paragraphSpacing = paragraphSpacing,
-                            customFontFamily = customFontFamily,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
                 }
 
-                // 1: 平移 / 滑动 (Slide)
+                // 1: 平移 (Slide - Smooth 120Hz 1:1 hardware pager)
                 1 -> {
-                    // Previous Page
-                    if (offsetVal > 0 && safeCurrentPage - 1 >= 0) {
-                        SinglePageRender(
-                            page = pages[safeCurrentPage - 1],
-                            totalPages = pages.size,
-                            bookTitle = bookTitle,
-                            bgColor = bgColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            textSize = textSize,
-                            lineHeightMult = lineHeightMult,
-                            paragraphSpacing = paragraphSpacing,
-                            customFontFamily = customFontFamily,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .shadow(elevation = 12.dp, shape = RectangleShape, clip = false)
-                                .graphicsLayer { translationX = offsetVal - widthPx }
-                        )
-                    }
-
-                    // Current Page
-                    SinglePageRender(
-                        page = pages[safeCurrentPage],
-                        totalPages = pages.size,
-                        bookTitle = bookTitle,
-                        bgColor = bgColor,
-                        textColor = textColor,
-                        secondaryTextColor = secondaryTextColor,
-                        textSize = textSize,
-                        lineHeightMult = lineHeightMult,
-                        paragraphSpacing = paragraphSpacing,
-                        customFontFamily = customFontFamily,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .shadow(elevation = 12.dp, shape = RectangleShape, clip = false)
-                            .graphicsLayer { translationX = offsetVal }
-                    )
-
-                    // Next Page
-                    if (offsetVal < 0 && safeCurrentPage + 1 < pages.size) {
-                        SinglePageRender(
-                            page = pages[safeCurrentPage + 1],
-                            totalPages = pages.size,
-                            bookTitle = bookTitle,
-                            bgColor = bgColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            textSize = textSize,
-                            lineHeightMult = lineHeightMult,
-                            paragraphSpacing = paragraphSpacing,
-                            customFontFamily = customFontFamily,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .shadow(elevation = 12.dp, shape = RectangleShape, clip = false)
-                                .graphicsLayer { translationX = offsetVal + widthPx }
-                        )
-                    }
+                    Modifier
+                        .graphicsLayer {
+                            shadowElevation = 8.dp.toPx()
+                        }
                 }
 
-                // 2: 覆盖 (Cover)
+                // 2: 覆盖 (Cover - Top page slides over stationary bottom page)
                 2 -> {
-                    if (offsetVal < 0) {
-                        // Underneath: Next Page
-                        if (safeCurrentPage + 1 < pages.size) {
-                            SinglePageRender(
-                                page = pages[safeCurrentPage + 1],
-                                totalPages = pages.size,
-                                bookTitle = bookTitle,
-                                bgColor = bgColor,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                textSize = textSize,
-                                lineHeightMult = lineHeightMult,
-                                paragraphSpacing = paragraphSpacing,
-                                customFontFamily = customFontFamily,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                    Modifier
+                        .graphicsLayer {
+                            val clampedOffset = pageOffset.coerceIn(-1f, 1f)
+                            if (clampedOffset > 0f) {
+                                // Next page stays stationary beneath
+                                translationX = -clampedOffset * size.width
+                            } else {
+                                // Current page slides left normally with elevation drop shadow
+                                translationX = 0f
+                                shadowElevation = 16.dp.toPx()
+                            }
                         }
-                        // Top: Current page sliding left with shadow on left edge
-                        SinglePageRender(
-                            page = pages[safeCurrentPage],
-                            totalPages = pages.size,
-                            bookTitle = bookTitle,
-                            bgColor = bgColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            textSize = textSize,
-                            lineHeightMult = lineHeightMult,
-                            paragraphSpacing = paragraphSpacing,
-                            customFontFamily = customFontFamily,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .shadow(elevation = 16.dp, shape = RectangleShape, clip = false)
-                                .graphicsLayer { translationX = offsetVal }
-                        )
-                    } else if (offsetVal > 0) {
-                        // Underneath: Current Page
-                        SinglePageRender(
-                            page = pages[safeCurrentPage],
-                            totalPages = pages.size,
-                            bookTitle = bookTitle,
-                            bgColor = bgColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            textSize = textSize,
-                            lineHeightMult = lineHeightMult,
-                            paragraphSpacing = paragraphSpacing,
-                            customFontFamily = customFontFamily,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        // Top: Previous page sliding in from left with drop shadow
-                        if (safeCurrentPage - 1 >= 0) {
-                            SinglePageRender(
-                                page = pages[safeCurrentPage - 1],
-                                totalPages = pages.size,
-                                bookTitle = bookTitle,
-                                bgColor = bgColor,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                textSize = textSize,
-                                lineHeightMult = lineHeightMult,
-                                paragraphSpacing = paragraphSpacing,
-                                customFontFamily = customFontFamily,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .shadow(elevation = 16.dp, shape = RectangleShape, clip = false)
-                                    .graphicsLayer { translationX = offsetVal - widthPx }
-                            )
-                        }
-                    } else {
-                        SinglePageRender(
-                            page = pages[safeCurrentPage],
-                            totalPages = pages.size,
-                            bookTitle = bookTitle,
-                            bgColor = bgColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            textSize = textSize,
-                            lineHeightMult = lineHeightMult,
-                            paragraphSpacing = paragraphSpacing,
-                            customFontFamily = customFontFamily,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                        .zIndex(if (pageOffset <= 0f) 2f else 1f)
                 }
 
                 // 3: 淡入淡出 (Cross-fade)
                 3 -> {
-                    val fadeRatio = abs(progress)
-                    val targetPage = if (offsetVal < 0) safeCurrentPage + 1 else safeCurrentPage - 1
+                    Modifier
+                        .graphicsLayer {
+                            val clampedOffset = pageOffset.coerceIn(-1f, 1f)
+                            // Stack pages directly on top of each other
+                            translationX = -clampedOffset * size.width
+                            alpha = (1f - abs(clampedOffset)).coerceIn(0f, 1f)
+                            val scale = 0.96f + (0.04f * (1f - abs(clampedOffset)))
+                            scaleX = scale
+                            scaleY = scale
+                        }
+                }
 
-                    // Base/underneath page
-                    if (targetPage in 0 until pages.size && fadeRatio > 0.01f) {
-                        SinglePageRender(
-                            page = pages[targetPage],
-                            totalPages = pages.size,
-                            bookTitle = bookTitle,
-                            bgColor = bgColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            textSize = textSize,
-                            lineHeightMult = lineHeightMult,
-                            paragraphSpacing = paragraphSpacing,
-                            customFontFamily = customFontFamily,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    alpha = fadeRatio
-                                    scaleX = 0.96f + (0.04f * fadeRatio)
-                                    scaleY = 0.96f + (0.04f * fadeRatio)
+                // 4: 无动画 (None - Direct Jump)
+                else -> {
+                    Modifier
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(pageGraphicsModifier)
+                    .pointerInput(pageIndex, pages.size) {
+                        detectTapGestures(
+                            onTap = { offset ->
+                                val tapX = offset.x
+                                val width = size.width.toFloat()
+                                when {
+                                    tapX < width * 0.28f -> {
+                                        if (pagerState.currentPage > 0) {
+                                            coroutineScope.launch {
+                                                if (pageAnimStyle == 4) {
+                                                    pagerState.scrollToPage(pagerState.currentPage - 1)
+                                                } else {
+                                                    pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    tapX > width * 0.72f -> {
+                                        if (pagerState.currentPage < pages.size - 1) {
+                                            coroutineScope.launch {
+                                                if (pageAnimStyle == 4) {
+                                                    pagerState.scrollToPage(pagerState.currentPage + 1)
+                                                } else {
+                                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else -> {
+                                        onToggleToolbars()
+                                    }
                                 }
+                            }
                         )
                     }
-
-                    // Top page fading out
-                    SinglePageRender(
-                        page = pages[safeCurrentPage],
-                        totalPages = pages.size,
-                        bookTitle = bookTitle,
-                        bgColor = bgColor,
-                        textColor = textColor,
-                        secondaryTextColor = secondaryTextColor,
-                        textSize = textSize,
-                        lineHeightMult = lineHeightMult,
-                        paragraphSpacing = paragraphSpacing,
-                        customFontFamily = customFontFamily,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                alpha = (1f - fadeRatio).coerceIn(0f, 1f)
-                                scaleX = 1f - (0.04f * fadeRatio)
-                                scaleY = 1f - (0.04f * fadeRatio)
-                            }
-                    )
-                }
-
-                // 4: 无动画 (None)
-                else -> {
-                    SinglePageRender(
-                        page = pages[safeCurrentPage],
-                        totalPages = pages.size,
-                        bookTitle = bookTitle,
-                        bgColor = bgColor,
-                        textColor = textColor,
-                        secondaryTextColor = secondaryTextColor,
-                        textSize = textSize,
-                        lineHeightMult = lineHeightMult,
-                        paragraphSpacing = paragraphSpacing,
-                        customFontFamily = customFontFamily,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+            ) {
+                SinglePageRender(
+                    page = page,
+                    totalPages = pages.size,
+                    bookTitle = bookTitle,
+                    bgColor = bgColor,
+                    textColor = textColor,
+                    secondaryTextColor = secondaryTextColor,
+                    textSize = textSize,
+                    lineHeightMult = lineHeightMult,
+                    paragraphSpacing = paragraphSpacing,
+                    customFontFamily = customFontFamily,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }
