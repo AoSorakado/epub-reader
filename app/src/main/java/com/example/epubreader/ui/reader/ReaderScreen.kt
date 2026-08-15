@@ -132,10 +132,13 @@ fun ReaderScreen(
 
     var showToolbars by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showTocSheet by remember { mutableStateOf(false) }
     var settingsButtonBounds by remember { mutableStateOf(Rect.Zero) }
 
     androidx.activity.compose.BackHandler(enabled = true) {
-        if (showSettings) {
+        if (showTocSheet) {
+            showTocSheet = false
+        } else if (showSettings) {
             showSettings = false
         } else if (showToolbars) {
             showToolbars = false
@@ -329,7 +332,6 @@ fun ReaderScreen(
 
             var pagedCurrentIndex by remember { mutableStateOf(0) }
             var hasInitializedPagedIndex by remember { mutableStateOf(false) }
-            var showTocSheet by remember { mutableStateOf(false) }
 
             LaunchedEffect(pages.isNotEmpty()) {
                 if (pages.isNotEmpty() && !hasInitializedPagedIndex) {
@@ -603,39 +605,23 @@ fun ReaderScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left Group: Back Button + TOC Button
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // 1. Back Button (Left)
+                LiquidButton(
+                    onClick = {
+                        if (onBackClick != null) {
+                            onBackClick()
+                        } else {
+                            navController.popBackStack()
+                        }
+                    },
+                    backdrop = readerBackdrop,
+                    shape = CircleShape,
+                    modifier = Modifier.size(44.dp)
                 ) {
-                    LiquidButton(
-                        onClick = {
-                            if (onBackClick != null) {
-                                onBackClick()
-                            } else {
-                                navController.popBackStack()
-                            }
-                        },
-                        backdrop = readerBackdrop,
-                        shape = CircleShape,
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = textColor)
-                    }
-
-                    LiquidButton(
-                        onClick = {
-                            showTocSheet = true
-                        },
-                        backdrop = readerBackdrop,
-                        shape = CircleShape,
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录", tint = textColor)
-                    }
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = textColor)
                 }
 
-                // Center: Reading Progress Liquid Capsule (Pure LiquidButton, fully circular clipped, expands smoothly)
+                // 2. Reading Progress Liquid Capsule (Center)
                 LiquidButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -718,7 +704,7 @@ fun ReaderScreen(
 
         // 2. Bottom Floating Liquid Toolbar (TOC Button + Chapter Info Pill)
         AnimatedVisibility(
-            visible = showToolbars && !showSettings,
+            visible = showToolbars && !showSettings && !showTocSheet,
             enter = slideInVertically(initialOffsetY = { it }, animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
             exit = slideOutVertically(targetOffsetY = { it }, animationSpec = androidx.compose.animation.core.tween(250)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(250)),
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -740,8 +726,6 @@ fun ReaderScreen(
                 // Left: 目录 TOC LiquidButton (Frosted glass with List icon & "目录")
                 LiquidButton(
                     onClick = {
-                        showToolbars = false
-                        showSettings = false
                         showTocSheet = true
                     },
                     backdrop = readerBackdrop,
@@ -754,7 +738,7 @@ fun ReaderScreen(
                         modifier = Modifier.padding(horizontal = 16.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.List,
+                            imageVector = Icons.AutoMirrored.Filled.List,
                             contentDescription = "目录",
                             tint = textColor,
                             modifier = Modifier.size(18.dp)
@@ -772,8 +756,6 @@ fun ReaderScreen(
                 // Right: Current Chapter Name Glass Pill
                 LiquidButton(
                     onClick = {
-                        showToolbars = false
-                        showSettings = false
                         showTocSheet = true
                     },
                     backdrop = readerBackdrop,
