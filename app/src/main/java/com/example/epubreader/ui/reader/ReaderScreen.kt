@@ -51,6 +51,10 @@ import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -184,6 +188,7 @@ fun ReaderScreen(
     // Button Jelly Pulse upon collapse
     val buttonPulseScale = remember { androidx.compose.animation.core.Animatable(1f) }
     val morphScope = rememberCoroutineScope()
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(showSettings) {
         if (!showSettings && morphProgress > 0f) {
@@ -301,8 +306,8 @@ fun ReaderScreen(
                 paragraphSpacing
             ) {
                 if (containerWidthPx > 100f && containerHeightPx > 200f) {
-                    val contentWidthPx = containerWidthPx - with(density) { 40.dp.toPx() }
-                    val contentHeightPx = containerHeightPx - with(density) { (24.dp + 20.dp + 10.dp + 10.dp + 20.dp + 20.dp).toPx() }
+                    val contentWidthPx = containerWidthPx - with(density) { 36.dp.toPx() }
+                    val contentHeightPx = containerHeightPx - with(density) { (20.dp + 8.dp + 26.dp + 12.dp).toPx() }
                     val textSizePx = with(density) { textSize.sp.toPx() }
                     val lineHeightPx = (textSizePx * lineHeightMult).coerceAtLeast(textSizePx * 1.15f)
                     val paragraphSpacingPx = with(density) { paragraphSpacing.dp.toPx() }
@@ -321,6 +326,7 @@ fun ReaderScreen(
 
             var pagedCurrentIndex by remember { mutableStateOf(0) }
             var hasInitializedPagedIndex by remember { mutableStateOf(false) }
+            var showTocSheet by remember { mutableStateOf(false) }
 
             LaunchedEffect(pages.isNotEmpty()) {
                 if (pages.isNotEmpty() && !hasInitializedPagedIndex) {
@@ -479,6 +485,7 @@ fun ReaderScreen(
                             showToolbars = !showToolbars
                             if (!showToolbars) showSettings = false
                         },
+                        onOpenToc = { showTocSheet = true },
                         pageAnimStyle = pageAnimStyle,
                         bgColor = bgColor,
                         textColor = textColor,
@@ -1106,10 +1113,178 @@ fun ReaderScreen(
                     }
                 }
             }
+
+            // 3. Chapter Directory / TOC Liquid Glass Modal Sheet
+            AnimatedVisibility(
+                visible = showTocSheet,
+                enter = fadeIn(tween(250)),
+                exit = fadeOut(tween(200))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .pointerInput(Unit) {
+                            detectTapGestures { showTocSheet = false }
+                        }
+                )
+            }
+
+            AnimatedVisibility(
+                visible = showTocSheet,
+                enter = slideInVertically(initialOffsetY = { it }, animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) + fadeIn(tween(250)),
+                exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(220)) + fadeOut(tween(220)),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                val currentChapterIndex = if (pageTurnMode == 0) {
+                    flatItems.getOrNull(listState.firstVisibleItemIndex)?.chapterIndex ?: 0
+                } else {
+                    pages.getOrNull(pagedCurrentIndex)?.chapterIndex ?: 0
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.72f)
+                        .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                        .drawBackdrop(
+                            backdrop = readerBackdrop,
+                            shape = { RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp) },
+                            effects = {
+                                vibrancy()
+                                blur(12.dp.toPx())
+                            },
+                            highlight = { Highlight.Plain },
+                            onDrawSurface = {
+                                val surfaceColor = if (themeIndex == 2) Color(0xFF1E1E24).copy(0.92f) else Color(0xFFF8FAFC).copy(0.92f)
+                                drawRect(surfaceColor)
+                            }
+                        )
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {}
+                        )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(top = 20.dp, start = 20.dp, end = 20.dp, bottom = 16.dp)
+                    ) {
+                        // TOC Header
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "目录",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "共 ${parsedChapters.size} 章",
+                                    fontSize = 12.sp,
+                                    color = textColor.copy(alpha = 0.5f)
+                                )
+                            }
+
+                            LiquidButton(
+                                onClick = { showTocSheet = false },
+                                backdrop = readerBackdrop,
+                                surfaceColor = Color.White.copy(alpha = 0.15f),
+                                shape = CircleShape,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "关闭",
+                                    tint = textColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        // Chapters LazyColumn
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            itemsIndexed(parsedChapters) { idx, chapter ->
+                                val isCurrent = idx == currentChapterIndex
+                                val activeItemBg = if (themeIndex == 2) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.35f)
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .then(
+                                            if (isCurrent) Modifier.background(activeItemBg)
+                                            else Modifier
+                                        )
+                                        .clickable {
+                                            if (pageTurnMode == 0) {
+                                                val targetFlat = flatItems.indexOfFirst { it.chapterIndex == idx }
+                                                if (targetFlat >= 0) {
+                                                    coroutineScope.launch { listState.scrollToItem(targetFlat) }
+                                                    viewModel.saveProgress(targetFlat, 0)
+                                                }
+                                            } else {
+                                                val targetPage = pages.indexOfFirst { it.chapterIndex == idx }
+                                                if (targetPage >= 0) {
+                                                    pagedCurrentIndex = targetPage
+                                                    val cur = pages.getOrNull(targetPage)
+                                                    if (cur != null) viewModel.saveProgress(cur.flatItemIndex, 0)
+                                                }
+                                            }
+                                            showTocSheet = false
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "%02d".format(idx + 1),
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.45f),
+                                        modifier = Modifier.width(28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = chapter.title.ifBlank { "第 ${idx + 1} 章" },
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (isCurrent) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 }
+
 @Composable
 fun ThemeButton(color: Color, name: String, isSelected: Boolean, textColor: Color, onClick: () -> Unit) {
     Column(

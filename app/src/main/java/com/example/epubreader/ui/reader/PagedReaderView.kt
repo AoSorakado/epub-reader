@@ -5,12 +5,17 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +28,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eu.wewox.pagecurl.ExperimentalPageCurlApi
@@ -39,6 +45,7 @@ fun PagedReaderView(
     currentPageIndex: Int,
     onPageChanged: (Int) -> Unit,
     onToggleToolbars: () -> Unit,
+    onOpenToc: () -> Unit,
     pageAnimStyle: Int, // 0: 仿真, 1: 平移, 2: 覆盖, 3: 淡入, 4: 无动画
     bgColor: Color,
     textColor: Color,
@@ -120,6 +127,7 @@ fun PagedReaderView(
                             lineHeightMult = lineHeightMult,
                             paragraphSpacing = paragraphSpacing,
                             customFontFamily = customFontFamily,
+                            onOpenToc = onOpenToc,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -203,6 +211,7 @@ fun PagedReaderView(
                             lineHeightMult = lineHeightMult,
                             paragraphSpacing = paragraphSpacing,
                             customFontFamily = customFontFamily,
+                            onOpenToc = onOpenToc,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -353,6 +362,7 @@ fun PagedReaderView(
                                     lineHeightMult = lineHeightMult,
                                     paragraphSpacing = paragraphSpacing,
                                     customFontFamily = customFontFamily,
+                                    onOpenToc = onOpenToc,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
@@ -368,6 +378,7 @@ fun PagedReaderView(
                                 lineHeightMult = lineHeightMult,
                                 paragraphSpacing = paragraphSpacing,
                                 customFontFamily = customFontFamily,
+                                onOpenToc = onOpenToc,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .graphicsLayer { translationX = coverOffset.value }
@@ -387,6 +398,7 @@ fun PagedReaderView(
                                 lineHeightMult = lineHeightMult,
                                 paragraphSpacing = paragraphSpacing,
                                 customFontFamily = customFontFamily,
+                                onOpenToc = onOpenToc,
                                 modifier = Modifier.fillMaxSize()
                             )
                             // Top: Previous page sliding in from left with shadow
@@ -402,6 +414,7 @@ fun PagedReaderView(
                                     lineHeightMult = lineHeightMult,
                                     paragraphSpacing = paragraphSpacing,
                                     customFontFamily = customFontFamily,
+                                    onOpenToc = onOpenToc,
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .graphicsLayer { translationX = coverOffset.value }
@@ -421,6 +434,7 @@ fun PagedReaderView(
                                 lineHeightMult = lineHeightMult,
                                 paragraphSpacing = paragraphSpacing,
                                 customFontFamily = customFontFamily,
+                                onOpenToc = onOpenToc,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -477,6 +491,7 @@ fun PagedReaderView(
                     lineHeightMult = lineHeightMult,
                     paragraphSpacing = paragraphSpacing,
                     customFontFamily = customFontFamily,
+                    onOpenToc = onOpenToc,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer { alpha = if (targetPageIndex != null) (1f - fadeProgress.value) else 1f }
@@ -496,6 +511,7 @@ fun PagedReaderView(
                             lineHeightMult = lineHeightMult,
                             paragraphSpacing = paragraphSpacing,
                             customFontFamily = customFontFamily,
+                            onOpenToc = onOpenToc,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer { alpha = fadeProgress.value }
@@ -541,6 +557,7 @@ fun PagedReaderView(
                     lineHeightMult = lineHeightMult,
                     paragraphSpacing = paragraphSpacing,
                     customFontFamily = customFontFamily,
+                    onOpenToc = onOpenToc,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -560,35 +577,16 @@ private fun SinglePageRender(
     lineHeightMult: Float,
     paragraphSpacing: Float,
     customFontFamily: FontFamily?,
+    onOpenToc: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(bgColor)
-            .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 20.dp)
+            .padding(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 12.dp)
     ) {
-        // Page Top Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(20.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = page.chapterTitle,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Normal,
-                color = secondaryTextColor.copy(alpha = 0.45f),
-                maxLines = 1,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Page Body Elements (Fills strictly allocated body height)
+        // Page Body Elements (Occupies main viewport freely)
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -600,12 +598,12 @@ private fun SinglePageRender(
                     is PageElement.Title -> {
                         Text(
                             text = element.title,
-                            fontSize = (textSize * 1.35f).sp,
+                            fontSize = (textSize * 1.32f).sp,
                             fontWeight = FontWeight.Bold,
                             color = textColor,
                             fontFamily = customFontFamily,
-                            lineHeight = (textSize * 1.35f * 1.35f).sp,
-                            modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
+                            lineHeight = (textSize * 1.32f * 1.32f).sp,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
                         )
                     }
                     is PageElement.Paragraph -> {
@@ -638,29 +636,52 @@ private fun SinglePageRender(
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        // Page Bottom Footer
+        // Page Bottom Non-Intrusive Footer Bar (Left: Directory Button, Right: Chapter Title Display)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(20.dp),
+                .height(26.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = bookTitle,
-                fontSize = 10.5.sp,
-                color = secondaryTextColor.copy(alpha = 0.40f),
-                maxLines = 1,
-                modifier = Modifier.weight(1f, fill = false)
-            )
+            // Left: Subtle Clickable TOC Button
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onOpenToc() }
+                    .padding(vertical = 3.dp, horizontal = 4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.List,
+                    contentDescription = "目录",
+                    tint = secondaryTextColor.copy(alpha = 0.65f),
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "目录",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = secondaryTextColor.copy(alpha = 0.65f)
+                )
+            }
+
             Spacer(modifier = Modifier.width(12.dp))
+
+            // Right: Current Chapter Title & Page Indicator (Read-only display)
             Text(
-                text = "${page.pageInChapter} / ${page.totalPagesInChapter}  ·  ${page.pageIndex + 1}/$totalPages",
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.Normal,
-                color = secondaryTextColor.copy(alpha = 0.45f)
+                text = page.chapterTitle,
+                fontSize = 11.sp,
+                color = secondaryTextColor.copy(alpha = 0.45f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
             )
         }
     }
