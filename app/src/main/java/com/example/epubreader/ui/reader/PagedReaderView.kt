@@ -2,6 +2,7 @@ package com.example.epubreader.ui.reader
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -74,19 +75,16 @@ fun PagedReaderView(
 
     when (pageAnimStyle) {
         // ==========================================
-        // 0. 仿真 / 拟真 (Physical PageCurl with Theme Paper Color & Full Edge Bleed)
+        // 0. 仿真 / 拟真 (Authentic Book Paper Curl Simulation)
         // ==========================================
         0 -> {
             val curlState = rememberPageCurlState(initialCurrent = safeCurrentPage)
             val curlConfig = rememberPageCurlConfig(
                 backPageColor = bgColor,
-                backPageContentAlpha = 0.0f,
+                backPageContentAlpha = 0.08f,
                 shadowColor = Color.Black,
-                shadowAlpha = 0.28f,
-                shadowRadius = 12.dp,
-                dragInteraction = PageCurlConfig.GestureDragInteraction(
-                    pointerBehavior = PageCurlConfig.DragInteraction.PointerBehavior.PageEdge
-                )
+                shadowAlpha = 0.22f,
+                shadowRadius = 8.dp
             )
 
             LaunchedEffect(safeCurrentPage) {
@@ -133,7 +131,7 @@ fun PagedReaderView(
                     }
                 }
 
-                // Central hit-zone for menu toggle without stealing edge curl drags
+                // Central hit-zone for menu toggle
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(0.44f)
@@ -584,13 +582,12 @@ private fun SinglePageRender(
         modifier = modifier
             .fillMaxSize()
             .background(bgColor)
-            .padding(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 12.dp)
+            .padding(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 20.dp)
     ) {
-        // Page Body Elements (Occupies main viewport freely)
+        // Page Body Elements (Occupies main viewport cleanly)
         Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
+                .fillMaxSize(),
             verticalArrangement = Arrangement.Top
         ) {
             page.elements.forEach { element ->
@@ -634,55 +631,6 @@ private fun SinglePageRender(
                     }
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Page Bottom Non-Intrusive Footer Bar (Left: Directory Button, Right: Chapter Title Display)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(26.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Left: Subtle Clickable TOC Button
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) { onOpenToc() }
-                    .padding(vertical = 3.dp, horizontal = 4.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.List,
-                    contentDescription = "目录",
-                    tint = secondaryTextColor.copy(alpha = 0.65f),
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "目录",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = secondaryTextColor.copy(alpha = 0.65f)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // Right: Current Chapter Title & Page Indicator (Read-only display)
-            Text(
-                text = page.chapterTitle,
-                fontSize = 11.sp,
-                color = secondaryTextColor.copy(alpha = 0.45f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
-            )
         }
     }
 }

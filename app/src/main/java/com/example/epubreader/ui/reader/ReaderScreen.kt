@@ -134,6 +134,7 @@ fun ReaderScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showTocSheet by remember { mutableStateOf(false) }
     var settingsButtonBounds by remember { mutableStateOf(Rect.Zero) }
+    var tocButtonBounds by remember { mutableStateOf(Rect.Zero) }
 
     androidx.activity.compose.BackHandler(enabled = true) {
         if (showTocSheet) {
@@ -175,34 +176,62 @@ fun ReaderScreen(
     val isCustomThemeThreeColors by settingsViewModel.isCustomThemeThreeColors.collectAsState()
     val customColors by settingsViewModel.customColors.collectAsState()
 
-    val morphProgress by animateFloatAsState(
+    val settingsMorphProgress by animateFloatAsState(
         targetValue = if (showSettings) 1f else 0f,
         animationSpec = if (showSettings) {
             spring(
-                dampingRatio = 0.72f,
-                stiffness = 240f
+                dampingRatio = 0.76f,
+                stiffness = 280f
             )
         } else {
             spring(
-                dampingRatio = 0.78f, // Fluid damping
-                stiffness = 195f      // Balanced, snappy yet fluid collapse (黄金速率，灵动不拖沓)
+                dampingRatio = 0.82f,
+                stiffness = 250f
             )
         },
         label = "SettingsMorphProgress"
     )
 
+    val tocMorphProgress by animateFloatAsState(
+        targetValue = if (showTocSheet) 1f else 0f,
+        animationSpec = if (showTocSheet) {
+            spring(
+                dampingRatio = 0.76f,
+                stiffness = 280f
+            )
+        } else {
+            spring(
+                dampingRatio = 0.82f,
+                stiffness = 250f
+            )
+        },
+        label = "TocMorphProgress"
+    )
+
     // Button Jelly Pulse upon collapse
-    val buttonPulseScale = remember { androidx.compose.animation.core.Animatable(1f) }
+    val settingsPulseScale = remember { androidx.compose.animation.core.Animatable(1f) }
+    val tocPulseScale = remember { androidx.compose.animation.core.Animatable(1f) }
     val morphScope = rememberCoroutineScope()
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(showSettings) {
-        if (!showSettings && morphProgress > 0f) {
-            kotlinx.coroutines.delay(260)
-            buttonPulseScale.snapTo(1.18f)
-            buttonPulseScale.animateTo(
+        if (!showSettings && settingsMorphProgress > 0f) {
+            kotlinx.coroutines.delay(200)
+            settingsPulseScale.snapTo(1.16f)
+            settingsPulseScale.animateTo(
                 1f,
-                spring(dampingRatio = 0.42f, stiffness = 320f)
+                spring(dampingRatio = 0.42f, stiffness = 340f)
+            )
+        }
+    }
+
+    LaunchedEffect(showTocSheet) {
+        if (!showTocSheet && tocMorphProgress > 0f) {
+            kotlinx.coroutines.delay(200)
+            tocPulseScale.snapTo(1.16f)
+            tocPulseScale.animateTo(
+                1f,
+                spring(dampingRatio = 0.42f, stiffness = 340f)
             )
         }
     }
@@ -299,10 +328,12 @@ fun ReaderScreen(
             }
             
             val density = androidx.compose.ui.platform.LocalDensity.current
-            var containerWidthPx by remember { mutableStateOf(0f) }
-            var containerHeightPx by remember { mutableStateOf(0f) }
+            var containerWidthPx by remember { mutableFloatStateOf(0f) }
+            var containerHeightPx by remember { mutableFloatStateOf(0f) }
 
-            val pages = remember(
+            var pages by remember { mutableStateOf<List<com.example.epubreader.ui.reader.ReaderPage>>(emptyList()) }
+
+            LaunchedEffect(
                 flatItems,
                 chineseMode,
                 containerWidthPx,
@@ -311,23 +342,26 @@ fun ReaderScreen(
                 lineHeightMult,
                 paragraphSpacing
             ) {
-                if (containerWidthPx > 100f && containerHeightPx > 200f) {
+                if (containerWidthPx > 100f && containerHeightPx > 200f && flatItems.isNotEmpty()) {
                     val contentWidthPx = containerWidthPx - with(density) { 36.dp.toPx() }
-                    val contentHeightPx = containerHeightPx - with(density) { (20.dp + 8.dp + 26.dp + 12.dp).toPx() }
+                    val contentHeightPx = containerHeightPx - with(density) { 40.dp.toPx() }
                     val textSizePx = with(density) { textSize.sp.toPx() }
                     val lineHeightPx = (textSizePx * lineHeightMult).coerceAtLeast(textSizePx * 1.15f)
                     val paragraphSpacingPx = with(density) { paragraphSpacing.dp.toPx() }
 
-                    ReaderPagination.paginate(
-                        flatItems = flatItems,
-                        chineseMode = chineseMode,
-                        contentWidthPx = contentWidthPx,
-                        contentHeightPx = contentHeightPx,
-                        textSizePx = textSizePx,
-                        lineHeightPx = lineHeightPx,
-                        paragraphSpacingPx = paragraphSpacingPx
-                    )
-                } else emptyList()
+                    val computedPages = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                        ReaderPagination.paginate(
+                            flatItems = flatItems,
+                            chineseMode = chineseMode,
+                            contentWidthPx = contentWidthPx,
+                            contentHeightPx = contentHeightPx,
+                            textSizePx = textSizePx,
+                            lineHeightPx = lineHeightPx,
+                            paragraphSpacingPx = paragraphSpacingPx
+                        )
+                    }
+                    pages = computedPages
+                }
             }
 
             var pagedCurrentIndex by remember { mutableStateOf(0) }
@@ -408,8 +442,13 @@ fun ReaderScreen(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
                             ) { 
-                                showToolbars = !showToolbars
-                                if (!showToolbars) showSettings = false
+                                if (showTocSheet) {
+                                    showTocSheet = false
+                                } else if (showSettings) {
+                                    showSettings = false
+                                } else {
+                                    showToolbars = !showToolbars
+                                }
                             },
                         contentPadding = PaddingValues(top = 80.dp, bottom = 100.dp, start = 24.dp, end = 24.dp)
                     ) {
@@ -487,10 +526,18 @@ fun ReaderScreen(
                         currentPageIndex = pagedCurrentIndex,
                         onPageChanged = { onPagedIndexChanged(it) },
                         onToggleToolbars = {
-                            showToolbars = !showToolbars
-                            if (!showToolbars) showSettings = false
+                            if (showTocSheet) {
+                                showTocSheet = false
+                            } else if (showSettings) {
+                                showSettings = false
+                            } else {
+                                showToolbars = !showToolbars
+                            }
                         },
-                        onOpenToc = { showTocSheet = true },
+                        onOpenToc = {
+                            showSettings = false
+                            showTocSheet = true
+                        },
                         pageAnimStyle = pageAnimStyle,
                         bgColor = bgColor,
                         textColor = textColor,
@@ -525,7 +572,7 @@ fun ReaderScreen(
             
             // 1. Top Toolbar (Back, Reading Progress Capsule, and Settings Buttons)
             AnimatedVisibility(
-                visible = showToolbars,
+                visible = showToolbars && !showSettings && !showTocSheet,
                 enter = slideInVertically(initialOffsetY = { -it }, animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
                 exit = slideOutVertically(targetOffsetY = { -it }, animationSpec = androidx.compose.animation.core.tween(250)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(250)),
                 modifier = Modifier.align(Alignment.TopCenter)
@@ -683,7 +730,10 @@ fun ReaderScreen(
 
                 // Right: Settings Button
                 LiquidButton(
-                    onClick = { showSettings = !showSettings },
+                    onClick = {
+                        showTocSheet = false
+                        showSettings = !showSettings
+                    },
                     backdrop = readerBackdrop,
                     shape = CircleShape,
                     modifier = Modifier
@@ -692,9 +742,9 @@ fun ReaderScreen(
                             settingsButtonBounds = coordinates.boundsInRoot()
                         }
                         .graphicsLayer {
-                            alpha = if (morphProgress > 0.001f) 0f else 1f
-                            scaleX = buttonPulseScale.value
-                            scaleY = buttonPulseScale.value
+                            alpha = if (settingsMorphProgress > 0.001f) 0f else 1f
+                            scaleX = settingsPulseScale.value
+                            scaleY = settingsPulseScale.value
                         }
                 ) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = textColor)
@@ -726,14 +776,22 @@ fun ReaderScreen(
                 // Left: 目录 TOC LiquidButton (Frosted glass with List icon & "目录")
                 LiquidButton(
                     onClick = {
-                        showToolbars = false
                         showSettings = false
                         showTocSheet = true
                     },
                     backdrop = readerBackdrop,
                     surfaceColor = if (themeIndex == 2) Color.White.copy(0.12f) else Color.White.copy(0.28f),
                     shape = RoundedCornerShape(22.dp),
-                    modifier = Modifier.height(44.dp)
+                    modifier = Modifier
+                        .height(44.dp)
+                        .onGloballyPositioned { coordinates ->
+                            tocButtonBounds = coordinates.boundsInRoot()
+                        }
+                        .graphicsLayer {
+                            alpha = if (tocMorphProgress > 0.001f) 0f else 1f
+                            scaleX = tocPulseScale.value
+                            scaleY = tocPulseScale.value
+                        }
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -778,13 +836,13 @@ fun ReaderScreen(
             }
         }
 
-        // 2. Liquid Shape Morphing Container (Button expands into Dialog with damping & jelly physics)
-        if (morphProgress > 0.001f || showSettings) {
+        // 2. Liquid Shape Morphing Container for Settings (Button expands into Dialog with damping & jelly physics)
+        if (settingsMorphProgress > 0.001f || showSettings) {
             // Scrim overlay with gentle dimming
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = morphProgress * 0.15f }
+                    .graphicsLayer { alpha = settingsMorphProgress * 0.45f }
                     .background(Color.Black)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
@@ -808,20 +866,19 @@ fun ReaderScreen(
                 )
                 val btnBounds = if (settingsButtonBounds != Rect.Zero) settingsButtonBounds else fallbackBtnBounds
 
-                val dialogWidthPx = with(density) { (maxWidth - 40.dp).toPx() }
-                val dialogHeightPx = with(density) { 560.dp.toPx().coerceAtMost(maxHeight.toPx() - 100.dp.toPx()) }
+                val dialogWidthPx = with(density) { (maxWidth - 36.dp).toPx().coerceAtMost(460.dp.toPx()) }
+                val dialogHeightPx = with(density) { 560.dp.toPx().coerceAtMost(maxHeight.toPx() - 72.dp.toPx()) }
                 val dialogLeft = (screenWidthPx - dialogWidthPx) / 2f
                 val dialogTop = (screenHeightPx - dialogHeightPx) / 2f
                 val dialogBounds = Rect(dialogLeft, dialogTop, dialogLeft + dialogWidthPx, dialogTop + dialogHeightPx)
 
-                val currentLeft = androidx.compose.ui.util.lerp(btnBounds.left, dialogBounds.left, morphProgress)
-                val currentTop = androidx.compose.ui.util.lerp(btnBounds.top, dialogBounds.top, morphProgress)
-                val currentWidth = androidx.compose.ui.util.lerp(btnBounds.width, dialogWidthPx, morphProgress).coerceAtLeast(1f)
-                val currentHeight = androidx.compose.ui.util.lerp(btnBounds.height, dialogHeightPx, morphProgress).coerceAtLeast(1f)
-                val currentCornerRadius = androidx.compose.ui.util.lerp(btnBounds.height / 2f, with(density) { 28.dp.toPx() }, morphProgress).coerceAtLeast(0f)
+                val currentLeft = androidx.compose.ui.util.lerp(btnBounds.left, dialogBounds.left, settingsMorphProgress)
+                val currentTop = androidx.compose.ui.util.lerp(btnBounds.top, dialogBounds.top, settingsMorphProgress)
+                val currentWidth = androidx.compose.ui.util.lerp(btnBounds.width, dialogWidthPx, settingsMorphProgress).coerceAtLeast(1f)
+                val currentHeight = androidx.compose.ui.util.lerp(btnBounds.height, dialogHeightPx, settingsMorphProgress).coerceAtLeast(1f)
+                val currentCornerRadius = androidx.compose.ui.util.lerp(btnBounds.height / 2f, with(density) { 28.dp.toPx() }, settingsMorphProgress).coerceAtLeast(0f)
 
                 val glassTextColor = if (themeIndex == 2) Color.White else Color(0xFF1C1C1E)
-                val glassPanelColor = if (themeIndex == 2) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
 
                 Box(
                     modifier = Modifier
@@ -838,20 +895,17 @@ fun ReaderScreen(
                             shape = { RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }) },
                             effects = {
                                 vibrancy()
-                                blur(androidx.compose.ui.util.lerp(3f, 8f, morphProgress).coerceAtLeast(0.1f).dp.toPx())
-                                lens(
-                                    refractionHeight = androidx.compose.ui.util.lerp(14f, 24f, morphProgress).coerceAtLeast(0.1f).dp.toPx(),
-                                    refractionAmount = androidx.compose.ui.util.lerp(28f, 48f, morphProgress).coerceAtLeast(0.1f).dp.toPx(),
-                                    chromaticAberration = true
-                                )
+                                blur(5f.dp.toPx())
+                                lens(8f.dp.toPx(), 16f.dp.toPx(), chromaticAberration = true)
                             },
                             highlight = { Highlight.Plain },
                             onDrawSurface = {
-                                val surfaceColor = if (themeIndex == 2) Color.White.copy(0.06f) else Color.White.copy(0.10f)
+                                val surfaceColor = if (themeIndex == 2) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.22f)
                                 drawRect(surfaceColor)
                             },
                             exportedBackdrop = bottomSheetBackdrop
                         )
+                        .clip(RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -860,12 +914,12 @@ fun ReaderScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     // Morphing Icon: Settings Icon centered inside button, fades out as it expands
-                    if (morphProgress < 0.6f) {
+                    if (settingsMorphProgress < 0.5f) {
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(44.dp)
                                 .graphicsLayer {
-                                    alpha = (1f - morphProgress * 2.5f).coerceIn(0f, 1f)
+                                    alpha = (1f - settingsMorphProgress * 2.2f).coerceIn(0f, 1f)
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -874,163 +928,225 @@ fun ReaderScreen(
                     }
 
                     // Morphing Content: Settings controls fade in as the container reaches full dialog size
-                    if (morphProgress > 0.2f) {
+                    if (settingsMorphProgress > 0.15f) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer {
-                                    alpha = ((morphProgress - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                                    alpha = ((settingsMorphProgress - 0.15f) / 0.85f).coerceIn(0f, 1f)
                                 }
-                                .padding(24.dp)
+                                .padding(top = 22.dp, bottom = 20.dp, start = 22.dp, end = 22.dp)
                         ) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .verticalScroll(rememberScrollState())
                             ) {
-                                val headerStyle = androidx.compose.ui.text.TextStyle(
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = glassTextColor,
-                                    letterSpacing = 0.6.sp
-                                )
-                                val labelStyle = androidx.compose.ui.text.TextStyle(
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = glassTextColor
-                                )
-                                val buttonTextStyle = androidx.compose.ui.text.TextStyle(
-                                    fontSize = 14.sp,
-                                    color = glassTextColor
-                                )
-                                val sliderTrackColor = if (themeIndex == 2) Color.White.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.12f)
-                                
-                                val currentThemeAccent = com.example.epubreader.ui.theme.getThemeAccentColor(
-                                    theme = appTheme,
-                                    customColors = if (isCustomThemeThreeColors) customColors else customColors.take(2)
-                                )
-                                val sliderAccentColor = when (themeIndex) {
-                                    1 -> Color(0xFF52855B) // Eye-care warm green/sage
-                                    2 -> Color(0xFF38BDF8) // Night mode luminous cyan
-                                    else -> currentThemeAccent // Light mode matches global theme
-                                }
-
-                                Text("排版调整", style = headerStyle)
-                                Spacer(modifier = Modifier.height(18.dp))
-                                
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("字号", style = labelStyle, modifier = Modifier.width(40.dp))
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text("A", style = labelStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium))
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    LiquidSlider(
-                                        value = { textSize },
-                                        onValueChange = { viewModel.setTextSize(it) },
-                                        valueRange = 12f..32f,
-                                        visibilityThreshold = 0.1f,
-                                        backdrop = bottomSheetBackdrop,
-                                        accentColor = sliderAccentColor,
-                                        trackColor = sliderTrackColor,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text("A", style = labelStyle.copy(fontSize = 20.sp, fontWeight = FontWeight.ExtraBold))
-                                }
-
-                                Spacer(modifier = Modifier.height(18.dp))
-                                
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("行距", style = labelStyle, modifier = Modifier.width(40.dp))
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text("小", style = labelStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium))
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    LiquidSlider(
-                                        value = { lineHeightMult },
-                                        onValueChange = { viewModel.setLineHeightMult(it) },
-                                        valueRange = 1.0f..3.0f,
-                                        visibilityThreshold = 0.05f,
-                                        backdrop = bottomSheetBackdrop,
-                                        accentColor = sliderAccentColor,
-                                        trackColor = sliderTrackColor,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text("大", style = labelStyle.copy(fontSize = 16.sp, fontWeight = FontWeight.ExtraBold))
-                                }
-                                
-                                Spacer(modifier = Modifier.height(18.dp))
-                                
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("段距", style = labelStyle, modifier = Modifier.width(40.dp))
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text("小", style = labelStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium))
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    LiquidSlider(
-                                        value = { paragraphSpacing },
-                                        onValueChange = { viewModel.setParagraphSpacing(it) },
-                                        valueRange = 0f..48f,
-                                        visibilityThreshold = 1f,
-                                        backdrop = bottomSheetBackdrop,
-                                        accentColor = sliderAccentColor,
-                                        trackColor = sliderTrackColor,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text("大", style = labelStyle.copy(fontSize = 16.sp, fontWeight = FontWeight.ExtraBold))
-                                }
-                                
-                                Spacer(modifier = Modifier.height(28.dp))
-                                
-                                Text("主题色彩", style = headerStyle)
-                                Spacer(modifier = Modifier.height(16.dp))
-                                
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    Text(
+                                        "排版调整",
+                                        style = MaterialTheme.typography.titleLarge.copy(
+                                            color = glassTextColor,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 20.sp
+                                        )
+                                    )
+                                    LiquidButton(
+                                        onClick = { showSettings = false },
+                                        backdrop = readerBackdrop,
+                                        surfaceColor = if (themeIndex == 2) Color.White.copy(0.15f) else Color.Black.copy(0.06f),
+                                        shape = CircleShape,
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Close,
+                                            contentDescription = "Close",
+                                            tint = glassTextColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(24.dp))
+
+                                var localTextSize by remember(textSize) { mutableFloatStateOf(textSize) }
+                                var localLineHeight by remember(lineHeightMult) { mutableFloatStateOf(lineHeightMult) }
+                                var localParagraphSpacing by remember(paragraphSpacing) { mutableFloatStateOf(paragraphSpacing) }
+
+                                LaunchedEffect(localTextSize) {
+                                    if (localTextSize != textSize) {
+                                        kotlinx.coroutines.delay(100)
+                                        viewModel.setTextSize(localTextSize)
+                                    }
+                                }
+                                LaunchedEffect(localLineHeight) {
+                                    if (localLineHeight != lineHeightMult) {
+                                        kotlinx.coroutines.delay(100)
+                                        viewModel.setLineHeightMult(localLineHeight)
+                                    }
+                                }
+                                LaunchedEffect(localParagraphSpacing) {
+                                    if (localParagraphSpacing != paragraphSpacing) {
+                                        kotlinx.coroutines.delay(100)
+                                        viewModel.setParagraphSpacing(localParagraphSpacing)
+                                    }
+                                }
+
+                                val headerStyle = MaterialTheme.typography.titleSmall.copy(
+                                    color = glassTextColor.copy(alpha = 0.8f),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                val buttonTextStyle = MaterialTheme.typography.labelLarge.copy(
+                                    color = glassTextColor,
+                                    fontSize = 14.sp
+                                )
+
+                                // 1. Theme Color Selection
+                                Text("阅读主题", style = headerStyle)
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val isCustomTheme = isCustomThemeThreeColors
+                                    val lightColor = if (isCustomTheme) customColors.getOrElse(0) { Color(0xFFFAF9F6) } else Color(0xFFFAF9F6)
+                                    val sepiaColor = if (isCustomTheme) customColors.getOrElse(1) { Color(0xFFF4ECD8) } else Color(0xFFF4ECD8)
+                                    val darkColor = if (isCustomTheme) customColors.getOrElse(2) { Color(0xFF1C1C1E) } else Color(0xFF1C1C1E)
+
+                                    val themeSelectedBg = if (themeIndex == 2) Color.White.copy(0.25f) else Color.Black.copy(0.12f)
+                                    val themeUnselectedBg = if (themeIndex == 2) Color.White.copy(0.05f) else Color.Black.copy(0.04f)
+
                                     LiquidButton(
                                         onClick = { viewModel.setTheme(0) },
                                         backdrop = readerBackdrop,
-                                        surfaceColor = if (themeIndex == 0) Color.White.copy(0.35f) else Color.White.copy(0.08f),
-                                        modifier = Modifier.weight(1f).height(46.dp)
+                                        surfaceColor = if (themeIndex == 0) themeSelectedBg else themeUnselectedBg,
+                                        modifier = Modifier.weight(1f).height(48.dp)
                                     ) {
-                                        Box(Modifier.size(15.dp).background(Color.White, CircleShape).border(1.5.dp, Color.Black.copy(0.25f), CircleShape))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("亮白", style = buttonTextStyle, fontWeight = if (themeIndex == 0) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.size(14.dp).background(lightColor, CircleShape).border(1.dp, Color.Black.copy(0.1f), CircleShape))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("默认", style = buttonTextStyle, fontWeight = if (themeIndex == 0) FontWeight.ExtraBold else FontWeight.Medium)
+                                        }
                                     }
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     LiquidButton(
                                         onClick = { viewModel.setTheme(1) },
                                         backdrop = readerBackdrop,
-                                        surfaceColor = if (themeIndex == 1) Color(0xFFFDF6E3).copy(alpha = 0.45f) else Color(0xFFFDF6E3).copy(alpha = 0.12f),
-                                        modifier = Modifier.weight(1f).height(46.dp)
+                                        surfaceColor = if (themeIndex == 1) themeSelectedBg else themeUnselectedBg,
+                                        modifier = Modifier.weight(1f).height(48.dp)
                                     ) {
-                                        Box(Modifier.size(15.dp).background(Color(0xFFFDF6E3), CircleShape).border(1.5.dp, Color.Black.copy(0.25f), CircleShape))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("护眼", style = buttonTextStyle, fontWeight = if (themeIndex == 1) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.size(14.dp).background(sepiaColor, CircleShape))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("羊皮纸", style = buttonTextStyle, fontWeight = if (themeIndex == 1) FontWeight.ExtraBold else FontWeight.Medium)
+                                        }
                                     }
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     LiquidButton(
                                         onClick = { viewModel.setTheme(2) },
                                         backdrop = readerBackdrop,
-                                        surfaceColor = if (themeIndex == 2) Color(0xFF1E1E22).copy(alpha = 0.55f) else Color(0xFF1E1E22).copy(alpha = 0.15f),
-                                        modifier = Modifier.weight(1f).height(46.dp)
+                                        surfaceColor = if (themeIndex == 2) themeSelectedBg else themeUnselectedBg,
+                                        modifier = Modifier.weight(1f).height(48.dp)
                                     ) {
-                                        Box(Modifier.size(15.dp).background(Color(0xFF1E1E22), CircleShape).border(1.5.dp, Color.White.copy(0.35f), CircleShape))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("夜间", style = buttonTextStyle, fontWeight = if (themeIndex == 2) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.size(14.dp).background(darkColor, CircleShape))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("夜间", style = buttonTextStyle, fontWeight = if (themeIndex == 2) FontWeight.ExtraBold else FontWeight.Medium)
+                                        }
                                     }
                                 }
-                                
-                                Spacer(modifier = Modifier.height(28.dp))
-                                
-                                Text("字体转换", style = headerStyle)
-                                Spacer(modifier = Modifier.height(16.dp))
-                                
+
+                                Spacer(modifier = Modifier.height(24.dp))
+
+                                val sliderAccentColor = if (isCustomThemeThreeColors) {
+                                    customColors.firstOrNull() ?: MaterialTheme.colorScheme.primary
+                                } else when (themeIndex) {
+                                    1 -> Color(0xFFC07020)
+                                    2 -> Color(0xFF38BDF8)
+                                    else -> Color(0xFF007AFF)
+                                }
+                                val sliderTrackColor = if (themeIndex == 2) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.08f)
+
+                                // 2. Font Size Control
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    val activeSurface = if (themeIndex == 2) Color.White.copy(0.30f) else Color.White.copy(0.35f)
-                                    val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.08f) else Color.White.copy(0.08f)
+                                    Text("字号大小", style = headerStyle)
+                                    Text("${localTextSize.toInt()}sp", style = headerStyle.copy(fontWeight = FontWeight.Bold, color = glassTextColor))
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                LiquidSlider(
+                                    value = { localTextSize },
+                                    onValueChange = { localTextSize = it },
+                                    valueRange = 12f..36f,
+                                    visibilityThreshold = 0.5f,
+                                    backdrop = readerBackdrop,
+                                    accentColor = sliderAccentColor,
+                                    trackColor = sliderTrackColor
+                                )
+
+                                Spacer(modifier = Modifier.height(24.dp))
+
+                                // 3. Line Height Control
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("行高间距", style = headerStyle)
+                                    Text(String.format(java.util.Locale.US, "%.1fx", localLineHeight), style = headerStyle.copy(fontWeight = FontWeight.Bold, color = glassTextColor))
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                LiquidSlider(
+                                    value = { localLineHeight },
+                                    onValueChange = { localLineHeight = it },
+                                    valueRange = 1.0f..2.5f,
+                                    visibilityThreshold = 0.05f,
+                                    backdrop = readerBackdrop,
+                                    accentColor = sliderAccentColor,
+                                    trackColor = sliderTrackColor
+                                )
+
+                                Spacer(modifier = Modifier.height(24.dp))
+
+                                // 4. Paragraph Spacing Control
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("段落间距", style = headerStyle)
+                                    Text("${localParagraphSpacing.toInt()}dp", style = headerStyle.copy(fontWeight = FontWeight.Bold, color = glassTextColor))
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                LiquidSlider(
+                                    value = { localParagraphSpacing },
+                                    onValueChange = { localParagraphSpacing = it },
+                                    valueRange = 0f..32f,
+                                    visibilityThreshold = 1f,
+                                    backdrop = readerBackdrop,
+                                    accentColor = sliderAccentColor,
+                                    trackColor = sliderTrackColor
+                                )
+
+                                Spacer(modifier = Modifier.height(24.dp))
+
+                                // 5. Simplified / Traditional Chinese Converter
+                                Text("简繁转换", style = headerStyle)
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val activeSurface = if (themeIndex == 2) Color.White.copy(0.28f) else Color.Black.copy(0.12f)
+                                    val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.06f) else Color.Black.copy(0.04f)
 
                                     LiquidButton(
                                         onClick = { viewModel.setChineseMode(0) },
@@ -1054,61 +1170,61 @@ fun ReaderScreen(
                                         surfaceColor = if (chineseMode == 2) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
                                     ) {
-                                        Text("繁体", style = buttonTextStyle, fontWeight = if (chineseMode == 2) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Text("繁體", style = buttonTextStyle, fontWeight = if (chineseMode == 2) FontWeight.ExtraBold else FontWeight.SemiBold)
                                     }
                                 }
-                                
-                                Spacer(modifier = Modifier.height(28.dp))
-                                
-                                Text("自定义字体", style = headerStyle)
-                                Spacer(modifier = Modifier.height(16.dp))
-                                
+
+                                Spacer(modifier = Modifier.height(24.dp))
+
+                                // 6. Custom Font Selection
+                                Text("阅读字体", style = headerStyle)
+                                Spacer(modifier = Modifier.height(14.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    val activeSurface = if (themeIndex == 2) Color.White.copy(0.30f) else Color.White.copy(0.35f)
-                                    val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.08f) else Color.White.copy(0.08f)
-                                    val isCustom = !customFontUri.isNullOrEmpty()
+                                    val activeSurface = if (themeIndex == 2) Color.White.copy(0.28f) else Color.Black.copy(0.12f)
+                                    val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.06f) else Color.Black.copy(0.04f)
 
                                     LiquidButton(
                                         onClick = { viewModel.setCustomFontUri(null) },
                                         backdrop = readerBackdrop,
-                                        surfaceColor = if (!isCustom) activeSurface else inactiveSurface,
+                                        surfaceColor = if (customFontUri == null) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
                                     ) {
-                                        Text("系统默认", style = buttonTextStyle, fontWeight = if (!isCustom) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Text("系统默认", style = buttonTextStyle, fontWeight = if (customFontUri == null) FontWeight.ExtraBold else FontWeight.SemiBold)
                                     }
+
                                     LiquidButton(
                                         onClick = { fontLauncher.launch("*/*") },
                                         backdrop = readerBackdrop,
-                                        surfaceColor = if (isCustom) activeSurface else inactiveSurface,
+                                        surfaceColor = if (customFontUri != null) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
                                     ) {
-                                        Text("导入字体", style = buttonTextStyle, fontWeight = if (isCustom) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                        Text(
+                                            if (customFontUri != null) "自定义字体" else "选择字体",
+                                            style = buttonTextStyle,
+                                            fontWeight = if (customFontUri != null) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
-                                
-                                Spacer(modifier = Modifier.height(28.dp))
-                                
-                                Text("翻页方式", style = headerStyle)
-                                Spacer(modifier = Modifier.height(16.dp))
-                                
+
+                                Spacer(modifier = Modifier.height(24.dp))
+
+                                // 7. Page Turn Mode
+                                Text("翻页模式", style = headerStyle)
+                                Spacer(modifier = Modifier.height(14.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    val activeSurface = if (themeIndex == 2) Color.White.copy(0.30f) else Color.White.copy(0.35f)
-                                    val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.08f) else Color.White.copy(0.08f)
+                                    val activeSurface = if (themeIndex == 2) Color.White.copy(0.28f) else Color.Black.copy(0.12f)
+                                    val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.06f) else Color.Black.copy(0.04f)
 
                                     LiquidButton(
-                                        onClick = {
-                                            if (pageTurnMode != 0) {
-                                                val targetFlat = pages.getOrNull(pagedCurrentIndex)?.flatItemIndex ?: 0
-                                                viewModel.setPageTurnMode(0)
-                                                coroutineScope.launch { listState.scrollToItem(targetFlat) }
-                                            }
-                                        },
+                                        onClick = { viewModel.setPageTurnMode(0) },
                                         backdrop = readerBackdrop,
                                         surfaceColor = if (pageTurnMode == 0) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
@@ -1116,12 +1232,11 @@ fun ReaderScreen(
                                         Text("上下滚动", style = buttonTextStyle, fontWeight = if (pageTurnMode == 0) FontWeight.ExtraBold else FontWeight.SemiBold)
                                     }
                                     LiquidButton(
-                                        onClick = {
-                                            if (pageTurnMode != 1) {
-                                                val currentFlat = listState.firstVisibleItemIndex
-                                                val matchedPage = pages.indexOfFirst { it.flatItemIndex >= currentFlat }.coerceAtLeast(0)
-                                                pagedCurrentIndex = matchedPage
-                                                viewModel.setPageTurnMode(1)
+                                        onClick = { 
+                                            viewModel.setPageTurnMode(1)
+                                            if (pageTurnMode == 0) {
+                                                val flatIdx = listState.firstVisibleItemIndex
+                                                viewModel.saveProgress(flatIdx, 0)
                                             }
                                         },
                                         backdrop = readerBackdrop,
@@ -1132,44 +1247,30 @@ fun ReaderScreen(
                                     }
                                 }
 
-                                AnimatedVisibility(
-                                    visible = pageTurnMode == 1,
-                                    enter = expandVertically(spring(0.78f, 320f)) + fadeIn(),
-                                    exit = shrinkVertically(spring(0.82f, 340f)) + fadeOut()
-                                ) {
-                                    Column {
-                                        Spacer(modifier = Modifier.height(24.dp))
-                                        Text("翻页动画", style = headerStyle)
-                                        Spacer(modifier = Modifier.height(14.dp))
+                                if (pageTurnMode == 1) {
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    Text("翻页动画", style = headerStyle)
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    val animStyles = listOf("仿真", "平移", "覆盖", "淡入", "无动画")
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        val activeSurface = if (themeIndex == 2) Color.White.copy(0.28f) else Color.Black.copy(0.12f)
+                                        val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.06f) else Color.Black.copy(0.04f)
 
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            val animOptions = listOf(
-                                                0 to "仿真",
-                                                1 to "平移",
-                                                2 to "覆盖",
-                                                3 to "淡入",
-                                                4 to "无"
-                                            )
-                                            val activeSurface = if (themeIndex == 2) Color.White.copy(0.30f) else Color.White.copy(0.35f)
-                                            val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.08f) else Color.White.copy(0.08f)
-
-                                            animOptions.forEach { (styleIndex, label) ->
-                                                val isSelected = pageAnimStyle == styleIndex
-                                                LiquidButton(
-                                                    onClick = { viewModel.setPageAnimStyle(styleIndex) },
-                                                    backdrop = readerBackdrop,
-                                                    surfaceColor = if (isSelected) activeSurface else inactiveSurface,
-                                                    modifier = Modifier.weight(1f).height(42.dp)
-                                                ) {
-                                                    Text(
-                                                        label,
-                                                        style = buttonTextStyle.copy(fontSize = 13.sp),
-                                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
-                                                    )
-                                                }
+                                        animStyles.forEachIndexed { index, name ->
+                                            LiquidButton(
+                                                onClick = { viewModel.setPageAnimStyle(index) },
+                                                backdrop = readerBackdrop,
+                                                surfaceColor = if (pageAnimStyle == index) activeSurface else inactiveSurface,
+                                                modifier = Modifier.weight(1f).height(44.dp)
+                                            ) {
+                                                Text(
+                                                    name,
+                                                    style = buttonTextStyle.copy(fontSize = 12.5.sp),
+                                                    fontWeight = if (pageAnimStyle == index) FontWeight.ExtraBold else FontWeight.SemiBold
+                                                )
                                             }
                                         }
                                     }
@@ -1181,133 +1282,185 @@ fun ReaderScreen(
                     }
                 }
             }
+        }
 
-            // 3. Chapter Directory / TOC Modal Sheet
-            AnimatedVisibility(
-                visible = showTocSheet,
-                enter = fadeIn(tween(200)),
-                exit = fadeOut(tween(180))
+        // 3. Liquid Shape Morphing Container for TOC / 目录 (Bottom-Left button expands into TOC Dialog with damping & jelly physics)
+        if (tocMorphProgress > 0.001f || showTocSheet) {
+            // Scrim overlay with gentle dimming
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = tocMorphProgress * 0.45f }
+                    .background(Color.Black)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { showTocSheet = false }
+                    )
+            )
+
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxSize()
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.55f))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { showTocSheet = false }
-                        )
+                val density = LocalDensity.current
+                val screenWidthPx = constraints.maxWidth.toFloat()
+                val screenHeightPx = constraints.maxHeight.toFloat()
+
+                val fallbackTocBtnBounds = Rect(
+                    with(density) { 24.dp.toPx() },
+                    screenHeightPx - with(density) { 80.dp.toPx() },
+                    with(density) { 108.dp.toPx() },
+                    screenHeightPx - with(density) { 36.dp.toPx() }
                 )
-            }
+                val btnBounds = if (tocButtonBounds != Rect.Zero) tocButtonBounds else fallbackTocBtnBounds
 
-            AnimatedVisibility(
-                visible = showTocSheet,
-                enter = slideInVertically(initialOffsetY = { it }, animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)),
-                exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(220)),
-                modifier = Modifier.align(Alignment.BottomCenter)
-            ) {
+                val dialogWidthPx = with(density) { (maxWidth - 36.dp).toPx().coerceAtMost(460.dp.toPx()) }
+                val dialogHeightPx = with(density) { 560.dp.toPx().coerceAtMost(maxHeight.toPx() - 72.dp.toPx()) }
+                val dialogLeft = (screenWidthPx - dialogWidthPx) / 2f
+                val dialogTop = (screenHeightPx - dialogHeightPx) / 2f
+                val dialogBounds = Rect(dialogLeft, dialogTop, dialogLeft + dialogWidthPx, dialogTop + dialogHeightPx)
+
+                val currentLeft = androidx.compose.ui.util.lerp(btnBounds.left, dialogBounds.left, tocMorphProgress)
+                val currentTop = androidx.compose.ui.util.lerp(btnBounds.top, dialogBounds.top, tocMorphProgress)
+                val currentWidth = androidx.compose.ui.util.lerp(btnBounds.width, dialogWidthPx, tocMorphProgress).coerceAtLeast(1f)
+                val currentHeight = androidx.compose.ui.util.lerp(btnBounds.height, dialogHeightPx, tocMorphProgress).coerceAtLeast(1f)
+                val currentCornerRadius = androidx.compose.ui.util.lerp(btnBounds.height / 2f, with(density) { 28.dp.toPx() }, tocMorphProgress).coerceAtLeast(0f)
+
                 val currentChapterIndex = if (pageTurnMode == 0) {
                     flatItems.getOrNull(listState.firstVisibleItemIndex)?.chapterIndex ?: 0
                 } else {
                     pages.getOrNull(pagedCurrentIndex)?.chapterIndex ?: 0
                 }
 
-                val sheetBg = if (themeIndex == 2) Color(0xFF1E1E24).copy(alpha = 0.98f) 
-                    else if (themeIndex == 1) Color(0xFFF7F1E3).copy(alpha = 0.98f) 
-                    else Color(0xFFFCFCFD).copy(alpha = 0.98f)
+                val glassTextColor = if (themeIndex == 2) Color.White else Color(0xFF1C1C1E)
 
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.75f)
-                        .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                        .background(sheetBg)
-                        .border(
-                            width = 1.dp,
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = if (themeIndex == 2) 0.15f else 0.45f),
-                                    Color.Transparent
-                                )
-                            ),
-                            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+                        .layout { measurable, _ ->
+                            val placeable = measurable.measure(
+                                Constraints.fixed(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt())
+                            )
+                            layout(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt()) {
+                                placeable.place(currentLeft.fastRoundToInt(), currentTop.fastRoundToInt())
+                            }
+                        }
+                        .drawBackdrop(
+                            backdrop = readerBackdrop,
+                            shape = { RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }) },
+                            effects = {
+                                vibrancy()
+                                blur(5f.dp.toPx())
+                                lens(8f.dp.toPx(), 16f.dp.toPx(), chromaticAberration = true)
+                            },
+                            highlight = { Highlight.Plain },
+                            onDrawSurface = {
+                                val surfaceColor = if (themeIndex == 2) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.22f)
+                                drawRect(surfaceColor)
+                            },
+                            exportedBackdrop = bottomSheetBackdrop
                         )
+                        .clip(RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClick = {}
-                        )
+                            onClick = {} // Intercept clicks so tapping inside does not dismiss
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(top = 20.dp, start = 20.dp, end = 20.dp, bottom = 16.dp)
-                    ) {
-                        // TOC Header
+                    // Morphing Icon: 目录 button text & icon centered, fades out as it expands
+                    if (tocMorphProgress < 0.5f) {
                         Row(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                                .graphicsLayer {
+                                    alpha = (1f - tocMorphProgress * 2.2f).coerceIn(0f, 1f)
+                                }
+                                .padding(horizontal = 16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "目录",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = textColor
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "共 ${if (tocList.isNotEmpty()) tocList.size else parsedChapters.size} 章",
-                                    fontSize = 12.sp,
-                                    color = textColor.copy(alpha = 0.5f)
-                                )
-                            }
-
-                            LiquidButton(
-                                onClick = { showTocSheet = false },
-                                backdrop = readerBackdrop,
-                                surfaceColor = if (themeIndex == 2) Color.White.copy(0.15f) else Color.Black.copy(0.06f),
-                                shape = CircleShape,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = "关闭",
-                                    tint = textColor,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.List,
+                                contentDescription = "目录",
+                                tint = textColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "目录",
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textColor
+                            )
                         }
+                    }
 
-                        // Chapters LazyColumn (Rich EPUB TOC with exact chapter and section names)
-                        LazyColumn(
+                    // Morphing Content: TOC Header + Chapter List LazyColumn
+                    if (tocMorphProgress > 0.15f) {
+                        Box(
                             modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    alpha = ((tocMorphProgress - 0.15f) / 0.85f).coerceIn(0f, 1f)
+                                }
+                                .padding(top = 22.dp, start = 22.dp, end = 22.dp, bottom = 18.dp)
                         ) {
-                            if (tocList.isNotEmpty()) {
-                                itemsIndexed(tocList) { idx, tocItem ->
-                                    val isCurrent = if (pageTurnMode == 0) {
-                                        val curFlat = flatItems.getOrNull(listState.firstVisibleItemIndex)
-                                        curFlat != null && parsedChapters.getOrNull(curFlat.chapterIndex)?.title == tocItem.title
-                                    } else {
-                                        pages.getOrNull(pagedCurrentIndex)?.chapterTitle == tocItem.title
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                // TOC Header
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "目录",
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = glassTextColor
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "共 ${if (tocList.isNotEmpty()) tocList.size else parsedChapters.size} 章",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = glassTextColor.copy(alpha = 0.5f)
+                                        )
                                     }
-                                    val activeItemBg = if (themeIndex == 2) Color.White.copy(alpha = 0.18f) else Color.Black.copy(alpha = 0.08f)
 
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .then(
-                                                if (isCurrent) Modifier.background(activeItemBg)
-                                                else Modifier
-                                            )
-                                            .clickable {
+                                    LiquidButton(
+                                        onClick = { showTocSheet = false },
+                                        backdrop = readerBackdrop,
+                                        surfaceColor = if (themeIndex == 2) Color.White.copy(0.15f) else Color.Black.copy(0.06f),
+                                        shape = CircleShape,
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = "关闭",
+                                            tint = glassTextColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                // Chapters LazyColumn (Rich EPUB TOC with exact chapter and section names)
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    if (tocList.isNotEmpty()) {
+                                        itemsIndexed(tocList) { idx, tocItem ->
+                                            val isCurrent = if (pageTurnMode == 0) {
+                                                val curFlat = flatItems.getOrNull(listState.firstVisibleItemIndex)
+                                                curFlat != null && parsedChapters.getOrNull(curFlat.chapterIndex)?.title == tocItem.title
+                                            } else {
+                                                pages.getOrNull(pagedCurrentIndex)?.chapterTitle == tocItem.title
+                                            }
+
+                                            val onItemClick = {
                                                 val withoutAnchor = tocItem.href.substringBefore("#")
                                                 val fileNameOnly = withoutAnchor.substringAfterLast("/")
                                                 var matchedFlat = flatItems.indexOfFirst {
@@ -1340,67 +1493,103 @@ fun ReaderScreen(
                                                         if (cur != null) viewModel.saveProgress(cur.flatItemIndex, 0)
                                                     }
                                                     showTocSheet = false
+                                                    showToolbars = false
                                                 }
                                             }
-                                            .padding(
-                                                start = (12 + (tocItem.level * 16)).dp,
-                                                end = 12.dp,
-                                                top = 10.dp,
-                                                bottom = 10.dp
-                                            ),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        if (tocItem.level == 0) {
-                                            Text(
-                                                text = "${(idx + 1).toString().padStart(2, '0')}",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.4f),
-                                                modifier = Modifier.width(28.dp)
-                                            )
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .padding(end = 10.dp)
-                                                    .size(4.dp)
-                                                    .background(if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.35f), CircleShape)
-                                            )
+
+                                            if (isCurrent) {
+                                                LiquidButton(
+                                                    onClick = onItemClick,
+                                                    backdrop = readerBackdrop,
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    surfaceColor = if (themeIndex == 2) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.38f),
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .defaultMinSize(minHeight = 44.dp)
+                                                        .padding(start = (tocItem.level * 14).dp)
+                                                ) {
+                                                    if (tocItem.level == 0) {
+                                                        Text(
+                                                            text = "${(idx + 1).toString().padStart(2, '0')}",
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            modifier = Modifier.width(28.dp)
+                                                        )
+                                                    } else {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .padding(end = 8.dp)
+                                                                .size(5.dp)
+                                                                .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                                        )
+                                                    }
+
+                                                    Text(
+                                                        text = tocItem.title,
+                                                        fontSize = if (tocItem.level == 0) 14.5.sp else 13.5.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(6.dp)
+                                                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                                    )
+                                                }
+                                            } else {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .defaultMinSize(minHeight = 42.dp)
+                                                        .clip(RoundedCornerShape(12.dp))
+                                                        .clickable(onClick = onItemClick)
+                                                        .padding(
+                                                            start = (12 + (tocItem.level * 14)).dp,
+                                                            end = 12.dp,
+                                                            top = 10.dp,
+                                                            bottom = 10.dp
+                                                        ),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    if (tocItem.level == 0) {
+                                                        Text(
+                                                            text = "${(idx + 1).toString().padStart(2, '0')}",
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = glassTextColor.copy(alpha = 0.4f),
+                                                            modifier = Modifier.width(28.dp)
+                                                        )
+                                                    } else {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .padding(end = 10.dp)
+                                                                .size(4.dp)
+                                                                .background(glassTextColor.copy(alpha = 0.35f), CircleShape)
+                                                        )
+                                                    }
+
+                                                    Text(
+                                                        text = tocItem.title,
+                                                        fontSize = if (tocItem.level == 0) 14.5.sp else 13.5.sp,
+                                                        fontWeight = if (tocItem.level == 0) FontWeight.Bold else FontWeight.Normal,
+                                                        color = glassTextColor,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                }
+                                            }
                                         }
-
-                                        Text(
-                                            text = tocItem.title,
-                                            fontSize = if (tocItem.level == 0) 14.5.sp else 13.5.sp,
-                                            fontWeight = if (isCurrent) FontWeight.ExtraBold else if (tocItem.level == 0) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f)
-                                        )
-
-                                        if (isCurrent) {
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(6.dp)
-                                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                            )
-                                        }
-                                    }
-                                }
-                            } else {
-                                itemsIndexed(parsedChapters) { idx, chapter ->
-                                    val isCurrent = idx == currentChapterIndex
-                                    val activeItemBg = if (themeIndex == 2) Color.White.copy(alpha = 0.18f) else Color.Black.copy(alpha = 0.08f)
-
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .then(
-                                                if (isCurrent) Modifier.background(activeItemBg)
-                                                else Modifier
-                                            )
-                                            .clickable {
+                                    } else {
+                                        itemsIndexed(parsedChapters) { idx, chapter ->
+                                            val isCurrent = idx == currentChapterIndex
+                                            val onChapterClick = {
                                                 val flatIndex = flatItems.indexOfFirst { it.chapterIndex == idx }
                                                 if (flatIndex >= 0) {
                                                     if (pageTurnMode == 0) {
@@ -1414,35 +1603,73 @@ fun ReaderScreen(
                                                     }
                                                 }
                                                 showTocSheet = false
+                                                showToolbars = false
                                             }
-                                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "${(idx + 1).toString().padStart(2, '0')}",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.4f),
-                                            modifier = Modifier.width(28.dp)
-                                        )
 
-                                        Text(
-                                            text = chapter.title.ifBlank { "第 ${idx + 1} 章" },
-                                            fontSize = 14.sp,
-                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f)
-                                        )
+                                            if (isCurrent) {
+                                                LiquidButton(
+                                                    onClick = onChapterClick,
+                                                    backdrop = readerBackdrop,
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    surfaceColor = if (themeIndex == 2) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.38f),
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .defaultMinSize(minHeight = 44.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "${(idx + 1).toString().padStart(2, '0')}",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.width(28.dp)
+                                                    )
 
-                                        if (isCurrent) {
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(6.dp)
-                                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                            )
+                                                    Text(
+                                                        text = chapter.title.ifBlank { "第 ${idx + 1} 章" },
+                                                        fontSize = 14.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(6.dp)
+                                                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                                    )
+                                                }
+                                            } else {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .defaultMinSize(minHeight = 42.dp)
+                                                        .clip(RoundedCornerShape(12.dp))
+                                                        .clickable(onClick = onChapterClick)
+                                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = "${(idx + 1).toString().padStart(2, '0')}",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = glassTextColor.copy(alpha = 0.4f),
+                                                        modifier = Modifier.width(28.dp)
+                                                    )
+
+                                                    Text(
+                                                        text = chapter.title.ifBlank { "第 ${idx + 1} 章" },
+                                                        fontSize = 14.sp,
+                                                        fontWeight = FontWeight.Normal,
+                                                        color = glassTextColor,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }

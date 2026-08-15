@@ -188,10 +188,10 @@ fun LiquidSlider(
                         shape = { RoundedCornerShape(50) },
                         effects = {
                             vibrancy()
-                            blur(1.5f.dp.toPx())
+                            blur(2f.dp.toPx())
                             lens(
-                                refractionHeight = lerp(12f, 18f, currentLift).dp.toPx(),
-                                refractionAmount = lerp(20f, 32f, currentLift).dp.toPx(),
+                                refractionHeight = lerp(5f, 9f, currentLift).dp.toPx(),
+                                refractionAmount = lerp(10f, 18f, currentLift).dp.toPx(),
                                 chromaticAberration = true
                             )
                         },
@@ -205,8 +205,8 @@ fun LiquidSlider(
                             )
                         },
                         onDrawSurface = {
-                            // Pure transparent liquid glass surface
-                            drawRect(Color.White.copy(alpha = 0.06f))
+                            // Frosted liquid glass surface
+                            drawRect(Color.White.copy(alpha = 0.75f))
                         }
                     )
                     .size(thumbWidth, thumbHeight)

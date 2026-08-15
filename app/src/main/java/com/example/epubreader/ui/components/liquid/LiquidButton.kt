@@ -1,7 +1,9 @@
 package com.example.epubreader.ui.components.liquid
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -10,13 +12,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
@@ -24,6 +28,8 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 @Composable
 fun LiquidButton(
@@ -36,17 +42,96 @@ fun LiquidButton(
     surfaceColor: Color = Color.Unspecified,
     content: @Composable RowScope.() -> Unit
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Physical Elastic Animation States (Drag Pull Deformation + Press Bounce)
+    val dragX = remember { Animatable(0f) }
+    val dragY = remember { Animatable(0f) }
+    val pressScale = remember { Animatable(1f) }
+
+    val curDx = dragX.value
+    val curDy = dragY.value
+    val curScale = pressScale.value
+
+    // Dynamic directional stretch & squash calculations for organic liquid jelly physics
+    val stretchX = if (abs(curDx) > 0.1f) 1f + (abs(curDx) / 160f).coerceAtMost(0.20f) else 1f
+    val stretchY = if (abs(curDy) > 0.1f) 1f + (abs(curDy) / 160f).coerceAtMost(0.20f) else 1f
+    val squashX = if (abs(curDy) > 0.1f) 1f - (abs(curDy) / 320f).coerceAtMost(0.10f) else 1f
+    val squashY = if (abs(curDx) > 0.1f) 1f - (abs(curDx) / 320f).coerceAtMost(0.10f) else 1f
+
+    val finalScaleX = curScale * stretchX * squashX
+    val finalScaleY = curScale * stretchY * squashY
+
+    val springSpec = spring<Float>(
+        dampingRatio = 0.52f, // Bouncy liquid jelly spring physics
+        stiffness = 380f
+    )
+
+    fun releasePhysics() {
+        coroutineScope.launch {
+            launch { dragX.animateTo(0f, springSpec) }
+            launch { dragY.animateTo(0f, springSpec) }
+            launch { pressScale.animateTo(1f, springSpec) }
+        }
+    }
+
+    val gestureModifier = if (isInteractive) {
+        Modifier
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        coroutineScope.launch {
+                            pressScale.animateTo(0.92f, spring(dampingRatio = 0.70f, stiffness = 600f))
+                        }
+                        val success = tryAwaitRelease()
+                        if (success) {
+                            onClick()
+                        }
+                        releasePhysics()
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = {
+                        coroutineScope.launch {
+                            pressScale.animateTo(0.95f, spring(dampingRatio = 0.70f, stiffness = 500f))
+                        }
+                    },
+                    onDragEnd = {
+                        releasePhysics()
+                    },
+                    onDragCancel = {
+                        releasePhysics()
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        coroutineScope.launch {
+                            val nextX = (dragX.value + dragAmount.x * 0.45f).coerceIn(-45f, 45f)
+                            val nextY = (dragY.value + dragAmount.y * 0.45f).coerceIn(-35f, 35f)
+                            dragX.snapTo(nextX)
+                            dragY.snapTo(nextY)
+                        }
+                    }
+                )
+            }
+    } else Modifier
 
     Row(
         modifier = modifier
+            .graphicsLayer {
+                translationX = curDx * 0.65f
+                translationY = curDy * 0.65f
+                scaleX = finalScaleX
+                scaleY = finalScaleY
+            }
             .drawBackdrop(
                 backdrop = backdrop,
                 shape = { shape },
                 effects = {
                     vibrancy()
-                    blur(2f.dp.toPx())
-                    lens(14f.dp.toPx(), 28f.dp.toPx(), chromaticAberration = true)
+                    blur(3f.dp.toPx())
+                    lens(8f.dp.toPx(), 16f.dp.toPx(), chromaticAberration = true)
                 },
                 highlight = { Highlight.Plain },
                 onDrawSurface = {
@@ -56,16 +141,11 @@ fun LiquidButton(
                     } else if (surfaceColor.isSpecified) {
                         drawRect(surfaceColor)
                     } else {
-                        drawRect(Color.White.copy(alpha = 0.15f))
+                        drawRect(Color.White.copy(alpha = 0.18f))
                     }
                 }
             )
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                role = Role.Button,
-                onClick = onClick
-            )
+            .then(gestureModifier)
             .defaultMinSize(minHeight = 42.dp)
             .padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
