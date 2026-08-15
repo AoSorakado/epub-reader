@@ -895,19 +895,16 @@ fun ReaderScreen(
                             shape = { RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }) },
                             effects = {
                                 vibrancy()
-                                blur(10f.dp.toPx())
-                                lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                                blur(androidx.compose.ui.util.lerp(3f, 8f, settingsMorphProgress).dp.toPx())
+                                lens(
+                                    refractionHeight = androidx.compose.ui.util.lerp(14f, 24f, settingsMorphProgress).dp.toPx(),
+                                    refractionAmount = androidx.compose.ui.util.lerp(28f, 48f, settingsMorphProgress).dp.toPx(),
+                                    chromaticAberration = true
+                                )
                             },
                             highlight = { Highlight.Plain },
                             onDrawSurface = {
-                                val surfaceColor = if (themeIndex == 2) {
-                                    Color(0xFF0F172A).copy(alpha = 0.72f)
-                                } else if (themeIndex == 1) {
-                                    Color(0xFFF7ECDA).copy(alpha = 0.76f)
-                                } else {
-                                    Color(0xFFFFFFFF).copy(alpha = 0.78f)
-                                }
-                                drawRect(surfaceColor)
+                                drawRect(Color.White.copy(alpha = if (themeIndex == 2) 0.10f else 0.12f))
                             },
                             exportedBackdrop = bottomSheetBackdrop
                         )
@@ -961,19 +958,16 @@ fun ReaderScreen(
                                             fontSize = 20.sp
                                         )
                                     )
-                                    LiquidButton(
-                                        onClick = { showSettings = false },
-                                        backdrop = readerBackdrop,
-                                        surfaceColor = if (themeIndex == 2) Color.White.copy(0.15f) else Color.Black.copy(0.06f),
-                                        shape = CircleShape,
-                                        modifier = Modifier.size(32.dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .background(if (themeIndex == 2) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.35f))
+                                            .border(0.6.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                            .clickable { showSettings = false },
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(
-                                            Icons.Rounded.Close,
-                                            contentDescription = "Close",
-                                            tint = glassTextColor,
-                                            modifier = Modifier.size(16.dp)
-                                        )
+                                        Text("✕", color = glassTextColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                     }
                                 }
 
@@ -1346,19 +1340,16 @@ fun ReaderScreen(
                             shape = { RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }) },
                             effects = {
                                 vibrancy()
-                                blur(10f.dp.toPx())
-                                lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                                blur(androidx.compose.ui.util.lerp(3f, 8f, tocMorphProgress).dp.toPx())
+                                lens(
+                                    refractionHeight = androidx.compose.ui.util.lerp(14f, 24f, tocMorphProgress).dp.toPx(),
+                                    refractionAmount = androidx.compose.ui.util.lerp(28f, 48f, tocMorphProgress).dp.toPx(),
+                                    chromaticAberration = true
+                                )
                             },
                             highlight = { Highlight.Plain },
                             onDrawSurface = {
-                                val surfaceColor = if (themeIndex == 2) {
-                                    Color(0xFF0F172A).copy(alpha = 0.72f)
-                                } else if (themeIndex == 1) {
-                                    Color(0xFFF7ECDA).copy(alpha = 0.76f)
-                                } else {
-                                    Color(0xFFFFFFFF).copy(alpha = 0.78f)
-                                }
-                                drawRect(surfaceColor)
+                                drawRect(Color.White.copy(alpha = if (themeIndex == 2) 0.10f else 0.12f))
                             },
                             exportedBackdrop = bottomSheetBackdrop
                         )
@@ -1431,19 +1422,16 @@ fun ReaderScreen(
                                         )
                                     }
 
-                                    LiquidButton(
-                                        onClick = { showTocSheet = false },
-                                        backdrop = readerBackdrop,
-                                        surfaceColor = if (themeIndex == 2) Color.White.copy(0.15f) else Color.Black.copy(0.06f),
-                                        shape = CircleShape,
-                                        modifier = Modifier.size(32.dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .background(if (themeIndex == 2) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.35f))
+                                            .border(0.6.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                            .clickable { showTocSheet = false },
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Close,
-                                            contentDescription = "关闭",
-                                            tint = glassTextColor,
-                                            modifier = Modifier.size(16.dp)
-                                        )
+                                        Text("✕", color = glassTextColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                     }
                                 }
 
