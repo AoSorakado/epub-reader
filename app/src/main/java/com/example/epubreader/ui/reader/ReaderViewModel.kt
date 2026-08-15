@@ -58,6 +58,9 @@ class ReaderViewModel(
     private val _epubBook = MutableStateFlow<EpubBook?>(null)
     val epubBook: StateFlow<EpubBook?> = _epubBook.asStateFlow()
 
+    private val _toc = MutableStateFlow<List<com.example.epubreader.data.parser.EpubTocItem>>(emptyList())
+    val toc: StateFlow<List<com.example.epubreader.data.parser.EpubTocItem>> = _toc.asStateFlow()
+
     private val _parsedChapters = MutableStateFlow<List<ParsedChapter>>(emptyList())
     val parsedChapters: StateFlow<List<ParsedChapter>> = _parsedChapters.asStateFlow()
 
@@ -297,6 +300,7 @@ class ReaderViewModel(
                     // Parse EPUB Structure
                     val parsedBook = EpubParser.parse(inputStream)
                     _epubBook.value = parsedBook
+                    _toc.value = parsedBook.toc
 
                     val totalChapters = parsedBook.chapters.size
                     val resultList = mutableListOf<ParsedChapter>()

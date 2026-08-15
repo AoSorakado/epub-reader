@@ -46,6 +46,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material3.*
@@ -152,6 +154,7 @@ fun ReaderScreen(
 
     val bookEntity by viewModel.bookEntity.collectAsState()
     val parsedChapters by viewModel.parsedChapters.collectAsState()
+    val tocList by viewModel.toc.collectAsState()
     val flatItems by viewModel.flatItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val loadingProgress by viewModel.loadingProgress.collectAsState()
@@ -531,10 +534,10 @@ fun ReaderScreen(
                 } else {
                     pages.getOrNull(pagedCurrentIndex)?.flatItemIndex ?: 0
                 }
-                val calculatedProgress = if (pageTurnMode == 0) {
-                    if (totalItems > 0) (currentItemIndex.toFloat() / totalItems.toFloat()).coerceIn(0f, 1f) else (bookEntity?.totalProgress ?: 0f)
+                val calculatedProgress = if (totalItems > 0) {
+                    ((currentItemIndex + 1).toFloat() / totalItems.toFloat()).coerceIn(0f, 1f)
                 } else {
-                    if (pages.isNotEmpty()) ((pagedCurrentIndex + 1).toFloat() / pages.size.toFloat()).coerceIn(0f, 1f) else (bookEntity?.totalProgress ?: 0f)
+                    (bookEntity?.totalProgress ?: 0f)
                 }
                 val progressPercent = (calculatedProgress * 100).toInt()
                 val estimatedTimeText = viewModel.getEstimatedRemainingTimeText(currentItemIndex)
@@ -719,6 +722,86 @@ fun ReaderScreen(
                         }
                 ) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = textColor)
+                }
+            }
+        }
+
+        // 2. Bottom Floating Liquid Toolbar (TOC Button + Chapter Info Pill)
+        AnimatedVisibility(
+            visible = showToolbars && !showSettings,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
+            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = androidx.compose.animation.core.tween(250)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(250)),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            val currentChapterName = if (pageTurnMode == 0) {
+                val currentFlat = flatItems.getOrNull(listState.firstVisibleItemIndex)
+                if (currentFlat != null) parsedChapters.getOrNull(currentFlat.chapterIndex)?.title ?: "正文" else "正文"
+            } else {
+                pages.getOrNull(pagedCurrentIndex)?.chapterTitle ?: "正文"
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, bottom = 36.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Left: 目录 TOC LiquidButton (Frosted glass with List icon & "目录")
+                LiquidButton(
+                    onClick = {
+                        showToolbars = false
+                        showSettings = false
+                        showTocSheet = true
+                    },
+                    backdrop = readerBackdrop,
+                    surfaceColor = if (themeIndex == 2) Color.White.copy(0.12f) else Color.White.copy(0.28f),
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.height(44.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.List,
+                            contentDescription = "目录",
+                            tint = textColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "目录",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor
+                        )
+                    }
+                }
+
+                // Right: Current Chapter Name Glass Pill
+                LiquidButton(
+                    onClick = {
+                        showToolbars = false
+                        showSettings = false
+                        showTocSheet = true
+                    },
+                    backdrop = readerBackdrop,
+                    surfaceColor = if (themeIndex == 2) Color.White.copy(0.10f) else Color.White.copy(0.20f),
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.height(44.dp)
+                ) {
+                    Text(
+                        text = currentChapterName,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = textColor.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .widthIn(max = 210.dp)
+                    )
                 }
             }
         }
@@ -1047,7 +1130,13 @@ fun ReaderScreen(
                                     val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.08f) else Color.White.copy(0.08f)
 
                                     LiquidButton(
-                                        onClick = { viewModel.setPageTurnMode(0) },
+                                        onClick = {
+                                            if (pageTurnMode != 0) {
+                                                val targetFlat = pages.getOrNull(pagedCurrentIndex)?.flatItemIndex ?: 0
+                                                viewModel.setPageTurnMode(0)
+                                                coroutineScope.launch { listState.scrollToItem(targetFlat) }
+                                            }
+                                        },
                                         backdrop = readerBackdrop,
                                         surfaceColor = if (pageTurnMode == 0) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
@@ -1055,7 +1144,14 @@ fun ReaderScreen(
                                         Text("上下滚动", style = buttonTextStyle, fontWeight = if (pageTurnMode == 0) FontWeight.ExtraBold else FontWeight.SemiBold)
                                     }
                                     LiquidButton(
-                                        onClick = { viewModel.setPageTurnMode(1) },
+                                        onClick = {
+                                            if (pageTurnMode != 1) {
+                                                val currentFlat = listState.firstVisibleItemIndex
+                                                val matchedPage = pages.indexOfFirst { it.flatItemIndex >= currentFlat }.coerceAtLeast(0)
+                                                pagedCurrentIndex = matchedPage
+                                                viewModel.setPageTurnMode(1)
+                                            }
+                                        },
                                         backdrop = readerBackdrop,
                                         surfaceColor = if (pageTurnMode == 1) activeSurface else inactiveSurface,
                                         modifier = Modifier.weight(1f).height(46.dp)
@@ -1188,7 +1284,7 @@ fun ReaderScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "共 ${parsedChapters.size} 章",
+                                    text = "共 ${if (tocList.isNotEmpty()) tocList.size else parsedChapters.size} 章",
                                     fontSize = 12.sp,
                                     color = textColor.copy(alpha = 0.5f)
                                 )
@@ -1210,69 +1306,171 @@ fun ReaderScreen(
                             }
                         }
 
-                        // Chapters LazyColumn
+                        // Chapters LazyColumn (Rich EPUB TOC with exact chapter and section names)
                         LazyColumn(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            itemsIndexed(parsedChapters) { idx, chapter ->
-                                val isCurrent = idx == currentChapterIndex
-                                val activeItemBg = if (themeIndex == 2) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.35f)
+                            if (tocList.isNotEmpty()) {
+                                itemsIndexed(tocList) { idx, tocItem ->
+                                    val isCurrent = if (pageTurnMode == 0) {
+                                        val curFlat = flatItems.getOrNull(listState.firstVisibleItemIndex)
+                                        curFlat != null && parsedChapters.getOrNull(curFlat.chapterIndex)?.title == tocItem.title
+                                    } else {
+                                        pages.getOrNull(pagedCurrentIndex)?.chapterTitle == tocItem.title
+                                    }
+                                    val activeItemBg = if (themeIndex == 2) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.35f)
 
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .then(
-                                            if (isCurrent) Modifier.background(activeItemBg)
-                                            else Modifier
-                                        )
-                                        .clickable {
-                                            if (pageTurnMode == 0) {
-                                                val targetFlat = flatItems.indexOfFirst { it.chapterIndex == idx }
-                                                if (targetFlat >= 0) {
-                                                    coroutineScope.launch { listState.scrollToItem(targetFlat) }
-                                                    viewModel.saveProgress(targetFlat, 0)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .then(
+                                                if (isCurrent) Modifier.background(activeItemBg)
+                                                else Modifier
+                                            )
+                                            .clickable {
+                                                val withoutAnchor = tocItem.href.substringBefore("#")
+                                                var matchedFlat = flatItems.indexOfFirst {
+                                                    it is FlatReaderItem.Title && (it.title.trim().equals(tocItem.title.trim(), ignoreCase = true) || it.title.contains(tocItem.title) || tocItem.title.contains(it.title))
                                                 }
-                                            } else {
-                                                val targetPage = pages.indexOfFirst { it.chapterIndex == idx }
-                                                if (targetPage >= 0) {
-                                                    pagedCurrentIndex = targetPage
-                                                    val cur = pages.getOrNull(targetPage)
-                                                    if (cur != null) viewModel.saveProgress(cur.flatItemIndex, 0)
+                                                if (matchedFlat < 0) {
+                                                    val matchedCh = parsedChapters.indexOfFirst {
+                                                        it.title.trim().equals(tocItem.title.trim(), ignoreCase = true) || it.title.contains(tocItem.title) || tocItem.title.contains(it.title)
+                                                    }
+                                                    if (matchedCh >= 0) {
+                                                        matchedFlat = flatItems.indexOfFirst { it.chapterIndex == matchedCh }
+                                                    }
+                                                }
+                                                if (matchedFlat < 0) {
+                                                    val chIdx = viewModel.epubBook.value?.chapters?.indexOfFirst { it.href.contains(withoutAnchor) } ?: -1
+                                                    if (chIdx >= 0) {
+                                                        matchedFlat = flatItems.indexOfFirst { it.chapterIndex == chIdx }
+                                                    }
+                                                }
+                                                if (matchedFlat >= 0) {
+                                                    if (pageTurnMode == 0) {
+                                                        coroutineScope.launch { listState.scrollToItem(matchedFlat) }
+                                                        viewModel.saveProgress(matchedFlat, 0)
+                                                    } else {
+                                                        val targetPage = pages.indexOfFirst { it.flatItemIndex >= matchedFlat }.coerceAtLeast(0)
+                                                        pagedCurrentIndex = targetPage
+                                                        val cur = pages.getOrNull(targetPage)
+                                                        if (cur != null) viewModel.saveProgress(cur.flatItemIndex, 0)
+                                                    }
+                                                    showTocSheet = false
                                                 }
                                             }
-                                            showTocSheet = false
+                                            .padding(
+                                                start = (tocItem.level * 14 + 14).dp,
+                                                end = 14.dp,
+                                                top = 11.dp,
+                                                bottom = 11.dp
+                                            ),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (tocItem.level == 0) {
+                                            Text(
+                                                text = "%02d".format(idx + 1),
+                                                fontSize = 12.sp,
+                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.45f),
+                                                modifier = Modifier.width(28.dp)
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(16.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(4.dp)
+                                                        .background(if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.4f), CircleShape)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(12.dp))
                                         }
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "%02d".format(idx + 1),
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.45f),
-                                        modifier = Modifier.width(28.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = chapter.title.ifBlank { "第 ${idx + 1} 章" },
-                                        fontSize = 14.sp,
-                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    if (isCurrent) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Box(
-                                            modifier = Modifier
-                                                .size(6.dp)
-                                                .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = tocItem.title,
+                                            fontSize = if (tocItem.level == 0) 14.sp else 13.sp,
+                                            fontWeight = if (isCurrent) FontWeight.Bold else if (tocItem.level == 0) FontWeight.Medium else FontWeight.Normal,
+                                            color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
                                         )
+                                        if (isCurrent) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                itemsIndexed(parsedChapters) { idx, chapter ->
+                                    val isCurrent = idx == currentChapterIndex
+                                    val activeItemBg = if (themeIndex == 2) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.35f)
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .then(
+                                                if (isCurrent) Modifier.background(activeItemBg)
+                                                else Modifier
+                                            )
+                                            .clickable {
+                                                if (pageTurnMode == 0) {
+                                                    val targetFlat = flatItems.indexOfFirst { it.chapterIndex == idx }
+                                                    if (targetFlat >= 0) {
+                                                        coroutineScope.launch { listState.scrollToItem(targetFlat) }
+                                                        viewModel.saveProgress(targetFlat, 0)
+                                                    }
+                                                } else {
+                                                    val targetPage = pages.indexOfFirst { it.chapterIndex == idx }
+                                                    if (targetPage >= 0) {
+                                                        pagedCurrentIndex = targetPage
+                                                        val cur = pages.getOrNull(targetPage)
+                                                        if (cur != null) viewModel.saveProgress(cur.flatItemIndex, 0)
+                                                    }
+                                                }
+                                                showTocSheet = false
+                                            }
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "%02d".format(idx + 1),
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.45f),
+                                            modifier = Modifier.width(28.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = chapter.title.ifBlank { "第 ${idx + 1} 章" },
+                                            fontSize = 14.sp,
+                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (isCurrent) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                            )
+                                        }
                                     }
                                 }
                             }

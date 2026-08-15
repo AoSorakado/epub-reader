@@ -79,6 +79,9 @@ dependencies {
     // PageCurl for realistic book simulation animation
     implementation("io.github.oleksandrbalan:pagecurl:1.5.1")
 
+    // Jsoup for HTML & EPUB TOC Parsing
+    implementation("org.jsoup:jsoup:1.17.2")
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
