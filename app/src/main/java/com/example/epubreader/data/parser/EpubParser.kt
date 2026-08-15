@@ -175,69 +175,35 @@ object EpubParser {
         tocMap: MutableMap<String, String>
     ) {
         try {
-            val parser = Xml.newPullParser()
-            parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
-            parser.setInput(bytes.inputStream(), "UTF-8")
+            val xmlString = String(bytes, Charsets.UTF_8)
+            val doc = Jsoup.parse(xmlString, "", org.jsoup.parser.Parser.xmlParser())
+            val navPoints = doc.select("navPoint")
+            for (np in navPoints) {
+                val title = np.selectFirst("> navLabel > text, navLabel > text")?.text()?.trim() ?: ""
+                val src = np.selectFirst("> content, content")?.attr("src")?.trim() ?: ""
+                if (title.isNotBlank() && src.isNotBlank()) {
+                    val fullPath = basePath + Uri.decode(src)
+                    var level = 0
+                    var parent = np.parent()
+                    while (parent != null) {
+                        if (parent.tagName().equals("navPoint", ignoreCase = true)) level++
+                        parent = parent.parent()
+                    }
+                    val item = EpubTocItem(title = title, href = fullPath, level = level)
+                    tocItems.add(item)
+                    
+                    val withoutAnchor = fullPath.substringBefore("#")
+                    val fileNameOnly = withoutAnchor.substringAfterLast("/")
+                    val rawWithoutAnchor = src.substringBefore("#")
+                    val rawDecoded = Uri.decode(src).substringBefore("#")
 
-            var eventType = parser.eventType
-            var currentText = ""
-            var currentSrc = ""
-            var inNavLabel = false
-            var inText = false
-            var currentLevel = 0
-
-            while (eventType != XmlPullParser.END_DOCUMENT) {
-                val tag = parser.name?.lowercase() ?: ""
-                when (eventType) {
-                    XmlPullParser.START_TAG -> {
-                        when (tag) {
-                            "navpoint" -> {
-                                currentLevel++
-                            }
-                            "navlabel" -> inNavLabel = true
-                            "text" -> {
-                                if (inNavLabel) inText = true
-                            }
-                            "content" -> {
-                                val src = parser.getAttributeValue(null, "src")
-                                if (!src.isNullOrBlank()) {
-                                    currentSrc = basePath + Uri.decode(src)
-                                }
-                            }
-                        }
-                    }
-                    XmlPullParser.TEXT -> {
-                        if (inText) {
-                            val text = parser.text.trim()
-                            if (text.isNotEmpty()) {
-                                currentText += text
-                            }
-                        }
-                    }
-                    XmlPullParser.END_TAG -> {
-                        when (tag) {
-                            "text" -> inText = false
-                            "navlabel" -> inNavLabel = false
-                            "navpoint" -> {
-                                if (currentText.isNotBlank() && currentSrc.isNotBlank()) {
-                                    val item = EpubTocItem(
-                                        title = currentText,
-                                        href = currentSrc,
-                                        level = (currentLevel - 1).coerceAtLeast(0)
-                                    )
-                                    tocItems.add(item)
-                                    val withoutAnchor = currentSrc.substringBefore("#")
-                                    tocMap[currentSrc] = currentText
-                                    tocMap[withoutAnchor] = currentText
-                                }
-                                currentText = ""
-                                currentSrc = ""
-                                currentLevel = (currentLevel - 1).coerceAtLeast(0)
-                            }
-                        }
-                    }
+                    tocMap[fullPath] = title
+                    tocMap[withoutAnchor] = title
+                    tocMap[fileNameOnly] = title
+                    tocMap[src] = title
+                    tocMap[rawWithoutAnchor] = title
+                    tocMap[rawDecoded] = title
                 }
-                eventType = parser.next()
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -258,14 +224,30 @@ object EpubParser {
                 val links = navToc.select("a[href]")
                 for (a in links) {
                     val title = a.text().trim()
-                    val rawHref = a.attr("href")
+                    val rawHref = a.attr("href").trim()
                     if (title.isNotBlank() && rawHref.isNotBlank()) {
                         val fullPath = basePath + Uri.decode(rawHref)
-                        val item = EpubTocItem(title = title, href = fullPath, level = 0)
+                        var level = 0
+                        var parent = a.parent()
+                        while (parent != null && parent != navToc) {
+                            if (parent.tagName().equals("li", ignoreCase = true)) level++
+                            parent = parent.parent()
+                        }
+                        level = (level - 1).coerceAtLeast(0)
+                        val item = EpubTocItem(title = title, href = fullPath, level = level)
                         tocItems.add(item)
+                        
                         val withoutAnchor = fullPath.substringBefore("#")
+                        val fileNameOnly = withoutAnchor.substringAfterLast("/")
+                        val rawWithoutAnchor = rawHref.substringBefore("#")
+                        val rawDecoded = Uri.decode(rawHref).substringBefore("#")
+
                         tocMap[fullPath] = title
                         tocMap[withoutAnchor] = title
+                        tocMap[fileNameOnly] = title
+                        tocMap[rawHref] = title
+                        tocMap[rawWithoutAnchor] = title
+                        tocMap[rawDecoded] = title
                     }
                 }
             }
@@ -278,10 +260,13 @@ object EpubParser {
         try {
             val doc = Jsoup.parse(html)
             
-            // 1. Look for explicit headers: h1, h2, h3
-            val heading = doc.selectFirst("h1, h2, h3, .chapter-title, .title, .chapter_title, .chapterName")?.text()?.trim()
-            if (!heading.isNullOrBlank() && heading.length in 2..60 && heading != bookTitle) {
-                return heading
+            // 1. Look for explicit headers: h1, h2, h3, h4
+            val headings = doc.select("h1, h2, h3, h4, .chapter-title, .title, .chapter_title, .chapterName, .chapterhead, #title")
+            for (h in headings) {
+                val text = h.text().trim()
+                if (text.isNotBlank() && text.length in 2..60 && text != bookTitle && !text.contains("untitled", ignoreCase = true)) {
+                    return text
+                }
             }
 
             // 2. Look for title tag if not book title
@@ -290,11 +275,11 @@ object EpubParser {
                 return htmlTitle
             }
 
-            // 3. Look for first short, prominent paragraph (e.g. 『...』, 第X章, 序章, 终章, 插图, 后记)
-            val pTags = doc.select("p, div")
-            for (p in pTags.take(8)) {
+            // 3. Look for first short, prominent paragraph
+            val pTags = doc.select("p, div, span, b, strong")
+            for (p in pTags.take(15)) {
                 val text = p.text().trim()
-                if (text.length in 2..40) {
+                if (text.length in 2..50 && text != bookTitle) {
                     if (text.startsWith("第") || 
                         text.startsWith("序") || 
                         text.startsWith("终") || 
@@ -303,9 +288,11 @@ object EpubParser {
                         text.startsWith("间") || 
                         text.startsWith("間") || 
                         text.startsWith("插") || 
-                        text.startsWith("Chapter") || 
+                        text.startsWith("Chapter", ignoreCase = true) || 
                         text.contains("『") || 
-                        text.contains("「")) {
+                        text.contains("「") ||
+                        text.contains("卷") ||
+                        text.contains("章")) {
                         return text
                     }
                 }

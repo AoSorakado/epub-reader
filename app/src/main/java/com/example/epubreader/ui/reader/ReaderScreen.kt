@@ -596,31 +596,56 @@ fun ReaderScreen(
                 if (immersiveStatusBar) 28.dp else 12.dp
             ) + 12.dp
 
-            Box(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = topPadding, start = 16.dp, end = 16.dp, bottom = 8.dp)
+                    .padding(top = topPadding, start = 16.dp, end = 16.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // 1. Back Button (Pinned to Left)
-                LiquidButton(
-                    onClick = {
-                        if (onBackClick != null) {
-                            onBackClick()
-                        } else {
-                            navController.popBackStack()
-                        }
-                    },
-                    backdrop = readerBackdrop,
-                    modifier = Modifier.align(Alignment.CenterStart)
+                // Left Group: Back Button + TOC Button
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = textColor)
+                    LiquidButton(
+                        onClick = {
+                            if (onBackClick != null) {
+                                onBackClick()
+                            } else {
+                                navController.popBackStack()
+                            }
+                        },
+                        backdrop = readerBackdrop,
+                        shape = CircleShape,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = textColor)
+                    }
+
+                    LiquidButton(
+                        onClick = {
+                            showTocSheet = true
+                        },
+                        backdrop = readerBackdrop,
+                        shape = CircleShape,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录", tint = textColor)
+                    }
                 }
 
-                // 2. Reading Progress Liquid Capsule (Pinned to Center, expands symmetrically to both sides)
-                Box(
+                // Center: Reading Progress Liquid Capsule (Pure LiquidButton, fully circular clipped, expands smoothly)
+                LiquidButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        isCapsuleExpanded = !isCapsuleExpanded
+                    },
+                    backdrop = readerBackdrop,
+                    shape = CircleShape,
                     modifier = Modifier
-                        .align(Alignment.Center)
                         .height(44.dp)
+                        .clip(CircleShape)
                         .animateContentSize(
                             animationSpec = spring(
                                 dampingRatio = 0.78f,
@@ -628,64 +653,28 @@ fun ReaderScreen(
                             ),
                             alignment = Alignment.Center
                         )
-                        .drawBackdrop(
-                            backdrop = readerBackdrop,
-                            shape = { RoundedCornerShape(50) },
-                            effects = {
-                                vibrancy()
-                                blur(2f.dp.toPx())
-                                lens(14f.dp.toPx(), 28f.dp.toPx(), chromaticAberration = true)
-                            },
-                            highlight = { Highlight.Plain },
-                            onDrawSurface = {
-                                drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
-                            }
-                        )
-                        .border(
-                            width = 0.8.dp,
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = if (isDark) 0.35f else 0.70f),
-                                    Color.White.copy(alpha = if (isDark) 0.12f else 0.30f)
-                                )
-                            ),
-                            shape = RoundedCornerShape(50)
-                        )
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onLongPress = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    isCapsuleExpanded = true
-                                },
-                                onTap = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    isCapsuleExpanded = !isCapsuleExpanded
-                                }
-                            )
-                        }
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.Center
                 ) {
-                    AnimatedContent(
-                        targetState = isCapsuleExpanded,
-                        contentAlignment = Alignment.Center,
-                        transitionSpec = {
-                            (fadeIn(animationSpec = spring(dampingRatio = 0.80f, stiffness = 360f)) + scaleIn(initialScale = 0.90f, transformOrigin = TransformOrigin.Center)) togetherWith
-                            (fadeOut(animationSpec = spring(dampingRatio = 0.80f, stiffness = 360f)) + scaleOut(targetScale = 0.90f, transformOrigin = TransformOrigin.Center))
-                        },
-                        label = "capsuleAnimatedContent"
-                    ) { expanded ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.AutoStories,
-                                contentDescription = null,
-                                tint = textColor.copy(alpha = 0.80f),
-                                modifier = Modifier.size(17.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(horizontal = 14.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.AutoStories,
+                            contentDescription = null,
+                            tint = textColor.copy(alpha = 0.85f),
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        AnimatedContent(
+                            targetState = isCapsuleExpanded,
+                            contentAlignment = Alignment.Center,
+                            transitionSpec = {
+                                (fadeIn(animationSpec = spring(dampingRatio = 0.80f, stiffness = 360f)) + scaleIn(initialScale = 0.90f, transformOrigin = TransformOrigin.Center)) togetherWith
+                                (fadeOut(animationSpec = spring(dampingRatio = 0.80f, stiffness = 360f)) + scaleOut(targetScale = 0.90f, transformOrigin = TransformOrigin.Center))
+                            },
+                            label = "capsuleAnimatedContent"
+                        ) { expanded ->
                             if (expanded) {
                                 Text(
                                     text = "$estimatedTimeText · $progressPercent%",
@@ -706,12 +695,13 @@ fun ReaderScreen(
                     }
                 }
 
-                // 3. Settings Button (Pinned to Right)
+                // Right: Settings Button
                 LiquidButton(
                     onClick = { showSettings = !showSettings },
                     backdrop = readerBackdrop,
+                    shape = CircleShape,
                     modifier = Modifier
-                        .align(Alignment.CenterEnd)
+                        .size(44.dp)
                         .onGloballyPositioned { coordinates ->
                             settingsButtonBounds = coordinates.boundsInRoot()
                         }
@@ -1333,6 +1323,7 @@ fun ReaderScreen(
                                             )
                                             .clickable {
                                                 val withoutAnchor = tocItem.href.substringBefore("#")
+                                                val fileNameOnly = withoutAnchor.substringAfterLast("/")
                                                 var matchedFlat = flatItems.indexOfFirst {
                                                     it is FlatReaderItem.Title && (it.title.trim().equals(tocItem.title.trim(), ignoreCase = true) || it.title.contains(tocItem.title) || tocItem.title.contains(it.title))
                                                 }
@@ -1345,7 +1336,9 @@ fun ReaderScreen(
                                                     }
                                                 }
                                                 if (matchedFlat < 0) {
-                                                    val chIdx = viewModel.epubBook.value?.chapters?.indexOfFirst { it.href.contains(withoutAnchor) } ?: -1
+                                                    val chIdx = viewModel.epubBook.value?.chapters?.indexOfFirst {
+                                                        it.href.contains(withoutAnchor) || withoutAnchor.contains(it.href) || it.href.substringAfterLast("/") == fileNameOnly
+                                                    } ?: -1
                                                     if (chIdx >= 0) {
                                                         matchedFlat = flatItems.indexOfFirst { it.chapterIndex == chIdx }
                                                     }
