@@ -140,6 +140,28 @@ fun BookshelfScreen(
     var lastTargetBounds by remember { mutableStateOf(Rect.Zero) }
     var showEditDialogForBook by remember { mutableStateOf<BookEntity?>(null) }
     var activeEditBook by remember { mutableStateOf<BookEntity?>(null) }
+    var editSourceBounds by remember { mutableStateOf(Rect.Zero) }
+    var isEditExpanded by remember { mutableStateOf(false) }
+
+    val editTransition = updateTransition(targetState = isEditExpanded, label = "EditMorphTransition")
+    val editExpandProgress by editTransition.animateFloat(
+        transitionSpec = {
+            if (targetState) {
+                spring(dampingRatio = 0.82f, stiffness = 220f)
+            } else {
+                spring(dampingRatio = 0.86f, stiffness = 260f)
+            }
+        },
+        label = "editExpandProgress"
+    ) { if (it) 1f else 0f }
+
+    LaunchedEffect(editExpandProgress, isEditExpanded) {
+        if (!isEditExpanded && editExpandProgress <= 0.001f && showEditDialogForBook != null) {
+            showEditDialogForBook = null
+            activeEditBook = null
+            editSourceBounds = Rect.Zero
+        }
+    }
     var showSortMenu by remember { mutableStateOf(false) }
     var sortButtonBounds by remember { mutableStateOf(Rect.Zero) }
     val seriesCoords = remember { mutableStateMapOf<String, LayoutCoordinates>() }
@@ -388,9 +410,9 @@ fun BookshelfScreen(
     val seriesExpandProgress by seriesTransition.animateFloat(
         transitionSpec = {
             if (targetState) {
-                spring(dampingRatio = 0.82f, stiffness = 180f)
+                spring(dampingRatio = 0.82f, stiffness = 220f)
             } else {
-                spring(dampingRatio = 0.86f, stiffness = 220f)
+                spring(dampingRatio = 0.86f, stiffness = 260f)
             }
         },
         label = "seriesMorphProgress"
@@ -434,7 +456,6 @@ fun BookshelfScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(bookshelfGradient)
-                .blur(backgroundBlurRadius)
                 .layerBackdrop(bookshelfBackdrop)
         ) {
         Scaffold(
@@ -566,7 +587,7 @@ fun BookshelfScreen(
 
                         val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
                         val isItemContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Book && currentContextMenu.book.id == item.id && !currentContextMenu.isInner)
-                        val isEditingThis = (showEditDialogForBook?.id == item.id) || (activeEditBook?.id == item.id && showEditDialogForBook != null)
+                        val isEditingThis = (showEditDialogForBook?.id == item.id && (isEditExpanded || editExpandProgress > 0.001f)) || (activeEditBook?.id == item.id && (isEditExpanded || editExpandProgress > 0.001f))
                         BookItem(
                             book = item, 
                             isListLayout = layoutMethod == 1, 
@@ -672,18 +693,18 @@ fun BookshelfScreen(
                         shape = { RoundedCornerShape(with(density) { currentRadius.coerceAtLeast(0f).dp }) },
                         effects = {
                             vibrancy()
-                            blur(lerp(3f, 8f, seriesExpandProgress).coerceAtLeast(0.1f).dp.toPx())
+                            blur(6f.dp.toPx())
                             lens(
-                                refractionHeight = lerp(14f, 24f, seriesExpandProgress).coerceAtLeast(0.1f).dp.toPx(),
-                                refractionAmount = lerp(28f, 48f, seriesExpandProgress).coerceAtLeast(0.1f).dp.toPx(),
+                                refractionHeight = 16f.dp.toPx(),
+                                refractionAmount = 32f.dp.toPx(),
                                 chromaticAberration = true
                             )
                         },
                         highlight = { Highlight.Plain },
                         shadow = {
                             Shadow(
-                                radius = lerp(10f, 24f, seriesExpandProgress).dp,
-                                color = Color.Black.copy(alpha = lerp(0.06f, 0.14f, seriesExpandProgress))
+                                radius = 20.dp,
+                                color = Color.Black.copy(alpha = if (isDark) 0.35f else 0.15f)
                             )
                         },
                         onDrawSurface = {
@@ -781,7 +802,7 @@ fun BookshelfScreen(
                                 val isBookOpeningThis = (openingBook?.id == book.id && bookOpenProgress > 0.001f)
                                 val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
                                 val isInnerContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Book && currentContextMenu.book.id == book.id && currentContextMenu.isInner)
-                                val isEditingThis = (showEditDialogForBook?.id == book.id) || (activeEditBook?.id == book.id && showEditDialogForBook != null)
+                                val isEditingThis = (showEditDialogForBook?.id == book.id && (isEditExpanded || editExpandProgress > 0.001f)) || (activeEditBook?.id == book.id && (isEditExpanded || editExpandProgress > 0.001f))
                                 SeriesInnerBookRow(
                                     book = book,
                                     seriesTitle = seriesTitle,
@@ -1183,10 +1204,14 @@ fun BookshelfScreen(
                                         icon = Icons.Filled.Edit,
                                         onClick = {
                                             val b = target.book
+                                            val bounds = if (effectiveTargetBounds != Rect.Zero) effectiveTargetBounds else Rect.Zero
+                                            editSourceBounds = bounds
+                                            showEditDialogForBook = b
+                                            activeEditBook = b
+                                            isEditExpanded = true
                                             contextMenuTarget = null
                                             activeContextMenuTarget = null
                                             lastTargetBounds = Rect.Zero
-                                            showEditDialogForBook = b
                                         }
                                     ),
                                     ContextMenuItem(
@@ -1643,24 +1668,120 @@ fun BookshelfScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = showEditDialogForBook != null,
-            enter = fadeIn(spring(dampingRatio = 0.82f, stiffness = 320f)) + scaleIn(initialScale = 0.90f, animationSpec = spring(dampingRatio = 0.78f, stiffness = 320f)),
-            exit = fadeOut(spring(dampingRatio = 0.85f, stiffness = 340f)) + scaleOut(targetScale = 0.90f, animationSpec = spring(dampingRatio = 0.85f, stiffness = 340f)),
-            modifier = Modifier.fillMaxSize()
-        ) {
+        if (editExpandProgress > 0.001f && activeEditBook != null) {
+            val book = activeEditBook!!
+            val expandedWidthPx = minOf(screenWidthPx * 0.90f, with(density) { 420.dp.toPx() })
+            val expandedHeightPx = minOf(screenHeightPx * 0.82f, with(density) { 560.dp.toPx() })
+            val targetLeft = (screenWidthPx - expandedWidthPx) / 2f
+            val targetTop = (screenHeightPx - expandedHeightPx) / 2f
+
+            val initialBounds = if (editSourceBounds != Rect.Zero && editSourceBounds.width > 10f && editSourceBounds.height > 10f) {
+                editSourceBounds
+            } else {
+                Rect(targetLeft, targetTop, targetLeft + expandedWidthPx, targetTop + expandedHeightPx)
+            }
+
+            val currentLeft = lerp(initialBounds.left, targetLeft, editExpandProgress)
+            val currentTop = lerp(initialBounds.top, targetTop, editExpandProgress)
+            val currentWidth = lerp(initialBounds.width, expandedWidthPx, editExpandProgress).coerceAtLeast(1f)
+            val currentHeight = lerp(initialBounds.height, expandedHeightPx, editExpandProgress).coerceAtLeast(1f)
+            val currentRadius = lerp(20f, 24f, editExpandProgress).coerceAtLeast(0f)
+
+            // Scrim
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.32f))
-                    .pointerInput(Unit) { detectTapGestures { showEditDialogForBook = null } },
-                contentAlignment = Alignment.Center
+                    .background(Color.Black.copy(alpha = (0.32f * editExpandProgress).coerceIn(0f, 1f)))
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        isEditExpanded = false
+                    }
+            )
+
+            // Morphing Modal Box
+            Box(
+                modifier = Modifier
+                    .layout { measurable, _ ->
+                        val placeable = measurable.measure(
+                            Constraints.fixed(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt())
+                        )
+                        layout(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt()) {
+                            placeable.place(currentLeft.fastRoundToInt(), currentTop.fastRoundToInt())
+                        }
+                    }
+                    .drawBackdrop(
+                        backdrop = bookshelfBackdrop,
+                        shape = { RoundedCornerShape(with(density) { currentRadius.coerceAtLeast(0f).dp }) },
+                        effects = {
+                            vibrancy()
+                            blur(6f.dp.toPx())
+                            lens(
+                                refractionHeight = 16f.dp.toPx(),
+                                refractionAmount = 32f.dp.toPx(),
+                                chromaticAberration = true
+                            )
+                        },
+                        highlight = { Highlight.Plain },
+                        shadow = {
+                            Shadow(
+                                radius = 20.dp,
+                                color = Color.Black.copy(alpha = if (isDark) 0.35f else 0.15f)
+                            )
+                        },
+                        onDrawSurface = {
+                            drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
+                        }
+                    )
+                    .border(
+                        width = 0.8.dp,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                                Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
+                            )
+                        ),
+                        shape = RoundedCornerShape(with(density) { currentRadius.coerceAtLeast(0f).dp })
+                    )
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) { }
             ) {
-                activeEditBook?.let { book ->
+                if (editExpandProgress < 0.35f) {
+                    val collapsedAlpha = (1f - (editExpandProgress / 0.35f)).coerceIn(0f, 1f)
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.88f)
-                            .pointerInput(Unit) { detectTapGestures { /* consume */ } }
+                            .fillMaxSize()
+                            .padding(10.dp)
+                            .graphicsLayer {
+                                alpha = collapsedAlpha
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BookItemContent(
+                            book = book,
+                            isListLayout = layoutMethod == 1,
+                            isDark = isDark,
+                            primaryTextColor = primaryTextColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                    }
+                }
+
+                if (editExpandProgress > 0.15f) {
+                    val contentAlpha = ((editExpandProgress - 0.18f) / 0.82f).coerceIn(0f, 1f)
+                    val contentScale = lerp(0.92f, 1f, contentAlpha)
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = contentAlpha
+                                scaleX = contentScale
+                                scaleY = contentScale
+                            }
                     ) {
                         EditBookDialog(
                             book = book,
@@ -1669,10 +1790,10 @@ fun BookshelfScreen(
                             themeAccent = themeAccent,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor,
-                            onDismissRequest = { showEditDialogForBook = null },
+                            onDismissRequest = { isEditExpanded = false },
                             onConfirm = { newTitle, newAuthor, newSeries, newCoverUri ->
                                 viewModel.updateBookInfo(book, newTitle, newAuthor, newSeries, newCoverUri, context)
-                                showEditDialogForBook = null
+                                isEditExpanded = false
                             }
                         )
                     }
