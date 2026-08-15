@@ -50,9 +50,15 @@ fun EpubReaderTheme(
         else -> LightColorScheme
     }
 
-    MaterialTheme(
+    androidx.compose.material3.MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
-        content = content
+        content = {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.material3.LocalTextStyle provides androidx.compose.ui.text.TextStyle(fontFamily = ClaudeUIFontFamily)
+            ) {
+                content()
+            }
+        }
     )
 }

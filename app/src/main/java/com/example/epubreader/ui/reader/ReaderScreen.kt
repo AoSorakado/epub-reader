@@ -290,8 +290,15 @@ fun ReaderScreen(
                         input.copyTo(output)
                     }
                 }
-                viewModel.setCustomFontUri(fontFile.absolutePath)
-            } catch (e: Exception) {
+                try {
+                    val tf = android.graphics.Typeface.createFromFile(fontFile)
+                    if (tf != null) {
+                        viewModel.setCustomFontUri(fontFile.absolutePath)
+                    }
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                }
+            } catch (e: Throwable) {
                 e.printStackTrace()
             }
         }
@@ -299,7 +306,16 @@ fun ReaderScreen(
 
     val customFontFamily = remember(customFontUri) {
         if (!customFontUri.isNullOrEmpty() && File(customFontUri!!).exists()) {
-            FontFamily(Font(File(customFontUri!!)))
+            try {
+                val tf = android.graphics.Typeface.createFromFile(File(customFontUri!!))
+                if (tf != null) {
+                    FontFamily(androidx.compose.ui.text.font.Typeface(tf))
+                } else {
+                    FontFamily.Default
+                }
+            } catch (e: Throwable) {
+                FontFamily.Default
+            }
         } else {
             FontFamily.Default
         }

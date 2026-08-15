@@ -315,7 +315,11 @@ class SimulationAnimView(context: Context) : View(context) {
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = mTextColor
             textSize = titleFontSizePx
-            typeface = Typeface.create(mTypeface, Typeface.BOLD)
+            typeface = try {
+                Typeface.create(mTypeface, Typeface.BOLD)
+            } catch (e: Throwable) {
+                mTypeface
+            }
         }
         val titleFontMetrics = titlePaint.fontMetrics
         val titleFontHeight = titleFontMetrics.descent - titleFontMetrics.ascent
