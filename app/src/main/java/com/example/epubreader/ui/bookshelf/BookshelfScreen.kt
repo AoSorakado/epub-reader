@@ -566,13 +566,14 @@ fun BookshelfScreen(
 
                         val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
                         val isItemContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Book && currentContextMenu.book.id == item.id && !currentContextMenu.isInner)
+                        val isEditingThis = (showEditDialogForBook?.id == item.id) || (activeEditBook?.id == item.id && showEditDialogForBook != null)
                         BookItem(
                             book = item, 
                             isListLayout = layoutMethod == 1, 
                             isPressed = false, 
                             backdrop = globalBackdrop, 
                             isDark = isDark,
-                            isHidden = isOpeningThis || isItemContextMenuActive,
+                            isHidden = isOpeningThis || isItemContextMenuActive || isEditingThis,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor,
                             onPositioned = { coords ->
@@ -780,6 +781,7 @@ fun BookshelfScreen(
                                 val isBookOpeningThis = (openingBook?.id == book.id && bookOpenProgress > 0.001f)
                                 val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
                                 val isInnerContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Book && currentContextMenu.book.id == book.id && currentContextMenu.isInner)
+                                val isEditingThis = (showEditDialogForBook?.id == book.id) || (activeEditBook?.id == book.id && showEditDialogForBook != null)
                                 SeriesInnerBookRow(
                                     book = book,
                                     seriesTitle = seriesTitle,
@@ -789,7 +791,7 @@ fun BookshelfScreen(
                                     themeAccent = themeAccent,
                                     primaryTextColor = primaryTextColor,
                                     secondaryTextColor = secondaryTextColor,
-                                    isHidden = isBookOpeningThis || isInnerContextMenuActive,
+                                    isHidden = isBookOpeningThis || isInnerContextMenuActive || isEditingThis,
                                     onPositioned = { coords ->
                                         bookCoords[book.id] = coords
                                     },
@@ -1692,10 +1694,16 @@ fun SeriesItem(
         label = "seriesPressScale"
     )
 
+    val alphaAnim by animateFloatAsState(
+        targetValue = if (isHidden) 0f else 1f,
+        animationSpec = spring(dampingRatio = 0.85f, stiffness = 320f),
+        label = "seriesAlpha"
+    )
+
     Box(
         modifier = modifier
             .graphicsLayer {
-                alpha = if (isHidden) 0f else 1f
+                alpha = alphaAnim
                 scaleX = scale
                 scaleY = scale
             }
@@ -2251,6 +2259,12 @@ fun BookItem(
         label = "bookPressScale"
     )
 
+    val alphaAnim by animateFloatAsState(
+        targetValue = if (isHidden) 0f else 1f,
+        animationSpec = spring(dampingRatio = 0.85f, stiffness = 320f),
+        label = "bookAlpha"
+    )
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -2258,7 +2272,7 @@ fun BookItem(
                 onPositioned?.invoke(coords)
             }
             .graphicsLayer {
-                alpha = if (isHidden) 0f else 1f
+                alpha = alphaAnim
                 scaleX = scale
                 scaleY = scale
             }
@@ -2356,6 +2370,12 @@ fun SeriesInnerBookRow(
         label = "seriesBookPressScale"
     )
 
+    val alphaAnim by animateFloatAsState(
+        targetValue = if (isHidden) 0f else 1f,
+        animationSpec = spring(dampingRatio = 0.85f, stiffness = 320f),
+        label = "seriesBookAlpha"
+    )
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -2364,7 +2384,7 @@ fun SeriesInnerBookRow(
                 onPositioned?.invoke(coords)
             }
             .graphicsLayer {
-                alpha = if (isHidden) 0f else 1f
+                alpha = alphaAnim
                 scaleX = scale
                 scaleY = scale
             }
