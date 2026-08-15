@@ -10,12 +10,25 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 data class DayReadingStat(
     val dayLabel: String,
     val dateTimestamp: Long,
     val minutes: Int
+)
+
+data class HeatmapDay(
+    val dateTimestamp: Long,
+    val dateStr: String, // e.g. "8月16日"
+    val fullDateStr: String, // e.g. "2026-08-16"
+    val dayOfWeek: Int, // 0 (Sun) to 6 (Sat)
+    val dayLabel: String, // e.g. "周日"
+    val minutes: Int,
+    val level: Int // 0 to 4
 )
 
 data class StatsState(
@@ -27,6 +40,10 @@ data class StatsState(
     val totalReadingMinutes: Long = 0,
     val todayReadingMinutes: Long = 0,
     val weeklyTrend: List<DayReadingStat> = emptyList(),
+    val heatmapWeeks: List<List<HeatmapDay>> = emptyList(), // 52 columns, 7 items per column
+    val activeDaysCount: Int = 0,
+    val currentStreakDays: Int = 0,
+    val maxStreakDays: Int = 0,
     val recentlyAdded: BookEntity? = null,
     val recentlyRead: BookEntity? = null
 )
@@ -45,13 +62,15 @@ class StatsViewModel(
         return cal.timeInMillis
     }
 
-    private fun get7DaysAgoTimestamp(): Long {
+    private fun getHeatmapStartTimestamp(): Long {
         val cal = Calendar.getInstance()
         cal.set(Calendar.HOUR_OF_DAY, 0)
         cal.set(Calendar.MINUTE, 0)
         cal.set(Calendar.SECOND, 0)
         cal.set(Calendar.MILLISECOND, 0)
-        cal.add(Calendar.DAY_OF_YEAR, -6)
+        // Align to start on Sunday 52 weeks ago
+        val currentDayOfWeek = cal.get(Calendar.DAY_OF_WEEK) - 1 // 0 (Sun) .. 6 (Sat)
+        cal.add(Calendar.DAY_OF_YEAR, -(52 * 7 - 1 + currentDayOfWeek))
         return cal.timeInMillis
     }
 
@@ -59,8 +78,8 @@ class StatsViewModel(
         bookDao.getAllBooksByTime(),
         statDao.getTotalDurationFlow(),
         statDao.getTodayDurationFlow(getTodayStartTimestamp()),
-        statDao.getStatsSinceFlow(get7DaysAgoTimestamp())
-    ) { books, totalDurationMs, todayDurationMs, recentStats ->
+        statDao.getStatsSinceFlow(getHeatmapStartTimestamp())
+    ) { books, totalDurationMs, todayDurationMs, yearStats ->
         val total = books.size
         val seriesSet = books.mapNotNull { it.seriesName }.filter { it.isNotBlank() }.toSet()
         val finished = books.count { it.totalProgress >= 0.99f }
@@ -77,7 +96,7 @@ class StatsViewModel(
         val todayMinutes = (todayDurationMs ?: 0L) / 60000L
 
         // Generate 7-day trend
-        val statMap = recentStats.associateBy { it.date }
+        val statMap = yearStats.associateBy { it.date }
         val dayOfWeekLabels = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
         val weeklyTrend = (6 downTo 0).map { dayOffset ->
             val cal = Calendar.getInstance()
@@ -98,6 +117,100 @@ class StatsViewModel(
             )
         }
 
+        // Generate 52-week GitHub-style Heatmap matrix
+        val heatmapWeeks = mutableListOf<List<HeatmapDay>>()
+        val startCal = Calendar.getInstance()
+        startCal.timeInMillis = getHeatmapStartTimestamp()
+
+        val fullSdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val shortSdf = SimpleDateFormat("M月d日", Locale.getDefault())
+        val nowMs = System.currentTimeMillis()
+
+        var activeDays = 0
+        var currentStreak = 0
+        var maxStreak = 0
+        var tempStreak = 0
+
+        val totalDays = 53 * 7
+        var currentWeekList = mutableListOf<HeatmapDay>()
+
+        for (i in 0 until totalDays) {
+            val dayTs = startCal.timeInMillis
+            val date = Date(dayTs)
+            val dayOfWeek = startCal.get(Calendar.DAY_OF_WEEK) - 1
+            val stat = statMap[dayTs]
+            val durationMin = if (dayTs <= nowMs) {
+                ((stat?.readDurationMs ?: 0L) / 60000L).toInt()
+            } else 0
+
+            val level = when {
+                dayTs > nowMs -> 0
+                durationMin <= 0 -> 0
+                durationMin <= 15 -> 1
+                durationMin <= 35 -> 2
+                durationMin <= 60 -> 3
+                else -> 4
+            }
+
+            if (durationMin > 0) {
+                activeDays++
+                tempStreak++
+                if (tempStreak > maxStreak) maxStreak = tempStreak
+            } else if (dayTs <= nowMs) {
+                tempStreak = 0
+            }
+
+            val heatmapDay = HeatmapDay(
+                dateTimestamp = dayTs,
+                dateStr = shortSdf.format(date),
+                fullDateStr = fullSdf.format(date),
+                dayOfWeek = dayOfWeek,
+                dayLabel = dayOfWeekLabels.getOrElse(dayOfWeek) { "" },
+                minutes = durationMin,
+                level = level
+            )
+
+            currentWeekList.add(heatmapDay)
+
+            if (currentWeekList.size == 7) {
+                heatmapWeeks.add(currentWeekList)
+                currentWeekList = mutableListOf()
+            }
+
+            startCal.add(Calendar.DAY_OF_YEAR, 1)
+        }
+
+        if (currentWeekList.isNotEmpty()) {
+            heatmapWeeks.add(currentWeekList)
+        }
+
+        // Calculate current streak backward from today
+        val todayStart = getTodayStartTimestamp()
+        var streakCheckCal = Calendar.getInstance()
+        streakCheckCal.timeInMillis = todayStart
+        while (true) {
+            val ts = streakCheckCal.timeInMillis
+            val stat = statMap[ts]
+            val duration = ((stat?.readDurationMs ?: 0L) / 60000L).toInt()
+            if (duration > 0) {
+                currentStreak++
+                streakCheckCal.add(Calendar.DAY_OF_YEAR, -1)
+            } else {
+                // If today is 0 mins, check if yesterday was active
+                if (ts == todayStart) {
+                    streakCheckCal.add(Calendar.DAY_OF_YEAR, -1)
+                    val yestStat = statMap[streakCheckCal.timeInMillis]
+                    val yestDuration = ((yestStat?.readDurationMs ?: 0L) / 60000L).toInt()
+                    if (yestDuration > 0) {
+                        currentStreak++
+                        streakCheckCal.add(Calendar.DAY_OF_YEAR, -1)
+                        continue
+                    }
+                }
+                break
+            }
+        }
+
         StatsState(
             totalBooks = total,
             totalSeries = seriesSet.size,
@@ -107,6 +220,10 @@ class StatsViewModel(
             totalReadingMinutes = totalMinutes,
             todayReadingMinutes = todayMinutes,
             weeklyTrend = weeklyTrend,
+            heatmapWeeks = heatmapWeeks,
+            activeDaysCount = activeDays,
+            currentStreakDays = currentStreak,
+            maxStreakDays = maxStreak,
             recentlyAdded = recentlyAdded,
             recentlyRead = recentlyRead
         )

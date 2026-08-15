@@ -457,6 +457,21 @@ fun BookshelfScreen(
                             modifier = Modifier.padding(end = 8.dp)
                         ) {
                             LiquidButton(
+                                onClick = {
+                                    localImportLauncher.launch(arrayOf("application/epub+zip", "text/plain", "application/octet-stream", "*/*"))
+                                },
+                                backdrop = globalBackdrop,
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Add,
+                                    contentDescription = "导入书籍",
+                                    tint = primaryTextColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            LiquidButton(
                                 onClick = { viewModel.setLayoutMethod(if (layoutMethod == 0) 1 else 0) },
                                 backdrop = globalBackdrop,
                                 modifier = Modifier.size(44.dp)
@@ -1638,8 +1653,8 @@ fun BookshelfScreen(
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor,
                             onDismissRequest = { showEditDialogForBook = null },
-                            onConfirm = { newTitle, newCoverUri ->
-                                viewModel.updateBookInfo(book, newTitle, newCoverUri, context)
+                            onConfirm = { newTitle, newAuthor, newSeries, newCoverUri ->
+                                viewModel.updateBookInfo(book, newTitle, newAuthor, newSeries, newCoverUri, context)
                                 showEditDialogForBook = null
                             }
                         )

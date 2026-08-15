@@ -64,52 +64,83 @@ class BookshelfViewModel(private val bookDao: BookDao, application: Application)
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 try {
-                    // Create storage directories
                     val booksDir = File(context.filesDir, "books").apply { mkdirs() }
                     val coversDir = File(context.filesDir, "covers").apply { mkdirs() }
 
-                    // We need a unique filename. Use timestamp.
                     val timestamp = System.currentTimeMillis()
-                    val localEpubFile = File(booksDir, "book_.epub")
+                    val originalName = getFileNameFromUri(uri, context) ?: "book_$timestamp.epub"
+                    val isTxt = originalName.endsWith(".txt", ignoreCase = true)
+                    val targetExt = if (isTxt) ".txt" else ".epub"
+                    val localBookFile = File(booksDir, "book_${timestamp}${targetExt}")
 
-                    // 1. Copy the selected file to our internal storage
+                    // 1. Copy the selected file to internal storage
                     context.contentResolver.openInputStream(uri)?.use { input ->
-                        FileOutputStream(localEpubFile).use { output ->
+                        FileOutputStream(localBookFile).use { output ->
                             input.copyTo(output)
                         }
                     }
 
-                    // 2. Parse the EPUB using high-speed random-access
-                    val epubBook = EpubParser.parse(localEpubFile)
+                    // 2. Parse the book (EPUB or TXT)
+                    val book = if (isTxt) {
+                        com.example.epubreader.data.parser.TxtParser.parse(localBookFile)
+                    } else {
+                        EpubParser.parse(localBookFile)
+                    }
 
                     // 3. Save Cover Image if exists
                     var coverImagePath: String? = null
-                    if (epubBook.coverImage != null) {
-                        val coverFile = File(coversDir, "cover_.jpg")
-                        coverFile.writeBytes(epubBook.coverImage)
+                    if (book.coverImage != null) {
+                        val coverFile = File(coversDir, "cover_${timestamp}.jpg")
+                        coverFile.writeBytes(book.coverImage)
                         coverImagePath = coverFile.absolutePath
                     }
 
                     // 4. Create and insert BookEntity
                     val bookEntity = BookEntity(
-                        title = epubBook.title,
-                        author = epubBook.author,
+                        title = book.title,
+                        author = book.author,
                         coverImage = coverImagePath,
-                        filePath = localEpubFile.absolutePath,
+                        filePath = localBookFile.absolutePath,
                         isWebDav = false,
                         addedTime = timestamp,
                         lastReadTime = 0
                     )
                     bookDao.insertBook(bookEntity)
                     com.example.epubreader.ui.components.toast.GlobalToastManager.show(
-                        text = "📖 成功导入《${epubBook.title}》",
+                        text = "📖 成功导入《${book.title}》",
                         type = com.example.epubreader.ui.components.toast.ToastType.Success
                     )
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                        text = "导入书籍失败: ${e.localizedMessage}",
+                        type = com.example.epubreader.ui.components.toast.ToastType.Error
+                    )
                 }
             }
         }
+    }
+
+    private fun getFileNameFromUri(uri: Uri, context: Context): String? {
+        var name: String? = null
+        if (uri.scheme == "content") {
+            try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1) {
+                            name = cursor.getString(nameIndex)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        if (name == null) {
+            name = uri.path?.let { File(it).name }
+        }
+        return name
     }
 
     fun deleteAllBooks() {
@@ -136,7 +167,14 @@ class BookshelfViewModel(private val bookDao: BookDao, application: Application)
         }
     }
 
-    fun updateBookInfo(book: BookEntity, newTitle: String, newCoverUri: Uri?, context: Context) {
+    fun updateBookInfo(
+        book: BookEntity,
+        newTitle: String,
+        newAuthor: String,
+        newSeries: String?,
+        newCoverUri: Uri?,
+        context: Context
+    ) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 var coverImagePath = book.coverImage
@@ -149,10 +187,17 @@ class BookshelfViewModel(private val bookDao: BookDao, application: Application)
                         }
                     }
                     coverImagePath = coverFile.absolutePath
-                    // Delete old cover
-                    book.coverImage?.let { File(it).delete() }
+                    // Delete old custom cover if different
+                    if (book.coverImage != null && book.coverImage != coverImagePath) {
+                        File(book.coverImage).delete()
+                    }
                 }
-                val updatedBook = book.copy(title = newTitle, coverImage = coverImagePath)
+                val updatedBook = book.copy(
+                    title = newTitle.ifBlank { book.title },
+                    author = newAuthor.ifBlank { "未知作者" },
+                    seriesName = newSeries?.ifBlank { null },
+                    coverImage = coverImagePath
+                )
                 bookDao.updateBook(updatedBook)
                 com.example.epubreader.ui.components.toast.GlobalToastManager.show(
                     text = "✨ 《$newTitle》书籍信息已更新",

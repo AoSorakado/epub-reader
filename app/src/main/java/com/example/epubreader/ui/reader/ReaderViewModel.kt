@@ -357,40 +357,36 @@ class ReaderViewModel(
 
             withContext(Dispatchers.IO) {
                 try {
-                    // Ultra-fast EPUB Parsing using random-access File whenever possible
-                    val parsedBook = if (book.isWebDav) {
+                    val isTxt = book.filePath.endsWith(".txt", ignoreCase = true)
+                    val parsedBook: EpubBook = if (book.isWebDav) {
                         val prefs = context.getSharedPreferences("liquid_settings", Context.MODE_PRIVATE)
                         val url = prefs.getString("webdav_url", "") ?: ""
                         val user = prefs.getString("webdav_user", "") ?: ""
                         val pass = prefs.getString("webdav_pass", "") ?: ""
                         val client = WebDavClient(url, user, pass)
                         
-                        val cacheFile = File(context.cacheDir, "webdav_${book.id}.epub")
+                        val cacheFile = File(context.cacheDir, "webdav_${book.id}.${if (isTxt) "txt" else "epub"}")
                         if (!cacheFile.exists()) {
                             client.downloadFile(book.filePath, cacheFile)
                         }
-                        EpubParser.parse(cacheFile)
+                        if (isTxt) com.example.epubreader.data.parser.TxtParser.parse(cacheFile) else EpubParser.parse(cacheFile)
                     } else if (book.filePath.startsWith("content://")) {
-                        val cacheFile = File(context.cacheDir, "content_${book.id}.epub")
+                        val cacheFile = File(context.cacheDir, "content_${book.id}.${if (isTxt) "txt" else "epub"}")
                         if (!cacheFile.exists() || cacheFile.length() == 0L) {
                             context.contentResolver.openInputStream(Uri.parse(book.filePath))?.use { input ->
                                 cacheFile.outputStream().use { output -> input.copyTo(output) }
                             }
                         }
-                        if (cacheFile.exists() && cacheFile.length() > 0L) {
-                            EpubParser.parse(cacheFile)
-                        } else {
-                            context.contentResolver.openInputStream(Uri.parse(book.filePath))?.use { input ->
-                                EpubParser.parse(input)
-                            } ?: throw Exception("Cannot open content URI")
-                        }
+                        if (isTxt) com.example.epubreader.data.parser.TxtParser.parse(cacheFile) else EpubParser.parse(cacheFile)
                     } else {
                         val file = File(book.filePath)
                         if (file.exists()) {
-                            EpubParser.parse(file)
+                            if (isTxt) com.example.epubreader.data.parser.TxtParser.parse(file) else EpubParser.parse(file)
                         } else {
                             context.contentResolver.openInputStream(Uri.parse(book.filePath))?.use { input ->
-                                EpubParser.parse(input)
+                                val tempFile = File(context.cacheDir, "temp_${book.id}.${if (isTxt) "txt" else "epub"}")
+                                tempFile.outputStream().use { output -> input.copyTo(output) }
+                                if (isTxt) com.example.epubreader.data.parser.TxtParser.parse(tempFile) else EpubParser.parse(tempFile)
                             } ?: throw Exception("Cannot open book file: ${book.filePath}")
                         }
                     }

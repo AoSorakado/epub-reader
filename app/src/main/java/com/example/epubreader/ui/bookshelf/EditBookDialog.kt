@@ -13,6 +13,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,6 +41,9 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun EditBookDialog(
@@ -48,15 +54,37 @@ fun EditBookDialog(
     primaryTextColor: Color = Color(0xFF1E1E24),
     secondaryTextColor: Color = Color(0xFF543866),
     onDismissRequest: () -> Unit,
-    onConfirm: (String, Uri?) -> Unit
+    onConfirm: (newTitle: String, newAuthor: String, newSeries: String?, newCoverUri: Uri?) -> Unit
 ) {
     var title by remember { mutableStateOf(book.title) }
+    var author by remember { mutableStateOf(book.author) }
+    var series by remember { mutableStateOf(book.seriesName ?: "") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         selectedImageUri = uri
+    }
+
+    val isTxt = book.filePath.endsWith(".txt", ignoreCase = true)
+    val fileSizeText = remember(book.filePath) {
+        val f = File(book.filePath)
+        if (f.exists()) {
+            val len = f.length()
+            if (len >= 1024 * 1024) {
+                String.format(Locale.US, "%.1f MB", len.toDouble() / (1024.0 * 1024.0))
+            } else {
+                String.format(Locale.US, "%.1f KB", len.toDouble() / 1024.0)
+            }
+        } else {
+            "未知大小"
+        }
+    }
+    val progressText = String.format(Locale.US, "%.1f%%", (book.totalProgress * 100f).coerceIn(0f, 100f))
+    val addedDateText = remember(book.addedTime) {
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        sdf.format(Date(book.addedTime))
     }
 
     Column(
@@ -95,59 +123,153 @@ fun EditBookDialog(
                 ),
                 shape = RoundedCornerShape(24.dp)
             )
-            .padding(22.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(
-                imageVector = Icons.Filled.Edit,
-                contentDescription = null,
-                tint = themeAccent,
-                modifier = Modifier.size(20.dp)
-            )
-            Text(
-                text = "编辑信息",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = primaryTextColor
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Edit,
+                    contentDescription = null,
+                    tint = themeAccent,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = "书籍详情与元数据",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryTextColor
+                )
+            }
+            
+            // Format Badge
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(themeAccent.copy(alpha = 0.15f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = if (isTxt) "TXT 格式" else "EPUB 格式",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = themeAccent
+                )
+            }
+        }
+
+        // Cover Picker Row (Liquid Glass Style)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.White.copy(alpha = if (isDark) 0.08f else 0.20f))
+                .border(
+                    width = 0.6.dp,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = if (isDark) 0.30f else 0.50f),
+                            Color.White.copy(alpha = if (isDark) 0.10f else 0.20f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(14.dp)
+                )
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    imagePickerLauncher.launch("image/*")
+                }
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Thumbnail preview
+            Box(
+                modifier = Modifier
+                    .size(44.dp, 60.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (selectedImageUri != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(selectedImageUri)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "New Cover",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else if (book.coverImage != null && File(book.coverImage).exists()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(File(book.coverImage))
+                            .crossfade(false)
+                            .build(),
+                        contentDescription = "Current Cover",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.Image,
+                        contentDescription = null,
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (selectedImageUri != null) "已选定新封面 (点击可重选)" else "更换书籍封面",
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (selectedImageUri != null) themeAccent else primaryTextColor
+                )
+                Text(
+                    text = "支持从相册选择自定义插画或书封",
+                    fontSize = 11.5.sp,
+                    color = secondaryTextColor
+                )
+            }
         }
         
-        // Title Input Box (Liquid Glass Style)
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Title Input Box
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = "书名 (Title)",
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 color = secondaryTextColor
             )
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(Color.White.copy(alpha = if (isDark) 0.10f else 0.25f))
                     .border(
                         width = 0.6.dp,
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = if (isDark) 0.30f else 0.60f),
-                                Color.White.copy(alpha = if (isDark) 0.10f else 0.25f)
-                            )
-                        ),
-                        shape = RoundedCornerShape(14.dp)
+                        color = Color.White.copy(alpha = if (isDark) 0.30f else 0.50f),
+                        shape = RoundedCornerShape(12.dp)
                     )
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
                 BasicTextField(
                     value = title,
                     onValueChange = { title = it },
                     textStyle = TextStyle(
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         color = primaryTextColor,
                         fontWeight = FontWeight.Normal
                     ),
@@ -156,91 +278,129 @@ fun EditBookDialog(
                 )
             }
         }
-        
-        // Cover Picker Row (Liquid Glass Style)
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = "书籍封面",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = secondaryTextColor
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White.copy(alpha = if (isDark) 0.08f else 0.20f))
-                    .border(
-                        width = 0.6.dp,
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = if (isDark) 0.30f else 0.50f),
-                                Color.White.copy(alpha = if (isDark) 0.10f else 0.20f)
-                            )
-                        ),
-                        shape = RoundedCornerShape(14.dp)
-                    )
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        imagePickerLauncher.launch("image/*")
-                    }
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Thumbnail preview
+
+        // Author and Series Inputs in a 2-column row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Author
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "作者 (Author)",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = secondaryTextColor
+                )
                 Box(
                     modifier = Modifier
-                        .size(42.dp, 56.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.Black.copy(alpha = 0.1f)),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = if (isDark) 0.10f else 0.25f))
+                        .border(
+                            width = 0.6.dp,
+                            color = Color.White.copy(alpha = if (isDark) 0.30f else 0.50f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
                 ) {
-                    if (selectedImageUri != null) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(selectedImageUri)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = "New Cover",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else if (book.coverImage != null && File(book.coverImage).exists()) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(File(book.coverImage))
-                                .crossfade(false)
-                                .build(),
-                            contentDescription = "Current Cover",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Filled.Image,
-                            contentDescription = null,
-                            tint = secondaryTextColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-                
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (selectedImageUri != null) "已选择新封面" else "更换书籍封面",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (selectedImageUri != null) themeAccent else primaryTextColor
-                    )
-                    Text(
-                        text = "点击从相册选取本地图片",
-                        fontSize = 12.sp,
-                        color = secondaryTextColor
+                    BasicTextField(
+                        value = author,
+                        onValueChange = { author = it },
+                        textStyle = TextStyle(
+                            fontSize = 14.sp,
+                            color = primaryTextColor,
+                            fontWeight = FontWeight.Normal
+                        ),
+                        cursorBrush = SolidColor(themeAccent),
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
+            }
+
+            // Series
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "系列/分组 (Series)",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = secondaryTextColor
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = if (isDark) 0.10f else 0.25f))
+                        .border(
+                            width = 0.6.dp,
+                            color = Color.White.copy(alpha = if (isDark) 0.30f else 0.50f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    BasicTextField(
+                        value = series,
+                        onValueChange = { series = it },
+                        textStyle = TextStyle(
+                            fontSize = 14.sp,
+                            color = primaryTextColor,
+                            fontWeight = FontWeight.Normal
+                        ),
+                        cursorBrush = SolidColor(themeAccent),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+
+        // File Metadata Info Strip
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White.copy(alpha = if (isDark) 0.05f else 0.14f))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "文件大小",
+                    fontSize = 10.5.sp,
+                    color = secondaryTextColor
+                )
+                Text(
+                    text = fileSizeText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+            }
+            Column {
+                Text(
+                    text = "当前进度",
+                    fontSize = 10.5.sp,
+                    color = secondaryTextColor
+                )
+                Text(
+                    text = progressText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = themeAccent
+                )
+            }
+            Column {
+                Text(
+                    text = "导入日期",
+                    fontSize = 10.5.sp,
+                    color = secondaryTextColor
+                )
+                Text(
+                    text = addedDateText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
             }
         }
         
@@ -253,12 +413,12 @@ fun EditBookDialog(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(Color.White.copy(alpha = if (isDark) 0.10f else 0.30f))
                     .border(
                         width = 0.6.dp,
                         color = Color.White.copy(alpha = if (isDark) 0.25f else 0.50f),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(14.dp)
                     )
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
@@ -266,12 +426,12 @@ fun EditBookDialog(
                     ) {
                         onDismissRequest()
                     }
-                    .padding(vertical = 12.dp),
+                    .padding(vertical = 11.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "取消",
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = primaryTextColor
                 )
@@ -281,20 +441,20 @@ fun EditBookDialog(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(themeAccent)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) {
-                        onConfirm(title, selectedImageUri)
+                        onConfirm(title, author, series.ifBlank { null }, selectedImageUri)
                     }
-                    .padding(vertical = 12.dp),
+                    .padding(vertical = 11.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "保存",
-                    fontSize = 15.sp,
+                    text = "保存修改",
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )

@@ -171,7 +171,22 @@ fun StatsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 2. Weekly Reading Trend Line Chart (近 7 天阅读趋势)
+            // 2. Annual Reading Activity Heatmap (GitHub 风格 52 周年度阅读热力图)
+            AnnualHeatmapCard(
+                heatmapWeeks = state.heatmapWeeks,
+                activeDaysCount = state.activeDaysCount,
+                currentStreakDays = state.currentStreakDays,
+                maxStreakDays = state.maxStreakDays,
+                themeAccent = themeAccent,
+                backdrop = globalBackdrop,
+                primaryTextColor = primaryTextColor,
+                secondaryTextColor = secondaryTextColor,
+                isDark = isDark
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 3. Weekly Reading Trend Line Chart (近 7 天阅读趋势)
             WeeklyTrendChartCard(
                 weeklyTrend = state.weeklyTrend,
                 themeAccent = themeAccent,
@@ -839,6 +854,222 @@ fun RecentBookLiquidCard(
                 color = secondaryTextColor,
                 maxLines = 1
             )
+        }
+    }
+}
+
+@Composable
+fun AnnualHeatmapCard(
+    heatmapWeeks: List<List<HeatmapDay>>,
+    activeDaysCount: Int,
+    currentStreakDays: Int,
+    maxStreakDays: Int,
+    themeAccent: Color,
+    backdrop: com.kyant.backdrop.Backdrop,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    isDark: Boolean
+) {
+    var selectedDay by remember { mutableStateOf<HeatmapDay?>(null) }
+    val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+    // Auto-scroll to the latest (rightmost) weeks
+    LaunchedEffect(heatmapWeeks.size) {
+        if (heatmapWeeks.isNotEmpty()) {
+            lazyListState.scrollToItem((heatmapWeeks.size - 1).coerceAtLeast(0))
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(22.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(12f.dp.toPx(), 24f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = {
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.18f else 0.06f)
+                    )
+                },
+                onDrawSurface = {
+                    drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
+                }
+            )
+            .border(
+                width = 0.8.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (isDark) 0.35f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.12f else 0.30f)
+                    )
+                ),
+                shape = RoundedCornerShape(22.dp)
+            )
+            .padding(18.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // Header with Streaks
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CalendarMonth,
+                        contentDescription = null,
+                        tint = themeAccent,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "年度阅读热力图",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(themeAccent.copy(alpha = 0.12f))
+                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "活跃 $activeDaysCount 天",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = themeAccent
+                        )
+                    }
+                    if (currentStreakDays > 0) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFFF9800).copy(alpha = 0.15f))
+                                .padding(horizontal = 7.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "连续 $currentStreakDays 天",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFF9800)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Interactive Tooltip Banner
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.White.copy(alpha = if (isDark) 0.06f else 0.18f))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                if (selectedDay != null) {
+                    val day = selectedDay!!
+                    Text(
+                        text = "📅 ${day.fullDateStr} (${day.dayLabel}) · 专注阅读 ${day.minutes} 分钟 ${if (day.minutes > 0) "🔥" else "💤"}",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = themeAccent
+                    )
+                } else {
+                    Text(
+                        text = "💡 点击下方任意格子可查看当日详细阅读时长",
+                        fontSize = 11.5.sp,
+                        color = secondaryTextColor
+                    )
+                }
+            }
+
+            // 52-Week Grid
+            androidx.compose.foundation.lazy.LazyRow(
+                state = lazyListState,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(3.5.dp)
+            ) {
+                items(heatmapWeeks.size) { weekIdx ->
+                    val weekDays = heatmapWeeks[weekIdx]
+                    Column(verticalArrangement = Arrangement.spacedBy(3.5.dp)) {
+                        for (day in weekDays) {
+                            val isSelected = selectedDay?.dateTimestamp == day.dateTimestamp
+                            val cellColor = when (day.level) {
+                                0 -> Color.White.copy(alpha = if (isDark) 0.07f else 0.18f)
+                                1 -> themeAccent.copy(alpha = 0.32f)
+                                2 -> themeAccent.copy(alpha = 0.58f)
+                                3 -> themeAccent.copy(alpha = 0.82f)
+                                else -> themeAccent
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .size(11.dp)
+                                    .clip(RoundedCornerShape(2.5.dp))
+                                    .background(cellColor)
+                                    .then(
+                                        if (isSelected) Modifier.border(1.2.dp, Color.White, RoundedCornerShape(2.5.dp))
+                                        else Modifier
+                                    )
+                                    .clickable {
+                                        selectedDay = if (selectedDay?.dateTimestamp == day.dateTimestamp) null else day
+                                    }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Legend Strip
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "近 52 周阅读记录",
+                    fontSize = 11.sp,
+                    color = secondaryTextColor
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(text = "少", fontSize = 10.sp, color = secondaryTextColor)
+                    listOf(0, 1, 2, 3, 4).forEach { lvl ->
+                        val c = when (lvl) {
+                            0 -> Color.White.copy(alpha = if (isDark) 0.07f else 0.18f)
+                            1 -> themeAccent.copy(alpha = 0.32f)
+                            2 -> themeAccent.copy(alpha = 0.58f)
+                            3 -> themeAccent.copy(alpha = 0.82f)
+                            else -> themeAccent
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(9.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(c)
+                        )
+                    }
+                    Text(text = "多", fontSize = 10.sp, color = secondaryTextColor)
+                }
+            }
         }
     }
 }
