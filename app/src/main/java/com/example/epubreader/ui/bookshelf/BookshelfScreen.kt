@@ -1091,6 +1091,7 @@ fun BookshelfScreen(
                             height = with(density) { effectiveTargetBounds.height.toDp() }
                         )
                         .graphicsLayer {
+                            alpha = if (showEditDialogForBook != null) 0f else contextMenuProgress
                             scaleX = elevatedScale
                             scaleY = elevatedScale
                         }
@@ -1172,6 +1173,8 @@ fun BookshelfScreen(
                                         onClick = {
                                             val b = target.book
                                             contextMenuTarget = null
+                                            activeContextMenuTarget = null
+                                            lastTargetBounds = Rect.Zero
                                             handleBookClick(b, true)
                                         }
                                     ),
@@ -1181,6 +1184,8 @@ fun BookshelfScreen(
                                         onClick = {
                                             val b = target.book
                                             contextMenuTarget = null
+                                            activeContextMenuTarget = null
+                                            lastTargetBounds = Rect.Zero
                                             showEditDialogForBook = b
                                         }
                                     ),
@@ -1190,6 +1195,8 @@ fun BookshelfScreen(
                                         onClick = {
                                             val b = target.book
                                             contextMenuTarget = null
+                                            activeContextMenuTarget = null
+                                            lastTargetBounds = Rect.Zero
                                             viewModel.updateBook(b.copy(seriesName = null))
                                             selectedSeries = null
                                         }
@@ -1201,6 +1208,8 @@ fun BookshelfScreen(
                                         onClick = {
                                             val b = target.book
                                             contextMenuTarget = null
+                                            activeContextMenuTarget = null
+                                            lastTargetBounds = Rect.Zero
                                             bookToDelete = b
                                         }
                                     )
@@ -1213,6 +1222,8 @@ fun BookshelfScreen(
                                         onClick = {
                                             val b = target.book
                                             contextMenuTarget = null
+                                            activeContextMenuTarget = null
+                                            lastTargetBounds = Rect.Zero
                                             handleBookClick(b, layoutMethod == 1)
                                         }
                                     ),
@@ -1222,6 +1233,8 @@ fun BookshelfScreen(
                                         onClick = {
                                             val b = target.book
                                             contextMenuTarget = null
+                                            activeContextMenuTarget = null
+                                            lastTargetBounds = Rect.Zero
                                             showEditDialogForBook = b
                                         }
                                     ),
@@ -1232,6 +1245,8 @@ fun BookshelfScreen(
                                         onClick = {
                                             val b = target.book
                                             contextMenuTarget = null
+                                            activeContextMenuTarget = null
+                                            lastTargetBounds = Rect.Zero
                                             bookToDelete = b
                                         }
                                     )
