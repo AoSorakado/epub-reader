@@ -1182,26 +1182,28 @@ fun ReaderScreen(
                 }
             }
 
-            // 3. Chapter Directory / TOC Liquid Glass Modal Sheet
+            // 3. Chapter Directory / TOC Modal Sheet
             AnimatedVisibility(
                 visible = showTocSheet,
-                enter = fadeIn(tween(250)),
-                exit = fadeOut(tween(200))
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(180))
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = 0.55f))
-                        .pointerInput(Unit) {
-                            detectTapGestures { showTocSheet = false }
-                        }
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { showTocSheet = false }
+                        )
                 )
             }
 
             AnimatedVisibility(
                 visible = showTocSheet,
-                enter = slideInVertically(initialOffsetY = { it }, animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) + fadeIn(tween(250)),
-                exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(220)) + fadeOut(tween(220)),
+                enter = slideInVertically(initialOffsetY = { it }, animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)),
+                exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(220)),
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
                 val currentChapterIndex = if (pageTurnMode == 0) {
@@ -1210,23 +1212,25 @@ fun ReaderScreen(
                     pages.getOrNull(pagedCurrentIndex)?.chapterIndex ?: 0
                 }
 
+                val sheetBg = if (themeIndex == 2) Color(0xFF1E1E24).copy(alpha = 0.98f) 
+                    else if (themeIndex == 1) Color(0xFFF7F1E3).copy(alpha = 0.98f) 
+                    else Color(0xFFFCFCFD).copy(alpha = 0.98f)
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .fillMaxHeight(0.72f)
+                        .fillMaxHeight(0.75f)
                         .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                        .drawBackdrop(
-                            backdrop = readerBackdrop,
-                            shape = { RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp) },
-                            effects = {
-                                vibrancy()
-                                blur(12.dp.toPx())
-                            },
-                            highlight = { Highlight.Plain },
-                            onDrawSurface = {
-                                val surfaceColor = if (themeIndex == 2) Color(0xFF1E1E24).copy(0.92f) else Color(0xFFF8FAFC).copy(0.92f)
-                                drawRect(surfaceColor)
-                            }
+                        .background(sheetBg)
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = if (themeIndex == 2) 0.15f else 0.45f),
+                                    Color.Transparent
+                                )
+                            ),
+                            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
                         )
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
@@ -1265,7 +1269,7 @@ fun ReaderScreen(
                             LiquidButton(
                                 onClick = { showTocSheet = false },
                                 backdrop = readerBackdrop,
-                                surfaceColor = Color.White.copy(alpha = 0.15f),
+                                surfaceColor = if (themeIndex == 2) Color.White.copy(0.15f) else Color.Black.copy(0.06f),
                                 shape = CircleShape,
                                 modifier = Modifier.size(32.dp)
                             ) {
@@ -1293,7 +1297,7 @@ fun ReaderScreen(
                                     } else {
                                         pages.getOrNull(pagedCurrentIndex)?.chapterTitle == tocItem.title
                                     }
-                                    val activeItemBg = if (themeIndex == 2) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.35f)
+                                    val activeItemBg = if (themeIndex == 2) Color.White.copy(alpha = 0.18f) else Color.Black.copy(alpha = 0.08f)
 
                                     Row(
                                         modifier = Modifier
@@ -1339,45 +1343,40 @@ fun ReaderScreen(
                                                 }
                                             }
                                             .padding(
-                                                start = (tocItem.level * 14 + 14).dp,
-                                                end = 14.dp,
-                                                top = 11.dp,
-                                                bottom = 11.dp
+                                                start = (12 + (tocItem.level * 16)).dp,
+                                                end = 12.dp,
+                                                top = 10.dp,
+                                                bottom = 10.dp
                                             ),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         if (tocItem.level == 0) {
                                             Text(
-                                                text = "%02d".format(idx + 1),
+                                                text = "${(idx + 1).toString().padStart(2, '0')}",
                                                 fontSize = 12.sp,
-                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                                                color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.45f),
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.4f),
                                                 modifier = Modifier.width(28.dp)
                                             )
                                         } else {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(16.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(4.dp)
-                                                        .background(if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.4f), CircleShape)
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.width(12.dp))
+                                                    .padding(end = 10.dp)
+                                                    .size(4.dp)
+                                                    .background(if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.35f), CircleShape)
+                                            )
                                         }
-                                        Spacer(modifier = Modifier.width(6.dp))
+
                                         Text(
                                             text = tocItem.title,
-                                            fontSize = if (tocItem.level == 0) 14.sp else 13.sp,
-                                            fontWeight = if (isCurrent) FontWeight.Bold else if (tocItem.level == 0) FontWeight.Medium else FontWeight.Normal,
+                                            fontSize = if (tocItem.level == 0) 14.5.sp else 13.5.sp,
+                                            fontWeight = if (isCurrent) FontWeight.ExtraBold else if (tocItem.level == 0) FontWeight.Bold else FontWeight.Normal,
                                             color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f)
                                         )
+
                                         if (isCurrent) {
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Box(
@@ -1391,7 +1390,7 @@ fun ReaderScreen(
                             } else {
                                 itemsIndexed(parsedChapters) { idx, chapter ->
                                     val isCurrent = idx == currentChapterIndex
-                                    val activeItemBg = if (themeIndex == 2) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.35f)
+                                    val activeItemBg = if (themeIndex == 2) Color.White.copy(alpha = 0.18f) else Color.Black.copy(alpha = 0.08f)
 
                                     Row(
                                         modifier = Modifier
@@ -1402,15 +1401,13 @@ fun ReaderScreen(
                                                 else Modifier
                                             )
                                             .clickable {
-                                                if (pageTurnMode == 0) {
-                                                    val targetFlat = flatItems.indexOfFirst { it.chapterIndex == idx }
-                                                    if (targetFlat >= 0) {
-                                                        coroutineScope.launch { listState.scrollToItem(targetFlat) }
-                                                        viewModel.saveProgress(targetFlat, 0)
-                                                    }
-                                                } else {
-                                                    val targetPage = pages.indexOfFirst { it.chapterIndex == idx }
-                                                    if (targetPage >= 0) {
+                                                val flatIndex = flatItems.indexOfFirst { it.chapterIndex == idx }
+                                                if (flatIndex >= 0) {
+                                                    if (pageTurnMode == 0) {
+                                                        coroutineScope.launch { listState.scrollToItem(flatIndex) }
+                                                        viewModel.saveProgress(flatIndex, 0)
+                                                    } else {
+                                                        val targetPage = pages.indexOfFirst { it.chapterIndex == idx }.coerceAtLeast(0)
                                                         pagedCurrentIndex = targetPage
                                                         val cur = pages.getOrNull(targetPage)
                                                         if (cur != null) viewModel.saveProgress(cur.flatItemIndex, 0)
@@ -1418,17 +1415,17 @@ fun ReaderScreen(
                                                 }
                                                 showTocSheet = false
                                             }
-                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "%02d".format(idx + 1),
+                                            text = "${(idx + 1).toString().padStart(2, '0')}",
                                             fontSize = 12.sp,
-                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.45f),
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isCurrent) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.4f),
                                             modifier = Modifier.width(28.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(6.dp))
+
                                         Text(
                                             text = chapter.title.ifBlank { "第 ${idx + 1} 章" },
                                             fontSize = 14.sp,
@@ -1438,6 +1435,7 @@ fun ReaderScreen(
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f)
                                         )
+
                                         if (isCurrent) {
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Box(
