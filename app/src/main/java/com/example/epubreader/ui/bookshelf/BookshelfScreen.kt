@@ -142,6 +142,8 @@ fun BookshelfScreen(
     var activeEditBook by remember { mutableStateOf<BookEntity?>(null) }
     var editSourceBounds by remember { mutableStateOf(Rect.Zero) }
     var isEditExpanded by remember { mutableStateOf(false) }
+    var isEditingInnerBook by remember { mutableStateOf(false) }
+    var editInnerSeriesInfo by remember { mutableStateOf<Pair<String, Int>?>(null) }
 
     val editTransition = updateTransition(targetState = isEditExpanded, label = "EditMorphTransition")
     val editExpandProgress by editTransition.animateFloat(
@@ -160,6 +162,8 @@ fun BookshelfScreen(
             showEditDialogForBook = null
             activeEditBook = null
             editSourceBounds = Rect.Zero
+            isEditingInnerBook = false
+            editInnerSeriesInfo = null
         }
     }
     var showSortMenu by remember { mutableStateOf(false) }
@@ -1203,7 +1207,14 @@ fun BookshelfScreen(
                                         onClick = {
                                             val b = target.book
                                             val bounds = if (effectiveTargetBounds != Rect.Zero) effectiveTargetBounds else Rect.Zero
+                                            val seriesBooks = selectedSeries?.second ?: emptyList()
+                                            val index = seriesBooks.indexOfFirst { it.id == b.id }
+                                            val volNum = if (index >= 0) index + 1 else 1
+                                            val sTitle = selectedSeries?.first ?: (b.seriesName ?: "")
+
                                             editSourceBounds = bounds
+                                            isEditingInnerBook = true
+                                            editInnerSeriesInfo = Pair(sTitle, volNum)
                                             showEditDialogForBook = b
                                             activeEditBook = b
                                             isEditExpanded = true
@@ -1257,6 +1268,8 @@ fun BookshelfScreen(
                                             val b = target.book
                                             val bounds = if (effectiveTargetBounds != Rect.Zero && effectiveTargetBounds.width > 10f) effectiveTargetBounds else Rect.Zero
                                             editSourceBounds = bounds
+                                            isEditingInnerBook = false
+                                            editInnerSeriesInfo = null
                                             showEditDialogForBook = b
                                             activeEditBook = b
                                             isEditExpanded = true
@@ -1756,19 +1769,33 @@ fun BookshelfScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(10.dp)
+                            .padding(horizontal = if (isEditingInnerBook) 6.dp else 10.dp, vertical = if (isEditingInnerBook) 4.dp else 10.dp)
                             .graphicsLayer {
                                 alpha = collapsedAlpha
                             },
-                        contentAlignment = Alignment.Center
+                        contentAlignment = if (isEditingInnerBook || layoutMethod == 1) Alignment.CenterStart else Alignment.Center
                     ) {
-                        BookItemContent(
-                            book = book,
-                            isListLayout = layoutMethod == 1,
-                            isDark = isDark,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor
-                        )
+                        if (isEditingInnerBook) {
+                            val (sTitle, volNum) = editInnerSeriesInfo ?: Pair(book.seriesName ?: "", 1)
+                            SeriesInnerBookRow(
+                                book = book,
+                                seriesTitle = sTitle,
+                                volumeNumber = volNum,
+                                isPressed = false,
+                                isDark = isDark,
+                                themeAccent = themeAccent,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor
+                            )
+                        } else {
+                            BookItemContent(
+                                book = book,
+                                isListLayout = layoutMethod == 1,
+                                isDark = isDark,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor
+                            )
+                        }
                     }
                 }
 
