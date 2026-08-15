@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eu.wewox.pagecurl.ExperimentalPageCurlApi
+import eu.wewox.pagecurl.config.rememberPageCurlConfig
 import eu.wewox.pagecurl.page.PageCurl
 import eu.wewox.pagecurl.page.rememberPageCurlState
 import kotlinx.coroutines.launch
@@ -68,6 +69,13 @@ fun PagedReaderView(
         // ==========================================
         0 -> {
             val curlState = rememberPageCurlState(initialCurrent = safeCurrentPage)
+            val curlConfig = rememberPageCurlConfig(
+                backPageColor = bgColor,
+                backPageContentAlpha = 0.02f,
+                shadowColor = Color.Black,
+                shadowAlpha = 0.35f,
+                shadowRadius = 16.dp
+            )
 
             LaunchedEffect(safeCurrentPage) {
                 if (safeCurrentPage != curlState.current) {
@@ -89,6 +97,7 @@ fun PagedReaderView(
                 PageCurl(
                     count = pages.size,
                     state = curlState,
+                    config = curlConfig,
                     modifier = Modifier.fillMaxSize()
                 ) { index ->
                     val page = pages.getOrNull(index) ?: return@PageCurl
@@ -548,31 +557,34 @@ private fun SinglePageRender(
         modifier = modifier
             .fillMaxSize()
             .background(bgColor)
-            .padding(top = 52.dp, bottom = 42.dp, start = 24.dp, end = 24.dp)
+            .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 20.dp)
     ) {
         // Page Top Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp),
+                .height(20.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = page.chapterTitle,
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = secondaryTextColor.copy(alpha = 0.55f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal,
+                color = secondaryTextColor.copy(alpha = 0.45f),
                 maxLines = 1,
                 modifier = Modifier.weight(1f)
             )
         }
 
-        // Page Body Elements
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Page Body Elements (Fills strictly allocated body height)
         Column(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth()
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.Top
         ) {
             page.elements.forEach { element ->
                 when (element) {
@@ -584,7 +596,7 @@ private fun SinglePageRender(
                             color = textColor,
                             fontFamily = customFontFamily,
                             lineHeight = (textSize * 1.35f * 1.35f).sp,
-                            modifier = Modifier.padding(top = 8.dp, bottom = 18.dp)
+                            modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
                         )
                     }
                     is PageElement.Paragraph -> {
@@ -609,35 +621,37 @@ private fun SinglePageRender(
                             contentScale = ContentScale.FillWidth,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 14.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .padding(bottom = 12.dp)
+                                .clip(RoundedCornerShape(6.dp))
                         )
                     }
                 }
             }
         }
 
+        Spacer(modifier = Modifier.height(10.dp))
+
         // Page Bottom Footer
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 8.dp),
+                .height(20.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = bookTitle,
-                fontSize = 11.sp,
-                color = secondaryTextColor.copy(alpha = 0.45f),
+                fontSize = 10.5.sp,
+                color = secondaryTextColor.copy(alpha = 0.40f),
                 maxLines = 1,
                 modifier = Modifier.weight(1f, fill = false)
             )
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = "${page.pageInChapter} / ${page.totalPagesInChapter}  ·  ${page.pageIndex + 1}/$totalPages",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = secondaryTextColor.copy(alpha = 0.55f)
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Normal,
+                color = secondaryTextColor.copy(alpha = 0.45f)
             )
         }
     }

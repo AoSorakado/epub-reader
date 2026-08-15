@@ -45,8 +45,8 @@ object ReaderPagination {
         var currentChapterTitle = "正文"
         var currentStartingFlatIndex = 0
 
-        val charsPerLine = (contentWidthPx / (textSizePx * 1.02f)).toInt().coerceAtLeast(10)
-        val titleHeightPx = textSizePx * 1.35f * 1.4f + 36f
+        val charsPerLine = (contentWidthPx / (textSizePx * 1.06f)).toInt().coerceAtLeast(8)
+        val titleHeightPx = (textSizePx * 1.35f * 1.35f) + 18f
 
         fun flushPage() {
             if (currentPageElements.isNotEmpty()) {

@@ -300,8 +300,8 @@ fun ReaderScreen(
                 paragraphSpacing
             ) {
                 if (containerWidthPx > 100f && containerHeightPx > 200f) {
-                    val contentWidthPx = containerWidthPx - with(density) { 48.dp.toPx() }
-                    val contentHeightPx = containerHeightPx - with(density) { (52.dp + 42.dp + 12.dp + 8.dp).toPx() }
+                    val contentWidthPx = containerWidthPx - with(density) { 40.dp.toPx() }
+                    val contentHeightPx = containerHeightPx - with(density) { (24.dp + 20.dp + 10.dp + 10.dp + 20.dp + 20.dp).toPx() }
                     val textSizePx = with(density) { textSize.sp.toPx() }
                     val lineHeightPx = (textSizePx * lineHeightMult).coerceAtLeast(textSizePx * 1.15f)
                     val paragraphSpacingPx = with(density) { paragraphSpacing.dp.toPx() }
