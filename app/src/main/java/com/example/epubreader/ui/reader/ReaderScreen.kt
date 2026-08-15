@@ -120,6 +120,7 @@ import androidx.compose.ui.platform.LocalDensity
 fun ReaderScreen(
     navController: NavController,
     bookId: Long,
+    settingsViewModel: com.example.epubreader.ui.settings.SettingsViewModel? = null,
     backgroundBackdrop: com.kyant.backdrop.Backdrop,
     onBackClick: (() -> Unit)? = null
 ) {
@@ -171,10 +172,14 @@ fun ReaderScreen(
     val pageTurnMode by viewModel.pageTurnMode.collectAsState()
     val pageAnimStyle by viewModel.pageAnimStyle.collectAsState()
 
-    val settingsViewModel: com.example.epubreader.ui.settings.SettingsViewModel = viewModel()
-    val appTheme by settingsViewModel.appTheme.collectAsState()
-    val isCustomThemeThreeColors by settingsViewModel.isCustomThemeThreeColors.collectAsState()
-    val customColors by settingsViewModel.customColors.collectAsState()
+    val effectiveSettingsViewModel: com.example.epubreader.ui.settings.SettingsViewModel = settingsViewModel
+        ?: viewModel(
+            viewModelStoreOwner = (context as? androidx.activity.ComponentActivity) ?: (context as androidx.lifecycle.ViewModelStoreOwner),
+            factory = com.example.epubreader.ui.settings.SettingsViewModelFactory(context.applicationContext as Application)
+        )
+    val appTheme by effectiveSettingsViewModel.appTheme.collectAsState()
+    val isCustomThemeThreeColors by effectiveSettingsViewModel.isCustomThemeThreeColors.collectAsState()
+    val customColors by effectiveSettingsViewModel.customColors.collectAsState()
 
     val settingsMorphProgress by animateFloatAsState(
         targetValue = if (showSettings) 1f else 0f,

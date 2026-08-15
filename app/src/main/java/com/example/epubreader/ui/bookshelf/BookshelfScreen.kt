@@ -1010,6 +1010,7 @@ fun BookshelfScreen(
                         com.example.epubreader.ui.reader.ReaderScreen(
                             navController = navController,
                             bookId = book.id,
+                            settingsViewModel = settingsViewModel,
                             backgroundBackdrop = bookshelfBackdrop,
                             onBackClick = {
                                 isOpeningBookExpanded = false // Smoothly collapses back to book card on bookshelf!

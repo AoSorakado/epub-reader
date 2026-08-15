@@ -169,7 +169,12 @@ fun MainScaffold(navController: NavHostController) {
                 }
             ) { backStackEntry ->
                 val bookId = backStackEntry.arguments?.getLong("bookId") ?: return@composable
-                com.example.epubreader.ui.reader.ReaderScreen(navController = navController, bookId = bookId, backgroundBackdrop = backgroundBackdrop)
+                com.example.epubreader.ui.reader.ReaderScreen(
+                    navController = navController,
+                    bookId = bookId,
+                    settingsViewModel = settingsViewModel,
+                    backgroundBackdrop = backgroundBackdrop
+                )
             }
         }
 
