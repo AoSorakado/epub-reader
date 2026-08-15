@@ -40,6 +40,9 @@ fun LiquidButton(
     shape: Shape = RoundedCornerShape(50),
     tint: Color = Color.Unspecified,
     surfaceColor: Color = Color.Unspecified,
+    blurRadius: Float = 8f,
+    refractionHeight: Float = 24f,
+    refractionAmount: Float = 48f,
     content: @Composable RowScope.() -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -130,8 +133,8 @@ fun LiquidButton(
                 shape = { shape },
                 effects = {
                     vibrancy()
-                    blur(3f.dp.toPx())
-                    lens(8f.dp.toPx(), 16f.dp.toPx(), chromaticAberration = true)
+                    blur(blurRadius.dp.toPx())
+                    lens(refractionHeight.dp.toPx(), refractionAmount.dp.toPx(), depthEffect = true, chromaticAberration = true)
                 },
                 highlight = { Highlight.Plain },
                 onDrawSurface = {
@@ -141,7 +144,7 @@ fun LiquidButton(
                     } else if (surfaceColor.isSpecified) {
                         drawRect(surfaceColor)
                     } else {
-                        drawRect(Color.White.copy(alpha = 0.18f))
+                        drawRect(Color.White.copy(alpha = 0.10f))
                     }
                 }
             )

@@ -116,6 +116,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         if (theme != AppTheme.MIDNIGHT_GLASS) {
             _userPreferredDayTheme.value = theme
             prefs.edit().putString("userPreferredDayTheme", theme.name).apply()
+            val dayReadingTheme = readerPrefs.getInt("userPreferredDayReadingTheme", 0)
+            readerPrefs.edit().putInt("themeIndex", dayReadingTheme).apply()
+        } else {
+            readerPrefs.edit().putInt("themeIndex", 2).apply()
         }
     }
 
@@ -130,6 +134,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     _appTheme.value = AppTheme.MIDNIGHT_GLASS
                     prefs.edit().putString("appTheme", AppTheme.MIDNIGHT_GLASS.name).apply()
                 }
+                readerPrefs.edit().putInt("themeIndex", 2).apply()
                 com.example.epubreader.ui.components.toast.GlobalToastManager.show(
                     text = "🌙 自动夜间模式已开启，已为您切换至暗夜护眼主题~",
                     type = com.example.epubreader.ui.components.toast.ToastType.Info,
@@ -139,6 +144,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 if (_appTheme.value == AppTheme.MIDNIGHT_GLASS) {
                     _appTheme.value = _userPreferredDayTheme.value
                     prefs.edit().putString("appTheme", _userPreferredDayTheme.value.name).apply()
+                    val dayReadingTheme = readerPrefs.getInt("userPreferredDayReadingTheme", 0)
+                    readerPrefs.edit().putInt("themeIndex", dayReadingTheme).apply()
                 }
                 com.example.epubreader.ui.components.toast.GlobalToastManager.show(
                     text = "☀️ 自动夜间模式已开启（将在 19:00 - 07:00 自动生效）",
@@ -151,6 +158,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             if (_appTheme.value == AppTheme.MIDNIGHT_GLASS) {
                 _appTheme.value = _userPreferredDayTheme.value
                 prefs.edit().putString("appTheme", _userPreferredDayTheme.value.name).apply()
+                val dayReadingTheme = readerPrefs.getInt("userPreferredDayReadingTheme", 0)
+                readerPrefs.edit().putInt("themeIndex", dayReadingTheme).apply()
             }
             com.example.epubreader.ui.components.toast.GlobalToastManager.show(
                 text = "⛅ 自动夜间模式已关闭",
@@ -170,6 +179,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     _appTheme.value = AppTheme.MIDNIGHT_GLASS
                     prefs.edit().putString("appTheme", AppTheme.MIDNIGHT_GLASS.name).apply()
                 }
+                readerPrefs.edit().putInt("themeIndex", 2).apply()
                 val nightGreeting = when (currentHour) {
                     in 19..23 -> "🌙 晚上好！已为您切换至暗夜护眼主题，愿好书伴您度过宁静夜晚~"
                     else -> "🌌 夜深了，已为您切换至暗夜护眼主题，愿好书伴您入眠~"
@@ -184,6 +194,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     val dayTheme = _userPreferredDayTheme.value
                     _appTheme.value = dayTheme
                     prefs.edit().putString("appTheme", dayTheme.name).apply()
+                    val dayReadingTheme = readerPrefs.getInt("userPreferredDayReadingTheme", 0)
+                    readerPrefs.edit().putInt("themeIndex", dayReadingTheme).apply()
                 }
                 val dayGreeting = when (currentHour) {
                     in 5..10 -> "🌅 早上好！已为您切换至日间清新主题，新的一天从好书开始~"
@@ -325,9 +337,206 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     type = com.example.epubreader.ui.components.toast.ToastType.Error,
                     durationMs = 3500L
                 )
-                
                 kotlinx.coroutines.delay(3000)
                 _syncState.value = SyncState.IDLE
+            }
+        }
+    }
+
+    private val _isProgressSyncing = MutableStateFlow(false)
+    val isProgressSyncing: StateFlow<Boolean> = _isProgressSyncing.asStateFlow()
+
+    private val _lastProgressSyncTime = MutableStateFlow(prefs.getLong("last_progress_sync_time", 0L))
+    val lastProgressSyncTime: StateFlow<Long> = _lastProgressSyncTime.asStateFlow()
+
+    fun syncReadingProgress(customUrl: String? = null, customUser: String? = null, customPass: String? = null) {
+        if (_isProgressSyncing.value) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProgressSyncing.value = true
+            com.example.epubreader.ui.components.toast.GlobalToastManager.showSyncing("正在连接 WebDAV 服务器...")
+            try {
+                val url = customUrl ?: prefs.getString("webdav_url", "") ?: ""
+                val user = customUser ?: prefs.getString("webdav_user", "") ?: ""
+                val pass = customPass ?: prefs.getString("webdav_pass", "") ?: ""
+
+                if (url.isBlank()) {
+                    com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                        text = "请先配置 WebDAV 服务器地址与凭据",
+                        type = com.example.epubreader.ui.components.toast.ToastType.Error,
+                        durationMs = 3500L
+                    )
+                    _isProgressSyncing.value = false
+                    return@launch
+                }
+
+                val client = WebDavClient(url, user, pass)
+                val bookDao = AppDatabase.getDatabase(getApplication()).bookDao()
+
+                // Step 1: Query local books
+                val localBooks = bookDao.getAllBooksList()
+
+                // Step 2: Fetch remote progress json
+                com.example.epubreader.ui.components.toast.GlobalToastManager.showSyncing("正在检索云端进度数据...")
+                
+                // Ensure directory exists or use root
+                try {
+                    client.createDirectory("/.epub_reader")
+                } catch (ignored: Exception) {}
+
+                val remoteJsonStr = client.getTextFile("/.epub_reader/progress_sync.json")
+                    ?: client.getTextFile("/epub_reader_progress.json")
+
+                // Step 3: Parse and merge
+                com.example.epubreader.ui.components.toast.GlobalToastManager.showSyncing("正在合并多端阅读进度...")
+
+                val remoteItemsMap = mutableMapOf<String, org.json.JSONObject>()
+                if (!remoteJsonStr.isNullOrBlank()) {
+                    try {
+                        val rootJson = org.json.JSONObject(remoteJsonStr)
+                        val itemsArray = rootJson.optJSONArray("items")
+                        if (itemsArray != null) {
+                            for (i in 0 until itemsArray.length()) {
+                                val itemObj = itemsArray.getJSONObject(i)
+                                val filePath = itemObj.optString("filePath", "")
+                                val title = itemObj.optString("title", "")
+                                val key = if (filePath.isNotBlank()) filePath else title
+                                if (key.isNotBlank()) {
+                                    remoteItemsMap[key] = itemObj
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                var pulledFromCloudCount = 0
+                var pushedToCloudCount = 0
+                val mergedItemsArray = org.json.JSONArray()
+                val processedKeys = mutableSetOf<String>()
+
+                for (localBook in localBooks) {
+                    val keyByPath = localBook.filePath
+                    val keyByTitle = localBook.title
+                    val remoteObj = remoteItemsMap[keyByPath] ?: remoteItemsMap[keyByTitle]
+
+                    if (remoteObj != null) {
+                        val remoteKey = if (remoteItemsMap.containsKey(keyByPath)) keyByPath else keyByTitle
+                        processedKeys.add(remoteKey)
+
+                        val remoteLastReadTime = remoteObj.optLong("lastReadTime", 0L)
+                        val remotePos = remoteObj.optString("lastReadPosition", "")
+                        val remoteProgress = remoteObj.optDouble("totalProgress", 0.0).toFloat()
+
+                        if (remoteLastReadTime > localBook.lastReadTime && remotePos.isNotBlank()) {
+                            // Cloud is newer -> update local DB
+                            val updatedBook = localBook.copy(
+                                lastReadPosition = remotePos,
+                                totalProgress = remoteProgress,
+                                lastReadTime = remoteLastReadTime
+                            )
+                            bookDao.updateBook(updatedBook)
+                            pulledFromCloudCount++
+
+                            // Put the remote/updated object into merged array
+                            mergedItemsArray.put(remoteObj)
+                        } else {
+                            // Local is newer or equal -> keep local
+                            if (!localBook.lastReadPosition.isNullOrBlank()) {
+                                val newObj = org.json.JSONObject().apply {
+                                    put("title", localBook.title)
+                                    put("author", localBook.author)
+                                    put("filePath", localBook.filePath)
+                                    put("fileName", localBook.filePath.substringAfterLast("/"))
+                                    put("lastReadPosition", localBook.lastReadPosition ?: "")
+                                    put("totalProgress", localBook.totalProgress.toDouble())
+                                    put("lastReadTime", localBook.lastReadTime)
+                                }
+                                mergedItemsArray.put(newObj)
+                                if (localBook.lastReadTime > remoteLastReadTime) {
+                                    pushedToCloudCount++
+                                }
+                            } else {
+                                mergedItemsArray.put(remoteObj)
+                            }
+                        }
+                    } else {
+                        // Not yet in cloud: if local has read progress, upload it
+                        if (!localBook.lastReadPosition.isNullOrBlank()) {
+                            val newObj = org.json.JSONObject().apply {
+                                put("title", localBook.title)
+                                put("author", localBook.author)
+                                put("filePath", localBook.filePath)
+                                put("fileName", localBook.filePath.substringAfterLast("/"))
+                                put("lastReadPosition", localBook.lastReadPosition ?: "")
+                                put("totalProgress", localBook.totalProgress.toDouble())
+                                put("lastReadTime", localBook.lastReadTime)
+                            }
+                            mergedItemsArray.put(newObj)
+                            pushedToCloudCount++
+                        }
+                    }
+                }
+
+                // Add any remaining remote items that local doesn't have yet
+                for ((k, obj) in remoteItemsMap) {
+                    if (!processedKeys.contains(k)) {
+                        mergedItemsArray.put(obj)
+                    }
+                }
+
+                // Step 4: Upload merged payload back to cloud
+                com.example.epubreader.ui.components.toast.GlobalToastManager.showSyncing("正在上传最新合并进度至云端...")
+                val outputJson = org.json.JSONObject().apply {
+                    put("version", 1)
+                    put("lastSyncTime", System.currentTimeMillis())
+                    put("items", mergedItemsArray)
+                }
+
+                val jsonContent = outputJson.toString(2)
+                var (uploadSuccess, uploadError) = client.uploadTextFile("/epub_reader_progress.json", jsonContent)
+                if (!uploadSuccess) {
+                    val res2 = client.uploadTextFile("/.epub_reader/progress_sync.json", jsonContent)
+                    uploadSuccess = res2.first
+                    if (!uploadSuccess) {
+                        uploadError = res2.second ?: uploadError
+                    }
+                }
+
+                if (!uploadSuccess) {
+                    throw Exception("云端写入失败 (${uploadError ?: "请检查 WebDAV 写入权限"})")
+                }
+
+                val now = System.currentTimeMillis()
+                prefs.edit().putLong("last_progress_sync_time", now).apply()
+                _lastProgressSyncTime.value = now
+
+                // Step 5: Success Toast
+                val resultText = if (pulledFromCloudCount > 0 && pushedToCloudCount > 0) {
+                    "🎉 进度同步成功：云端拉取 $pulledFromCloudCount 本，上传 $pushedToCloudCount 本"
+                } else if (pulledFromCloudCount > 0) {
+                    "🎉 进度同步成功：已从云端同步 $pulledFromCloudCount 本书的最新进度"
+                } else if (pushedToCloudCount > 0) {
+                    "🎉 进度同步成功：已上传 $pushedToCloudCount 本书的最新进度至云端"
+                } else {
+                    "🎉 进度同步完成：多端进度已是最新"
+                }
+
+                com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                    text = resultText,
+                    type = com.example.epubreader.ui.components.toast.ToastType.Success,
+                    durationMs = 4000L
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+                com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                    text = "❌ 进度同步失败: ${e.localizedMessage ?: "网络异常或写入权限受限"}",
+                    type = com.example.epubreader.ui.components.toast.ToastType.Error,
+                    durationMs = 4000L
+                )
+            } finally {
+                _isProgressSyncing.value = false
             }
         }
     }

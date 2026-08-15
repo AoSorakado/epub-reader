@@ -62,6 +62,9 @@ fun GlobalLiquidToast(
         }
     }
 
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val effectiveTopPadding = if (statusBarTop < 36.dp) 48.dp else statusBarTop + 14.dp
+
     AnimatedVisibility(
         visible = currentToast != null,
         enter = slideInVertically(
@@ -80,8 +83,7 @@ fun GlobalLiquidToast(
         ),
         modifier = modifier
             .fillMaxWidth()
-            .padding(WindowInsets.statusBars.asPaddingValues())
-            .padding(top = 10.dp, start = 20.dp, end = 20.dp)
+            .padding(top = effectiveTopPadding, start = 20.dp, end = 20.dp)
             .wrapContentWidth(Alignment.CenterHorizontally)
     ) {
         activeToast?.let { toast ->

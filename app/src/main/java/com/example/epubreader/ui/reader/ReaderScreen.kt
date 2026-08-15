@@ -1,6 +1,7 @@
 package com.example.epubreader.ui.reader
 
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 import androidx.compose.ui.util.fastRoundToInt
 
@@ -15,6 +16,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -26,6 +30,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -37,6 +42,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -137,6 +143,23 @@ fun ReaderScreen(
     var settingsButtonBounds by remember { mutableStateOf(Rect.Zero) }
     var tocButtonBounds by remember { mutableStateOf(Rect.Zero) }
 
+    val handleExit: () -> Unit = remember(onBackClick, navController, context) {
+        {
+            viewModel.uploadProgressToCloud(context)
+            if (onBackClick != null) {
+                onBackClick()
+            } else {
+                navController.popBackStack()
+            }
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            viewModel.uploadProgressToCloud(context)
+        }
+    }
+
     androidx.activity.compose.BackHandler(enabled = true) {
         if (showTocSheet) {
             showTocSheet = false
@@ -145,11 +168,7 @@ fun ReaderScreen(
         } else if (showToolbars) {
             showToolbars = false
         } else {
-            if (onBackClick != null) {
-                onBackClick()
-            } else {
-                navController.popBackStack()
-            }
+            handleExit()
         }
     }
 
@@ -171,6 +190,9 @@ fun ReaderScreen(
     val customFontUri by viewModel.customFontUri.collectAsState()
     val pageTurnMode by viewModel.pageTurnMode.collectAsState()
     val pageAnimStyle by viewModel.pageAnimStyle.collectAsState()
+    val chapterCharCounts by viewModel.chapterCharCounts.collectAsState()
+    val chapterCumulative by viewModel.chapterCumulativeCharCounts.collectAsState()
+    val totalChars by viewModel.totalCharCount.collectAsState()
 
     val effectiveSettingsViewModel: com.example.epubreader.ui.settings.SettingsViewModel = settingsViewModel
         ?: viewModel(
@@ -181,65 +203,82 @@ fun ReaderScreen(
     val isCustomThemeThreeColors by effectiveSettingsViewModel.isCustomThemeThreeColors.collectAsState()
     val customColors by effectiveSettingsViewModel.customColors.collectAsState()
 
-    val settingsMorphProgress by animateFloatAsState(
-        targetValue = if (showSettings) 1f else 0f,
-        animationSpec = if (showSettings) {
-            spring(
-                dampingRatio = 0.76f,
-                stiffness = 280f
-            )
-        } else {
-            spring(
-                dampingRatio = 0.82f,
-                stiffness = 250f
-            )
-        },
-        label = "SettingsMorphProgress"
+    val isGlobalDark = appTheme == com.example.epubreader.ui.theme.AppTheme.MIDNIGHT_GLASS
+    val globalThemeAccent = com.example.epubreader.ui.theme.getThemeAccentColor(
+        theme = appTheme,
+        customColors = if (isCustomThemeThreeColors) customColors else customColors.take(2)
     )
+    val isGlassDark = themeIndex == 2 || isGlobalDark
+    val glassTextColor = if (isGlassDark) Color(0xFFF1F5F9) else Color(0xFF2B173A)
+    val glassSecondaryColor = if (isGlassDark) Color(0xFF94A3B8) else Color(0xFF543866).copy(alpha = 0.85f)
 
-    val tocMorphProgress by animateFloatAsState(
-        targetValue = if (showTocSheet) 1f else 0f,
-        animationSpec = if (showTocSheet) {
-            spring(
-                dampingRatio = 0.76f,
-                stiffness = 280f
-            )
-        } else {
-            spring(
-                dampingRatio = 0.82f,
-                stiffness = 250f
-            )
-        },
-        label = "TocMorphProgress"
-    )
+    val density = LocalDensity.current
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
 
-    // Button Jelly Pulse upon collapse
-    val settingsPulseScale = remember { androidx.compose.animation.core.Animatable(1f) }
-    val tocPulseScale = remember { androidx.compose.animation.core.Animatable(1f) }
-    val morphScope = rememberCoroutineScope()
-    val coroutineScope = rememberCoroutineScope()
+    val dialogWidthDp = minOf(configuration.screenWidthDp.dp - 36.dp, 460.dp)
+    val dialogHeightDp = minOf(configuration.screenHeightDp.dp - 72.dp, 560.dp)
+    val dialogWidthPx = with(density) { dialogWidthDp.toPx() }
+    val dialogHeightPx = with(density) { dialogHeightDp.toPx() }
+
+    val dialogCenterX = screenWidthPx / 2f
+    val dialogCenterY = screenHeightPx / 2f
+
+    val settingsAnim = remember { Animatable(0f, visibilityThreshold = 0.0001f) }
+    val isSettingsActive = showSettings || settingsAnim.value > 0.001f
 
     LaunchedEffect(showSettings) {
-        if (!showSettings && settingsMorphProgress > 0f) {
-            kotlinx.coroutines.delay(200)
-            settingsPulseScale.snapTo(1.16f)
-            settingsPulseScale.animateTo(
-                1f,
-                spring(dampingRatio = 0.42f, stiffness = 340f)
+        if (showSettings) {
+            settingsAnim.snapTo(0f)
+            settingsAnim.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = 0.74f,
+                    stiffness = 220f,
+                    visibilityThreshold = 0.0001f
+                )
+            )
+        } else {
+            settingsAnim.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(
+                    dampingRatio = 0.88f,
+                    stiffness = 360f,
+                    visibilityThreshold = 0.0001f
+                )
             )
         }
     }
 
+    val tocAnim = remember { Animatable(0f, visibilityThreshold = 0.0001f) }
+    val isTocActive = showTocSheet || tocAnim.value > 0.001f
+
     LaunchedEffect(showTocSheet) {
-        if (!showTocSheet && tocMorphProgress > 0f) {
-            kotlinx.coroutines.delay(200)
-            tocPulseScale.snapTo(1.16f)
-            tocPulseScale.animateTo(
-                1f,
-                spring(dampingRatio = 0.42f, stiffness = 340f)
+        if (showTocSheet) {
+            tocAnim.snapTo(0f)
+            tocAnim.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = 0.74f,
+                    stiffness = 220f,
+                    visibilityThreshold = 0.0001f
+                )
+            )
+        } else {
+            tocAnim.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(
+                    dampingRatio = 0.88f,
+                    stiffness = 360f,
+                    visibilityThreshold = 0.0001f
+                )
             )
         }
     }
+
+    val morphScope = rememberCoroutineScope()
+    val coroutineScope = rememberCoroutineScope()
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -299,6 +338,137 @@ fun ReaderScreen(
         drawContent()
     }
     val bottomSheetBackdrop = rememberLayerBackdrop()
+
+    val initialPositionStr = bookEntity?.lastReadPosition?.split("_")
+    val initialChapterIndex = initialPositionStr?.getOrNull(0)?.toIntOrNull() ?: 0
+    val initialOffset = initialPositionStr?.getOrNull(1)?.toIntOrNull() ?: 0
+    val initialNodeIndex = initialPositionStr?.getOrNull(2)?.toIntOrNull() ?: 0
+    
+    val initialFlatIndex = remember(flatItems, initialChapterIndex, initialNodeIndex) {
+        flatItems.indexOfFirst {
+            it.chapterIndex == initialChapterIndex && (it !is com.example.epubreader.ui.reader.FlatReaderItem.Node || it.nodeIndex >= initialNodeIndex)
+        }.coerceAtLeast(0)
+    }
+    
+    val readerTopPadding = maxOf(
+        WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+        if (immersiveStatusBar) 28.dp else 12.dp
+    ) + 12.dp
+
+    var containerWidthPx by remember { mutableFloatStateOf(0f) }
+    var containerHeightPx by remember { mutableFloatStateOf(0f) }
+
+    var pages by remember { mutableStateOf<List<com.example.epubreader.ui.reader.ReaderPage>>(emptyList()) }
+
+    LaunchedEffect(
+        flatItems,
+        chineseMode,
+        containerWidthPx,
+        containerHeightPx,
+        textSize,
+        lineHeightMult,
+        paragraphSpacing,
+        immersiveStatusBar
+    ) {
+        if (containerWidthPx > 100f && containerHeightPx > 200f && flatItems.isNotEmpty()) {
+            val contentWidthPx = containerWidthPx - with(density) { 36.dp.toPx() }
+            val topPaddingPx = with(density) { readerTopPadding.toPx() }
+            val bottomPaddingPx = with(density) { 20.dp.toPx() }
+            val contentHeightPx = containerHeightPx - topPaddingPx - bottomPaddingPx
+            val textSizePx = with(density) { textSize.sp.toPx() }
+            val lineHeightPx = (textSizePx * lineHeightMult).coerceAtLeast(textSizePx * 1.15f)
+            val paragraphSpacingPx = with(density) { paragraphSpacing.dp.toPx() }
+
+            val computedPages = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                ReaderPagination.paginate(
+                    flatItems = flatItems,
+                    chineseMode = chineseMode,
+                    contentWidthPx = contentWidthPx,
+                    contentHeightPx = contentHeightPx,
+                    textSizePx = textSizePx,
+                    lineHeightPx = lineHeightPx,
+                    paragraphSpacingPx = paragraphSpacingPx
+                )
+            }
+            pages = computedPages
+        }
+    }
+
+    var pagedCurrentIndex by remember { mutableStateOf(0) }
+    var hasInitializedPagedIndex by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pages.isNotEmpty()) {
+        if (pages.isNotEmpty() && !hasInitializedPagedIndex) {
+            hasInitializedPagedIndex = true
+            if (initialFlatIndex > 0) {
+                val matched = pages.indexOfFirst { it.flatItemIndex >= initialFlatIndex }
+                if (matched >= 0) {
+                    pagedCurrentIndex = matched
+                }
+            }
+        }
+    }
+
+    fun onPagedIndexChanged(newPage: Int) {
+        if (newPage != pagedCurrentIndex) {
+            pagedCurrentIndex = newPage
+            val current = pages.getOrNull(newPage)
+            if (current != null) {
+                viewModel.saveProgress(current.chapterIndex, 0)
+            }
+        }
+    }
+
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = initialChapterIndex.coerceIn(0, (parsedChapters.size - 1).coerceAtLeast(0)),
+        initialFirstVisibleItemScrollOffset = initialOffset
+    )
+
+    val continuousProgress by remember(pageTurnMode, pagedCurrentIndex, pages, chapterCharCounts, chapterCumulative, totalChars) {
+        derivedStateOf {
+            if (pageTurnMode == 0) {
+                val visibleItems = listState.layoutInfo.visibleItemsInfo
+                if (visibleItems.isEmpty() || totalChars <= 0) {
+                    (bookEntity?.totalProgress ?: 0f)
+                } else {
+                    val firstItem = visibleItems.firstOrNull()
+                    if (firstItem == null) return@derivedStateOf (bookEntity?.totalProgress ?: 0f)
+
+                    // Index 0 is book header, index 1 is chapter 0, etc.
+                    val chapterIdx = if (firstItem.index == 0) 0 else (firstItem.index - 1)
+                    if (chapterIdx >= chapterCumulative.size) return@derivedStateOf 1f
+
+                    val charsBefore = chapterCumulative.getOrNull(chapterIdx) ?: 0
+                    val chapterLen = chapterCharCounts.getOrNull(chapterIdx) ?: 1
+
+                    val itemTopOffset = (-firstItem.offset).toFloat().coerceAtLeast(0f)
+                    val itemHeight = firstItem.size.toFloat().coerceAtLeast(1f)
+                    val fractionInChapter = (itemTopOffset / itemHeight).coerceIn(0f, 1f)
+
+                    val currentChars = charsBefore + (fractionInChapter * chapterLen)
+                    (currentChars / totalChars.toFloat()).coerceIn(0f, 1f)
+                }
+            } else {
+                if (pages.isEmpty()) {
+                    (bookEntity?.totalProgress ?: 0f)
+                } else {
+                    ((pagedCurrentIndex + 1).toFloat() / pages.size.toFloat()).coerceIn(0f, 1f)
+                }
+            }
+        }
+    }
+
+    // Decoupled reading position tracking for continuous scrolling mode
+    LaunchedEffect(listState, pageTurnMode) {
+        if (pageTurnMode == 0) {
+            snapshotFlow { listState.firstVisibleItemIndex }
+                .distinctUntilChanged()
+                .collect { index ->
+                    viewModel.updateReadingPosition(index)
+                }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -306,109 +476,46 @@ fun ReaderScreen(
     ) {
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize().background(bgColor), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(
-                            color = textColor, 
-                            strokeWidth = 3.dp,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "正在解析书籍... ${(loadingProgress * 100).toInt()}%", 
-                            color = textColor.copy(alpha = 0.7f),
-                            fontSize = 14.sp
-                        )
-                    }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        color = textColor, 
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "正在解析书籍... ${(loadingProgress * 100).toInt()}%", 
+                        color = textColor.copy(alpha = 0.7f),
+                        fontSize = 14.sp
+                    )
                 }
+            }
         } else {
-            val initialPositionStr = bookEntity?.lastReadPosition?.split("_")
-            val initialChapterIndex = initialPositionStr?.getOrNull(0)?.toIntOrNull() ?: 0
-            val initialOffset = initialPositionStr?.getOrNull(1)?.toIntOrNull() ?: 0
-            val initialNodeIndex = initialPositionStr?.getOrNull(2)?.toIntOrNull() ?: 0
-            
-            val initialFlatIndex = remember(flatItems, initialChapterIndex, initialNodeIndex) {
-                flatItems.indexOfFirst {
-                    it.chapterIndex == initialChapterIndex && (it !is com.example.epubreader.ui.reader.FlatReaderItem.Node || it.nodeIndex >= initialNodeIndex)
-                }.coerceAtLeast(0)
-            }
-            
-            val density = androidx.compose.ui.platform.LocalDensity.current
-            var containerWidthPx by remember { mutableFloatStateOf(0f) }
-            var containerHeightPx by remember { mutableFloatStateOf(0f) }
-
-            var pages by remember { mutableStateOf<List<com.example.epubreader.ui.reader.ReaderPage>>(emptyList()) }
-
-            LaunchedEffect(
-                flatItems,
-                chineseMode,
-                containerWidthPx,
-                containerHeightPx,
-                textSize,
-                lineHeightMult,
-                paragraphSpacing
-            ) {
-                if (containerWidthPx > 100f && containerHeightPx > 200f && flatItems.isNotEmpty()) {
-                    val contentWidthPx = containerWidthPx - with(density) { 36.dp.toPx() }
-                    val contentHeightPx = containerHeightPx - with(density) { 40.dp.toPx() }
-                    val textSizePx = with(density) { textSize.sp.toPx() }
-                    val lineHeightPx = (textSizePx * lineHeightMult).coerceAtLeast(textSizePx * 1.15f)
-                    val paragraphSpacingPx = with(density) { paragraphSpacing.dp.toPx() }
-
-                    val computedPages = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                        ReaderPagination.paginate(
-                            flatItems = flatItems,
-                            chineseMode = chineseMode,
-                            contentWidthPx = contentWidthPx,
-                            contentHeightPx = contentHeightPx,
-                            textSizePx = textSizePx,
-                            lineHeightPx = lineHeightPx,
-                            paragraphSpacingPx = paragraphSpacingPx
-                        )
-                    }
-                    pages = computedPages
-                }
-            }
-
-            var pagedCurrentIndex by remember { mutableStateOf(0) }
-            var hasInitializedPagedIndex by remember { mutableStateOf(false) }
-
-            LaunchedEffect(pages.isNotEmpty()) {
-                if (pages.isNotEmpty() && !hasInitializedPagedIndex) {
-                    hasInitializedPagedIndex = true
-                    if (initialFlatIndex > 0) {
-                        val matched = pages.indexOfFirst { it.flatItemIndex >= initialFlatIndex }
-                        if (matched >= 0) {
-                            pagedCurrentIndex = matched
-                        }
-                    }
-                }
-            }
-
-            fun onPagedIndexChanged(newPage: Int) {
-                if (newPage != pagedCurrentIndex) {
-                    pagedCurrentIndex = newPage
-                    val current = pages.getOrNull(newPage)
-                    if (current != null) {
-                        viewModel.saveProgress(current.flatItemIndex, 0)
-                    }
-                }
-            }
-
-            val listState = rememberLazyListState(
-                initialFirstVisibleItemIndex = initialFlatIndex,
-                initialFirstVisibleItemScrollOffset = initialOffset
-            )
             
             val lifecycleOwner = LocalLifecycleOwner.current
-            DisposableEffect(lifecycleOwner, listState, pagedCurrentIndex, pageTurnMode) {
+            val currentProgressRef = rememberUpdatedState(continuousProgress)
+            val currentListStateRef = rememberUpdatedState(listState)
+            val currentPagesRef = rememberUpdatedState(pages)
+            val currentPagedIndexRef = rememberUpdatedState(pagedCurrentIndex)
+            val currentPageTurnModeRef = rememberUpdatedState(pageTurnMode)
+
+            DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
-                        if (pageTurnMode == 0) {
-                            viewModel.saveProgress(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+                        if (currentPageTurnModeRef.value == 0) {
+                            viewModel.saveProgress(
+                                chapterIndex = currentListStateRef.value.firstVisibleItemIndex,
+                                offset = currentListStateRef.value.firstVisibleItemScrollOffset,
+                                progressOverride = currentProgressRef.value
+                            )
                         } else {
-                            val current = pages.getOrNull(pagedCurrentIndex)
+                            val current = currentPagesRef.value.getOrNull(currentPagedIndexRef.value)
                             if (current != null) {
-                                viewModel.saveProgress(current.flatItemIndex, 0)
+                                viewModel.saveProgress(
+                                    chapterIndex = current.chapterIndex,
+                                    offset = 0,
+                                    progressOverride = currentProgressRef.value
+                                )
                             }
                         }
                     }
@@ -416,25 +523,34 @@ fun ReaderScreen(
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose {
                     lifecycleOwner.lifecycle.removeObserver(observer)
-                    if (pageTurnMode == 0) {
-                        viewModel.saveProgress(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+                    if (currentPageTurnModeRef.value == 0) {
+                        viewModel.saveProgress(
+                            chapterIndex = currentListStateRef.value.firstVisibleItemIndex,
+                            offset = currentListStateRef.value.firstVisibleItemScrollOffset,
+                            progressOverride = currentProgressRef.value
+                        )
                     } else {
-                        val current = pages.getOrNull(pagedCurrentIndex)
+                        val current = currentPagesRef.value.getOrNull(currentPagedIndexRef.value)
                         if (current != null) {
-                            viewModel.saveProgress(current.flatItemIndex, 0)
+                            viewModel.saveProgress(
+                                chapterIndex = current.chapterIndex,
+                                offset = 0,
+                                progressOverride = currentProgressRef.value
+                            )
                         }
                     }
                 }
             }
 
+            val shouldCaptureBackdrop = showToolbars || isTocActive || isSettingsActive
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(bgColor)
-                    .layerBackdrop(readerBackdrop)
-                    .onGloballyPositioned { coords ->
-                        containerWidthPx = coords.size.width.toFloat()
-                        containerHeightPx = coords.size.height.toFloat()
+                    .then(if (shouldCaptureBackdrop) Modifier.layerBackdrop(readerBackdrop) else Modifier)
+                    .onSizeChanged { size ->
+                        containerWidthPx = size.width.toFloat()
+                        containerHeightPx = size.height.toFloat()
                     }
             ) {
                 if (pageTurnMode == 0) {
@@ -455,9 +571,9 @@ fun ReaderScreen(
                                     showToolbars = !showToolbars
                                 }
                             },
-                        contentPadding = PaddingValues(top = 80.dp, bottom = 100.dp, start = 24.dp, end = 24.dp)
+                        contentPadding = PaddingValues(top = readerTopPadding, bottom = 100.dp, start = 24.dp, end = 24.dp)
                     ) {
-                        item {
+                        item(key = "book_header", contentType = 0) {
                             Text(
                                 text = bookEntity?.title ?: "未知书名",
                                 fontSize = 32.sp,
@@ -468,60 +584,21 @@ fun ReaderScreen(
                             )
                         }
                         
-                        items(flatItems) { item ->
-                            when (item) {
-                                is com.example.epubreader.ui.reader.FlatReaderItem.Title -> {
-                                    Text(
-                                        text = item.title,
-                                        fontSize = (textSize * 1.3f).sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = textColor,
-                                        modifier = Modifier.padding(top = 32.dp, bottom = 16.dp)
-                                    )
-                                }
-                                is com.example.epubreader.ui.reader.FlatReaderItem.Node -> {
-                                    val node = item.node
-                                    when (node) {
-                                        is ChapterNode.TextNode -> {
-                                            val displayAnnotated = remember(node.text, chineseMode) {
-                                                if (chineseMode == 0) node.text
-                                                else {
-                                                    val newStr = if (chineseMode == 1) ZhConverterUtil.toSimple(node.text.text) else ZhConverterUtil.toTraditional(node.text.text)
-                                                    buildAnnotatedString {
-                                                        append(newStr)
-                                                        node.text.spanStyles.forEach { addStyle(it.item, it.start, it.end) }
-                                                        node.text.paragraphStyles.forEach { addStyle(it.item, it.start, it.end) }
-                                                    }
-                                                }
-                                            }
-                                            Text(
-                                                text = displayAnnotated,
-                                                fontFamily = customFontFamily,
-                                                fontSize = textSize.sp,
-                                                lineHeight = (textSize * lineHeightMult).coerceAtLeast(textSize * 1.1f).sp,
-                                                color = textColor,
-                                                modifier = Modifier.padding(bottom = paragraphSpacing.dp)
-                                            )
-                                        }
-                                        is ChapterNode.ImageNode -> {
-                                            val bitmap = remember(node.imageData) {
-                                                BitmapFactory.decodeByteArray(node.imageData, 0, node.imageData.size)?.asImageBitmap()
-                                            }
-                                            if (bitmap != null) {
-                                                androidx.compose.foundation.Image(
-                                                    bitmap = bitmap,
-                                                    contentDescription = null,
-                                                    contentScale = ContentScale.FillWidth,
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(bottom = 16.dp)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        itemsIndexed(
+                            items = parsedChapters,
+                            key = { cIdx, _ -> "ch_$cIdx" },
+                            contentType = { _, _ -> 1 }
+                        ) { cIdx, chapter ->
+                            ScrollableChapterItem(
+                                chapterIndex = cIdx,
+                                chapter = chapter,
+                                chineseMode = chineseMode,
+                                customFontFamily = customFontFamily,
+                                textSize = textSize,
+                                lineHeightMult = lineHeightMult,
+                                paragraphSpacing = paragraphSpacing,
+                                textColor = textColor
+                            )
                         }
                     } // End of LazyColumn
                 } else {
@@ -551,54 +628,35 @@ fun ReaderScreen(
                         lineHeightMult = lineHeightMult,
                         paragraphSpacing = paragraphSpacing,
                         customFontFamily = customFontFamily,
+                        customFontUri = customFontUri,
                         bookTitle = bookEntity?.title ?: "轻小说阅读",
+                        topPadding = readerTopPadding,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
             } // End of captured Box
 
-            // Background Dimming Overlay
-            AnimatedVisibility(
-                visible = showSettings,
-                enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
-                exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(300))
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.4f))
-                        .pointerInput(Unit) {
-                            detectTapGestures { showSettings = false }
-                        }
-                )
-            }
-
             // --- Glass Overlays Layer ---
             
             // 1. Top Toolbar (Back, Reading Progress Capsule, and Settings Buttons)
             AnimatedVisibility(
-                visible = showToolbars && !showSettings && !showTocSheet,
+                visible = showToolbars,
                 enter = slideInVertically(initialOffsetY = { -it }, animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
                 exit = slideOutVertically(targetOffsetY = { -it }, animationSpec = androidx.compose.animation.core.tween(250)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(250)),
                 modifier = Modifier.align(Alignment.TopCenter)
             ) {
-                val totalItems = flatItems.size
-                val currentItemIndex = if (pageTurnMode == 0) {
-                    listState.firstVisibleItemIndex
-                } else {
-                    pages.getOrNull(pagedCurrentIndex)?.flatItemIndex ?: 0
+                val currentChapterIndex by remember(pageTurnMode, pagedCurrentIndex) {
+                    derivedStateOf {
+                        if (pageTurnMode == 0) {
+                            (listState.firstVisibleItemIndex - 1).coerceAtLeast(0)
+                        } else {
+                            pages.getOrNull(pagedCurrentIndex)?.chapterIndex ?: 0
+                        }
+                    }
                 }
-                val calculatedProgress = if (totalItems > 0) {
-                    ((currentItemIndex + 1).toFloat() / totalItems.toFloat()).coerceIn(0f, 1f)
-                } else {
-                    (bookEntity?.totalProgress ?: 0f)
-                }
-                val progressPercent = (calculatedProgress * 100).toInt()
-                val estimatedTimeText = viewModel.getEstimatedRemainingTimeText(currentItemIndex)
-
-                LaunchedEffect(currentItemIndex) {
-                    viewModel.updateReadingPosition(currentItemIndex)
-                }
+                val calculatedProgress = continuousProgress
+                val progressPercentText = String.format(java.util.Locale.US, "%.1f", (calculatedProgress * 100f).coerceIn(0f, 100f))
+                val estimatedTimeText = viewModel.getEstimatedRemainingTimeText(currentChapterIndex)
 
             // Continuous Reading Health / Eye Rest Reminder (60 min, 90 min, 120 min)
             LaunchedEffect(Unit) {
@@ -645,10 +703,7 @@ fun ReaderScreen(
                 }
             }
 
-            val topPadding = maxOf(
-                WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-                if (immersiveStatusBar) 28.dp else 12.dp
-            ) + 12.dp
+            val topPadding = readerTopPadding
 
             Row(
                 modifier = Modifier
@@ -659,13 +714,7 @@ fun ReaderScreen(
             ) {
                 // 1. Back Button (Left)
                 LiquidButton(
-                    onClick = {
-                        if (onBackClick != null) {
-                            onBackClick()
-                        } else {
-                            navController.popBackStack()
-                        }
-                    },
+                    onClick = { handleExit() },
                     backdrop = readerBackdrop,
                     shape = CircleShape,
                     modifier = Modifier.size(44.dp)
@@ -715,7 +764,7 @@ fun ReaderScreen(
                         ) { expanded ->
                             if (expanded) {
                                 Text(
-                                    text = "$estimatedTimeText · $progressPercent%",
+                                    text = "$estimatedTimeText · $progressPercentText%",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = textColor,
@@ -723,7 +772,7 @@ fun ReaderScreen(
                                 )
                             } else {
                                 Text(
-                                    text = "$progressPercent%",
+                                    text = "$progressPercentText%",
                                     fontSize = 13.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = textColor
@@ -747,9 +796,7 @@ fun ReaderScreen(
                             settingsButtonBounds = coordinates.boundsInRoot()
                         }
                         .graphicsLayer {
-                            alpha = if (settingsMorphProgress > 0.001f) 0f else 1f
-                            scaleX = settingsPulseScale.value
-                            scaleY = settingsPulseScale.value
+                            alpha = if (settingsAnim.value > 0.001f) 0f else 1f
                         }
                 ) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = textColor)
@@ -759,16 +806,19 @@ fun ReaderScreen(
 
         // 2. Bottom Floating Liquid Toolbar (TOC Button + Chapter Info Pill)
         AnimatedVisibility(
-            visible = showToolbars && !showSettings && !showTocSheet,
+            visible = showToolbars,
             enter = slideInVertically(initialOffsetY = { it }, animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
             exit = slideOutVertically(targetOffsetY = { it }, animationSpec = androidx.compose.animation.core.tween(250)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(250)),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
-            val currentChapterName = if (pageTurnMode == 0) {
-                val currentFlat = flatItems.getOrNull(listState.firstVisibleItemIndex)
-                if (currentFlat != null) parsedChapters.getOrNull(currentFlat.chapterIndex)?.title ?: "正文" else "正文"
-            } else {
-                pages.getOrNull(pagedCurrentIndex)?.chapterTitle ?: "正文"
+            val currentChapterName by remember(pageTurnMode, pagedCurrentIndex) {
+                derivedStateOf {
+                    if (pageTurnMode == 0) {
+                        parsedChapters.getOrNull(listState.firstVisibleItemIndex)?.title ?: "正文"
+                    } else {
+                        pages.getOrNull(pagedCurrentIndex)?.chapterTitle ?: "正文"
+                    }
+                }
             }
 
             Row(
@@ -785,7 +835,6 @@ fun ReaderScreen(
                         showTocSheet = true
                     },
                     backdrop = readerBackdrop,
-                    surfaceColor = if (themeIndex == 2) Color.White.copy(0.12f) else Color.White.copy(0.28f),
                     shape = RoundedCornerShape(22.dp),
                     modifier = Modifier
                         .height(44.dp)
@@ -793,9 +842,7 @@ fun ReaderScreen(
                             tocButtonBounds = coordinates.boundsInRoot()
                         }
                         .graphicsLayer {
-                            alpha = if (tocMorphProgress > 0.001f) 0f else 1f
-                            scaleX = tocPulseScale.value
-                            scaleY = tocPulseScale.value
+                            alpha = if (tocAnim.value > 0.001f) 0f else 1f
                         }
                 ) {
                     Row(
@@ -821,8 +868,8 @@ fun ReaderScreen(
                 // Right: Current Chapter Name Glass Pill (Display only, non-clickable)
                 LiquidButton(
                     onClick = {},
+                    isInteractive = false,
                     backdrop = readerBackdrop,
-                    surfaceColor = if (themeIndex == 2) Color.White.copy(0.10f) else Color.White.copy(0.20f),
                     shape = RoundedCornerShape(22.dp),
                     modifier = Modifier.height(44.dp)
                 ) {
@@ -841,184 +888,191 @@ fun ReaderScreen(
             }
         }
 
-        // 2. Liquid Shape Morphing Container for Settings (Button expands into Dialog with damping & jelly physics)
-        if (settingsMorphProgress > 0.001f || showSettings) {
-            // Scrim overlay with gentle dimming
+        // 2. Liquid Shape Morphing Container for Settings (Pre-inflated, Zero-Frame-Drop GPU Fluid Transform)
+        // Scrim overlay with gentle dimming
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .offset { if (isSettingsActive) IntOffset.Zero else IntOffset(100000, 0) }
+                .graphicsLayer { alpha = settingsAnim.value * 0.45f }
+                .background(Color.Black)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { showSettings = false }
+                )
+        )
+
+        val fallbackBtnBounds = Rect(
+            screenWidthPx - with(density) { 60.dp.toPx() },
+            with(density) { 56.dp.toPx() },
+            screenWidthPx - with(density) { 16.dp.toPx() },
+            with(density) { 100.dp.toPx() }
+        )
+        val btnBounds = if (settingsButtonBounds != Rect.Zero && settingsButtonBounds.width > 0f) settingsButtonBounds else fallbackBtnBounds
+
+        val btnCenterX = btnBounds.left + btnBounds.width / 2f
+        val btnCenterY = btnBounds.top + btnBounds.height / 2f
+
+        val settingsDeltaX = btnCenterX - dialogCenterX
+        val settingsDeltaY = btnCenterY - dialogCenterY
+
+        val settingsInitialScaleX = (btnBounds.width / dialogWidthPx).coerceIn(0.02f, 1f)
+        val settingsInitialScaleY = (btnBounds.height / dialogHeightPx).coerceIn(0.02f, 1f)
+
+        val activeSurface = globalThemeAccent.copy(alpha = if (isGlassDark) 0.32f else 0.22f)
+        val inactiveSurface = if (isGlassDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.38f)
+        val sliderTrackColor = if (isGlassDark) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.08f)
+        val sliderAccentColor = globalThemeAccent
+
+        Box(
+            modifier = Modifier
+                .offset { if (isSettingsActive) IntOffset.Zero else IntOffset(100000, 0) }
+                .layout { measurable, _ ->
+                    val p = settingsAnim.value
+                    val w = lerp(btnBounds.width, dialogWidthPx, p).roundToInt()
+                    val h = lerp(btnBounds.height, dialogHeightPx, p).roundToInt()
+                    val cx = lerp(btnCenterX, dialogCenterX, p)
+                    val cy = lerp(btnCenterY, dialogCenterY, p)
+                    val x = (cx - w / 2f).roundToInt()
+                    val y = (cy - h / 2f).roundToInt()
+
+                    val placeable = measurable.measure(
+                        Constraints.fixed(w.coerceAtLeast(1), h.coerceAtLeast(1))
+                    )
+                    layout(screenWidthPx.roundToInt(), screenHeightPx.roundToInt()) {
+                        placeable.place(x, y)
+                    }
+                }
+                .drawBackdrop(
+                    backdrop = readerBackdrop,
+                    shape = {
+                        val p = settingsAnim.value.coerceIn(0f, 1f)
+                        val r = lerp(btnBounds.height / 2f, with(density) { 26.dp.toPx() }, p)
+                        RoundedCornerShape(with(density) { r.toDp() })
+                    },
+                    effects = {
+                        val p = settingsAnim.value.coerceIn(0f, 1f)
+                        vibrancy()
+                        blur(lerp(3f, 8f, p).dp.toPx())
+                        lens(
+                            refractionHeight = lerp(14f, 24f, p).dp.toPx(),
+                            refractionAmount = lerp(28f, 48f, p).dp.toPx(),
+                            depthEffect = true,
+                            chromaticAberration = true
+                        )
+                    },
+                    highlight = { Highlight.Plain },
+                    shadow = {
+                        val p = settingsAnim.value.coerceIn(0f, 1f)
+                        Shadow(
+                            radius = lerp(4f, 24f, p).dp,
+                            color = Color.Black.copy(alpha = lerp(0.04f, 0.22f, p))
+                        )
+                    },
+                    onDrawSurface = {
+                        drawRect(Color.White.copy(alpha = if (isGlassDark) 0.10f else 0.16f))
+                    },
+                    exportedBackdrop = bottomSheetBackdrop
+                )
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {} // Prevent taps from dismissing through to scrim
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            // 1. Settings Icon centered in the expanding bubble: visible when smaller
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = settingsMorphProgress * 0.45f }
-                    .background(Color.Black)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { showSettings = false }
-                    )
-            )
-
-            BoxWithConstraints(
-                modifier = Modifier.fillMaxSize()
+                    .graphicsLayer {
+                        val p = settingsAnim.value
+                        alpha = (1f - p * 2.2f).coerceIn(0f, 1f)
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                val density = LocalDensity.current
-                val screenWidthPx = constraints.maxWidth.toFloat()
-                val screenHeightPx = constraints.maxHeight.toFloat()
+                Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = glassTextColor, modifier = Modifier.size(24.dp))
+            }
 
-                val fallbackBtnBounds = Rect(
-                    screenWidthPx - with(density) { 64.dp.toPx() },
-                    with(density) { 44.dp.toPx() },
-                    screenWidthPx - with(density) { 16.dp.toPx() },
-                    with(density) { 92.dp.toPx() }
-                )
-                val btnBounds = if (settingsButtonBounds != Rect.Zero) settingsButtonBounds else fallbackBtnBounds
-
-                val dialogWidthPx = with(density) { (maxWidth - 36.dp).toPx().coerceAtMost(460.dp.toPx()) }
-                val dialogHeightPx = with(density) { 560.dp.toPx().coerceAtMost(maxHeight.toPx() - 72.dp.toPx()) }
-                val dialogLeft = (screenWidthPx - dialogWidthPx) / 2f
-                val dialogTop = (screenHeightPx - dialogHeightPx) / 2f
-                val dialogBounds = Rect(dialogLeft, dialogTop, dialogLeft + dialogWidthPx, dialogTop + dialogHeightPx)
-
-                val currentLeft = androidx.compose.ui.util.lerp(btnBounds.left, dialogBounds.left, settingsMorphProgress)
-                val currentTop = androidx.compose.ui.util.lerp(btnBounds.top, dialogBounds.top, settingsMorphProgress)
-                val currentWidth = androidx.compose.ui.util.lerp(btnBounds.width, dialogWidthPx, settingsMorphProgress).coerceAtLeast(1f)
-                val currentHeight = androidx.compose.ui.util.lerp(btnBounds.height, dialogHeightPx, settingsMorphProgress).coerceAtLeast(1f)
-                val currentCornerRadius = androidx.compose.ui.util.lerp(btnBounds.height / 2f, with(density) { 28.dp.toPx() }, settingsMorphProgress).coerceAtLeast(0f)
-
-                val glassTextColor = if (themeIndex == 2) Color.White else Color(0xFF1C1C1E)
-
-                Box(
+            // 2. Settings Content: fixed size container with zero layout churn
+            Box(
+                modifier = Modifier
+                    .requiredSize(dialogWidthDp, dialogHeightDp)
+                    .graphicsLayer {
+                        val p = settingsAnim.value
+                        alpha = ((p - 0.28f) / 0.72f).coerceIn(0f, 1f)
+                    }
+                    .padding(top = 22.dp, bottom = 20.dp, start = 22.dp, end = 22.dp)
+            ) {
+                Column(
                     modifier = Modifier
-                        .layout { measurable, _ ->
-                            val placeable = measurable.measure(
-                                Constraints.fixed(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt())
-                            )
-                            layout(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt()) {
-                                placeable.place(currentLeft.fastRoundToInt(), currentTop.fastRoundToInt())
-                            }
-                        }
-                        .drawBackdrop(
-                            backdrop = readerBackdrop,
-                            shape = { RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }) },
-                            effects = {
-                                vibrancy()
-                                blur(androidx.compose.ui.util.lerp(3f, 8f, settingsMorphProgress).dp.toPx())
-                                lens(
-                                    refractionHeight = androidx.compose.ui.util.lerp(14f, 24f, settingsMorphProgress).dp.toPx(),
-                                    refractionAmount = androidx.compose.ui.util.lerp(28f, 48f, settingsMorphProgress).dp.toPx(),
-                                    chromaticAberration = true
-                                )
-                            },
-                            highlight = { Highlight.Plain },
-                            onDrawSurface = {
-                                drawRect(Color.White.copy(alpha = if (themeIndex == 2) 0.10f else 0.12f))
-                            },
-                            exportedBackdrop = bottomSheetBackdrop
-                        )
-                        .clip(RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {} // Prevent taps from dismissing through to scrim
-                        ),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    // Morphing Icon: Settings Icon centered inside button, fades out as it expands
-                    if (settingsMorphProgress < 0.5f) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "排版调整",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                color = glassTextColor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp
+                            )
+                        )
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
-                                .graphicsLayer {
-                                    alpha = (1f - settingsMorphProgress * 2.2f).coerceIn(0f, 1f)
-                                },
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(if (isGlassDark) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.35f))
+                                .border(0.6.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                .clickable { showSettings = false },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = textColor)
+                            Text("✕", color = glassTextColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
 
-                    // Morphing Content: Settings controls fade in as the container reaches full dialog size
-                    if (settingsMorphProgress > 0.15f) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    alpha = ((settingsMorphProgress - 0.15f) / 0.85f).coerceIn(0f, 1f)
-                                }
-                                .padding(top = 22.dp, bottom = 20.dp, start = 22.dp, end = 22.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .verticalScroll(rememberScrollState())
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        "排版调整",
-                                        style = MaterialTheme.typography.titleLarge.copy(
-                                            color = glassTextColor,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 20.sp
-                                        )
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .size(34.dp)
-                                            .clip(CircleShape)
-                                            .background(if (themeIndex == 2) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.35f))
-                                            .border(0.6.dp, Color.White.copy(alpha = 0.5f), CircleShape)
-                                            .clickable { showSettings = false },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text("✕", color = glassTextColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    }
-                                }
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                                Spacer(modifier = Modifier.height(24.dp))
+                    var localTextSize by remember(textSize) { mutableFloatStateOf(textSize) }
+                    var localLineHeight by remember(lineHeightMult) { mutableFloatStateOf(lineHeightMult) }
+                    var localParagraphSpacing by remember(paragraphSpacing) { mutableFloatStateOf(paragraphSpacing) }
 
-                                var localTextSize by remember(textSize) { mutableFloatStateOf(textSize) }
-                                var localLineHeight by remember(lineHeightMult) { mutableFloatStateOf(lineHeightMult) }
-                                var localParagraphSpacing by remember(paragraphSpacing) { mutableFloatStateOf(paragraphSpacing) }
+                    LaunchedEffect(localTextSize) {
+                        if (localTextSize != textSize) {
+                            kotlinx.coroutines.delay(100)
+                            viewModel.setTextSize(localTextSize)
+                        }
+                    }
+                    LaunchedEffect(localLineHeight) {
+                        if (localLineHeight != lineHeightMult) {
+                            kotlinx.coroutines.delay(100)
+                            viewModel.setLineHeightMult(localLineHeight)
+                        }
+                    }
+                    LaunchedEffect(localParagraphSpacing) {
+                        if (localParagraphSpacing != paragraphSpacing) {
+                            kotlinx.coroutines.delay(100)
+                            viewModel.setParagraphSpacing(localParagraphSpacing)
+                        }
+                    }
 
-                                LaunchedEffect(localTextSize) {
-                                    if (localTextSize != textSize) {
-                                        kotlinx.coroutines.delay(100)
-                                        viewModel.setTextSize(localTextSize)
-                                    }
-                                }
-                                LaunchedEffect(localLineHeight) {
-                                    if (localLineHeight != lineHeightMult) {
-                                        kotlinx.coroutines.delay(100)
-                                        viewModel.setLineHeightMult(localLineHeight)
-                                    }
-                                }
-                                LaunchedEffect(localParagraphSpacing) {
-                                    if (localParagraphSpacing != paragraphSpacing) {
-                                        kotlinx.coroutines.delay(100)
-                                        viewModel.setParagraphSpacing(localParagraphSpacing)
-                                    }
-                                }
+                    val headerStyle = MaterialTheme.typography.titleSmall.copy(
+                        color = glassTextColor.copy(alpha = 0.85f),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    val buttonTextStyle = MaterialTheme.typography.labelLarge.copy(
+                        color = glassTextColor,
+                        fontSize = 14.sp
+                    )
 
-                                val headerStyle = MaterialTheme.typography.titleSmall.copy(
-                                    color = glassTextColor.copy(alpha = 0.8f),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                val buttonTextStyle = MaterialTheme.typography.labelLarge.copy(
-                                    color = glassTextColor,
-                                    fontSize = 14.sp
-                                )
-
-                                val isGlobalDark = appTheme == com.example.epubreader.ui.theme.AppTheme.MIDNIGHT_GLASS
-                                val globalThemeAccent = com.example.epubreader.ui.theme.getThemeAccentColor(
-                                    theme = appTheme,
-                                    customColors = if (isCustomThemeThreeColors) customColors else customColors.take(2)
-                                )
-
-                                val themeSelectedBg = globalThemeAccent.copy(alpha = if (isGlobalDark) 0.32f else 0.22f)
-                                val themeUnselectedBg = if (isGlobalDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.40f)
+                    val themeSelectedBg = globalThemeAccent.copy(alpha = if (isGlassDark) 0.32f else 0.22f)
+                    val themeUnselectedBg = if (isGlassDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.38f)
 
                                 // 1. Theme Color Selection
                                 Text("阅读主题", style = headerStyle)
@@ -1158,8 +1212,8 @@ fun ReaderScreen(
 
                                 Spacer(modifier = Modifier.height(24.dp))
 
-                                val activeSurface = globalThemeAccent.copy(alpha = if (isGlobalDark) 0.32f else 0.22f)
-                                val inactiveSurface = if (isGlobalDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.40f)
+                                val activeSurface = globalThemeAccent.copy(alpha = if (isGlassDark) 0.32f else 0.22f)
+                                val inactiveSurface = if (isGlassDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.38f)
 
                                 // 5. Simplified / Traditional Chinese Converter
                                 Text("简繁转换", style = headerStyle)
@@ -1324,173 +1378,179 @@ fun ReaderScreen(
                         }
                     }
                 }
-            }
+
+        // 3. Liquid Shape Morphing Container for TOC / 目录 (Pre-inflated, Zero-Frame-Drop GPU Fluid Transform)
+        // Scrim overlay with gentle dimming
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .offset { if (isTocActive) IntOffset.Zero else IntOffset(100000, 0) }
+                .graphicsLayer { alpha = tocAnim.value * 0.45f }
+                .background(Color.Black)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { showTocSheet = false }
+                )
+        )
+
+        val fallbackTocBtnBounds = Rect(
+            with(density) { 24.dp.toPx() },
+            screenHeightPx - with(density) { 80.dp.toPx() },
+            with(density) { 108.dp.toPx() },
+            screenHeightPx - with(density) { 36.dp.toPx() }
+        )
+        val tocBounds = if (tocButtonBounds != Rect.Zero && tocButtonBounds.width > 0f) tocButtonBounds else fallbackTocBtnBounds
+
+        val tocBtnCenterX = tocBounds.left + tocBounds.width / 2f
+        val tocBtnCenterY = tocBounds.top + tocBounds.height / 2f
+
+        val tocDeltaX = tocBtnCenterX - dialogCenterX
+        val tocDeltaY = tocBtnCenterY - dialogCenterY
+
+        val tocInitialScaleX = (tocBounds.width / dialogWidthPx).coerceIn(0.02f, 1f)
+        val tocInitialScaleY = (tocBounds.height / dialogHeightPx).coerceIn(0.02f, 1f)
+
+        val currentChapterIndex = if (pageTurnMode == 0) {
+            flatItems.getOrNull(listState.firstVisibleItemIndex)?.chapterIndex ?: 0
+        } else {
+            pages.getOrNull(pagedCurrentIndex)?.chapterIndex ?: 0
         }
 
-        // 3. Liquid Shape Morphing Container for TOC / 目录 (Bottom-Left button expands into TOC Dialog with damping & jelly physics)
-        if (tocMorphProgress > 0.001f || showTocSheet) {
-            // Scrim overlay with gentle dimming
+        Box(
+            modifier = Modifier
+                .offset { if (isTocActive) IntOffset.Zero else IntOffset(100000, 0) }
+                .layout { measurable, _ ->
+                    val p = tocAnim.value
+                    val w = lerp(tocBounds.width, dialogWidthPx, p).roundToInt()
+                    val h = lerp(tocBounds.height, dialogHeightPx, p).roundToInt()
+                    val cx = lerp(tocBtnCenterX, dialogCenterX, p)
+                    val cy = lerp(tocBtnCenterY, dialogCenterY, p)
+                    val x = (cx - w / 2f).roundToInt()
+                    val y = (cy - h / 2f).roundToInt()
+
+                    val placeable = measurable.measure(
+                        Constraints.fixed(w.coerceAtLeast(1), h.coerceAtLeast(1))
+                    )
+                    layout(screenWidthPx.roundToInt(), screenHeightPx.roundToInt()) {
+                        placeable.place(x, y)
+                    }
+                }
+                .drawBackdrop(
+                    backdrop = readerBackdrop,
+                    shape = {
+                        val p = tocAnim.value.coerceIn(0f, 1f)
+                        val r = lerp(tocBounds.height / 2f, with(density) { 26.dp.toPx() }, p)
+                        RoundedCornerShape(with(density) { r.toDp() })
+                    },
+                    effects = {
+                        val p = tocAnim.value.coerceIn(0f, 1f)
+                        vibrancy()
+                        blur(lerp(3f, 8f, p).dp.toPx())
+                        lens(
+                            refractionHeight = lerp(14f, 24f, p).dp.toPx(),
+                            refractionAmount = lerp(28f, 48f, p).dp.toPx(),
+                            depthEffect = true,
+                            chromaticAberration = true
+                        )
+                    },
+                    highlight = { Highlight.Plain },
+                    shadow = {
+                        val p = tocAnim.value.coerceIn(0f, 1f)
+                        Shadow(
+                            radius = lerp(4f, 24f, p).dp,
+                            color = Color.Black.copy(alpha = lerp(0.04f, 0.22f, p))
+                        )
+                    },
+                    onDrawSurface = {
+                        drawRect(Color.White.copy(alpha = if (isGlassDark) 0.10f else 0.16f))
+                    },
+                    exportedBackdrop = bottomSheetBackdrop
+                )
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {} // Intercept clicks so tapping inside does not dismiss
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            // 1. TOC Icon / Text: visible when smaller
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = tocMorphProgress * 0.45f }
-                    .background(Color.Black)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { showTocSheet = false }
-                    )
-            )
-
-            BoxWithConstraints(
-                modifier = Modifier.fillMaxSize()
+                    .graphicsLayer {
+                        val p = tocAnim.value
+                        alpha = (1f - p * 2.2f).coerceIn(0f, 1f)
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                val density = LocalDensity.current
-                val screenWidthPx = constraints.maxWidth.toFloat()
-                val screenHeightPx = constraints.maxHeight.toFloat()
-
-                val fallbackTocBtnBounds = Rect(
-                    with(density) { 24.dp.toPx() },
-                    screenHeightPx - with(density) { 80.dp.toPx() },
-                    with(density) { 108.dp.toPx() },
-                    screenHeightPx - with(density) { 36.dp.toPx() }
-                )
-                val btnBounds = if (tocButtonBounds != Rect.Zero) tocButtonBounds else fallbackTocBtnBounds
-
-                val dialogWidthPx = with(density) { (maxWidth - 36.dp).toPx().coerceAtMost(460.dp.toPx()) }
-                val dialogHeightPx = with(density) { 560.dp.toPx().coerceAtMost(maxHeight.toPx() - 72.dp.toPx()) }
-                val dialogLeft = (screenWidthPx - dialogWidthPx) / 2f
-                val dialogTop = (screenHeightPx - dialogHeightPx) / 2f
-                val dialogBounds = Rect(dialogLeft, dialogTop, dialogLeft + dialogWidthPx, dialogTop + dialogHeightPx)
-
-                val currentLeft = androidx.compose.ui.util.lerp(btnBounds.left, dialogBounds.left, tocMorphProgress)
-                val currentTop = androidx.compose.ui.util.lerp(btnBounds.top, dialogBounds.top, tocMorphProgress)
-                val currentWidth = androidx.compose.ui.util.lerp(btnBounds.width, dialogWidthPx, tocMorphProgress).coerceAtLeast(1f)
-                val currentHeight = androidx.compose.ui.util.lerp(btnBounds.height, dialogHeightPx, tocMorphProgress).coerceAtLeast(1f)
-                val currentCornerRadius = androidx.compose.ui.util.lerp(btnBounds.height / 2f, with(density) { 28.dp.toPx() }, tocMorphProgress).coerceAtLeast(0f)
-
-                val currentChapterIndex = if (pageTurnMode == 0) {
-                    flatItems.getOrNull(listState.firstVisibleItemIndex)?.chapterIndex ?: 0
-                } else {
-                    pages.getOrNull(pagedCurrentIndex)?.chapterIndex ?: 0
-                }
-
-                val isGlobalDark = appTheme == com.example.epubreader.ui.theme.AppTheme.MIDNIGHT_GLASS
-                val globalThemeAccent = com.example.epubreader.ui.theme.getThemeAccentColor(
-                    theme = appTheme,
-                    customColors = if (isCustomThemeThreeColors) customColors else customColors.take(2)
-                )
-                val glassTextColor = if (isGlobalDark) Color.White else Color(0xFF1C1C1E)
-
-                Box(
-                    modifier = Modifier
-                        .layout { measurable, _ ->
-                            val placeable = measurable.measure(
-                                Constraints.fixed(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt())
-                            )
-                            layout(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt()) {
-                                placeable.place(currentLeft.fastRoundToInt(), currentTop.fastRoundToInt())
-                            }
-                        }
-                        .drawBackdrop(
-                            backdrop = readerBackdrop,
-                            shape = { RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }) },
-                            effects = {
-                                vibrancy()
-                                blur(androidx.compose.ui.util.lerp(3f, 8f, tocMorphProgress).dp.toPx())
-                                lens(
-                                    refractionHeight = androidx.compose.ui.util.lerp(14f, 24f, tocMorphProgress).dp.toPx(),
-                                    refractionAmount = androidx.compose.ui.util.lerp(28f, 48f, tocMorphProgress).dp.toPx(),
-                                    chromaticAberration = true
-                                )
-                            },
-                            highlight = { Highlight.Plain },
-                            onDrawSurface = {
-                                drawRect(Color.White.copy(alpha = if (isGlobalDark) 0.10f else 0.12f))
-                            },
-                            exportedBackdrop = bottomSheetBackdrop
-                        )
-                        .clip(RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {} // Intercept clicks so tapping inside does not dismiss
-                        ),
-                    contentAlignment = Alignment.Center
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Morphing Icon: 目录 button text & icon centered, fades out as it expands
-                    if (tocMorphProgress < 0.5f) {
-                        Row(
-                            modifier = Modifier
-                                .graphicsLayer {
-                                    alpha = (1f - tocMorphProgress * 2.2f).coerceIn(0f, 1f)
-                                }
-                                .padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.List,
-                                contentDescription = "目录",
-                                tint = textColor,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.List,
+                        contentDescription = "目录",
+                        tint = glassTextColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "目录",
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = glassTextColor
+                    )
+                }
+            }
+
+            // 2. TOC Contents: fixed size container with zero layout churn
+            Box(
+                modifier = Modifier
+                    .requiredSize(dialogWidthDp, dialogHeightDp)
+                    .graphicsLayer {
+                        val p = tocAnim.value
+                        alpha = ((p - 0.28f) / 0.72f).coerceIn(0f, 1f)
+                    }
+                    .padding(top = 22.dp, start = 22.dp, end = 22.dp, bottom = 18.dp)
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // TOC Header
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "目录",
-                                fontSize = 13.5.sp,
+                                fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = textColor
+                                color = glassTextColor
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "共 ${if (tocList.isNotEmpty()) tocList.size else parsedChapters.size} 章",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = glassTextColor.copy(alpha = 0.5f)
                             )
                         }
-                    }
 
-                    // Morphing Content: TOC Header + Chapter List LazyColumn
-                    if (tocMorphProgress > 0.15f) {
                         Box(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    alpha = ((tocMorphProgress - 0.15f) / 0.85f).coerceIn(0f, 1f)
-                                }
-                                .padding(top = 22.dp, start = 22.dp, end = 22.dp, bottom = 18.dp)
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(if (isGlassDark) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.35f))
+                                .border(0.6.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                .clickable { showTocSheet = false },
+                            contentAlignment = Alignment.Center
                         ) {
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                // TOC Header
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(bottom = 16.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "目录",
-                                            fontSize = 20.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = glassTextColor
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "共 ${if (tocList.isNotEmpty()) tocList.size else parsedChapters.size} 章",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = glassTextColor.copy(alpha = 0.5f)
-                                        )
-                                    }
-
-                                    Box(
-                                        modifier = Modifier
-                                            .size(34.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isGlobalDark) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.35f))
-                                            .border(0.6.dp, Color.White.copy(alpha = 0.5f), CircleShape)
-                                            .clickable { showTocSheet = false },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text("✕", color = glassTextColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    }
-                                }
+                            Text("✕", color = glassTextColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
 
                                 // Chapters LazyColumn (Rich EPUB TOC with exact chapter and section names)
                                 LazyColumn(
@@ -1502,8 +1562,7 @@ fun ReaderScreen(
                                     if (tocList.isNotEmpty()) {
                                         itemsIndexed(tocList) { idx, tocItem ->
                                             val isCurrent = if (pageTurnMode == 0) {
-                                                val curFlat = flatItems.getOrNull(listState.firstVisibleItemIndex)
-                                                curFlat != null && parsedChapters.getOrNull(curFlat.chapterIndex)?.title == tocItem.title
+                                                listState.firstVisibleItemIndex == idx || parsedChapters.getOrNull(listState.firstVisibleItemIndex)?.title == tocItem.title
                                             } else {
                                                 pages.getOrNull(pagedCurrentIndex)?.chapterTitle == tocItem.title
                                             }
@@ -1511,34 +1570,26 @@ fun ReaderScreen(
                                             val onItemClick = {
                                                 val withoutAnchor = tocItem.href.substringBefore("#")
                                                 val fileNameOnly = withoutAnchor.substringAfterLast("/")
-                                                var matchedFlat = flatItems.indexOfFirst {
-                                                    it is FlatReaderItem.Title && (it.title.trim().equals(tocItem.title.trim(), ignoreCase = true) || it.title.contains(tocItem.title) || tocItem.title.contains(it.title))
+                                                var matchedCh = parsedChapters.indexOfFirst {
+                                                    it.title.trim().equals(tocItem.title.trim(), ignoreCase = true) || it.title.contains(tocItem.title) || tocItem.title.contains(it.title)
                                                 }
-                                                if (matchedFlat < 0) {
-                                                    val matchedCh = parsedChapters.indexOfFirst {
-                                                        it.title.trim().equals(tocItem.title.trim(), ignoreCase = true) || it.title.contains(tocItem.title) || tocItem.title.contains(it.title)
-                                                    }
-                                                    if (matchedCh >= 0) {
-                                                        matchedFlat = flatItems.indexOfFirst { it.chapterIndex == matchedCh }
-                                                    }
-                                                }
-                                                if (matchedFlat < 0) {
+                                                if (matchedCh < 0) {
                                                     val chIdx = viewModel.epubBook.value?.chapters?.indexOfFirst {
                                                         it.href.contains(withoutAnchor) || withoutAnchor.contains(it.href) || it.href.substringAfterLast("/") == fileNameOnly
                                                     } ?: -1
                                                     if (chIdx >= 0) {
-                                                        matchedFlat = flatItems.indexOfFirst { it.chapterIndex == chIdx }
+                                                        matchedCh = chIdx
                                                     }
                                                 }
-                                                if (matchedFlat >= 0) {
+                                                if (matchedCh >= 0) {
                                                     if (pageTurnMode == 0) {
-                                                        coroutineScope.launch { listState.scrollToItem(matchedFlat) }
-                                                        viewModel.saveProgress(matchedFlat, 0)
+                                                        coroutineScope.launch { listState.scrollToItem(matchedCh, 0) }
+                                                        viewModel.saveProgress(matchedCh, 0)
                                                     } else {
-                                                        val targetPage = pages.indexOfFirst { it.flatItemIndex >= matchedFlat }.coerceAtLeast(0)
+                                                        val targetPage = pages.indexOfFirst { it.chapterIndex == matchedCh }.coerceAtLeast(0)
                                                         pagedCurrentIndex = targetPage
                                                         val cur = pages.getOrNull(targetPage)
-                                                        if (cur != null) viewModel.saveProgress(cur.flatItemIndex, 0)
+                                                        if (cur != null) viewModel.saveProgress(cur.chapterIndex, 0)
                                                     }
                                                     showTocSheet = false
                                                     showToolbars = false
@@ -1550,7 +1601,7 @@ fun ReaderScreen(
                                                     onClick = onItemClick,
                                                     backdrop = readerBackdrop,
                                                     shape = RoundedCornerShape(12.dp),
-                                                    surfaceColor = globalThemeAccent.copy(alpha = if (isGlobalDark) 0.32f else 0.22f),
+                                                    surfaceColor = globalThemeAccent.copy(alpha = if (isGlassDark) 0.32f else 0.22f),
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .defaultMinSize(minHeight = 44.dp)
@@ -1638,17 +1689,14 @@ fun ReaderScreen(
                                         itemsIndexed(parsedChapters) { idx, chapter ->
                                             val isCurrent = idx == currentChapterIndex
                                             val onChapterClick = {
-                                                val flatIndex = flatItems.indexOfFirst { it.chapterIndex == idx }
-                                                if (flatIndex >= 0) {
-                                                    if (pageTurnMode == 0) {
-                                                        coroutineScope.launch { listState.scrollToItem(flatIndex) }
-                                                        viewModel.saveProgress(flatIndex, 0)
-                                                    } else {
-                                                        val targetPage = pages.indexOfFirst { it.chapterIndex == idx }.coerceAtLeast(0)
-                                                        pagedCurrentIndex = targetPage
-                                                        val cur = pages.getOrNull(targetPage)
-                                                        if (cur != null) viewModel.saveProgress(cur.flatItemIndex, 0)
-                                                    }
+                                                if (pageTurnMode == 0) {
+                                                    coroutineScope.launch { listState.scrollToItem(idx, 0) }
+                                                    viewModel.saveProgress(idx, 0)
+                                                } else {
+                                                    val targetPage = pages.indexOfFirst { it.chapterIndex == idx }.coerceAtLeast(0)
+                                                    pagedCurrentIndex = targetPage
+                                                    val cur = pages.getOrNull(targetPage)
+                                                    if (cur != null) viewModel.saveProgress(cur.chapterIndex, 0)
                                                 }
                                                 showTocSheet = false
                                                 showToolbars = false
@@ -1659,7 +1707,7 @@ fun ReaderScreen(
                                                     onClick = onChapterClick,
                                                     backdrop = readerBackdrop,
                                                     shape = RoundedCornerShape(12.dp),
-                                                    surfaceColor = globalThemeAccent.copy(alpha = if (isGlobalDark) 0.32f else 0.22f),
+                                                    surfaceColor = globalThemeAccent.copy(alpha = if (isGlassDark) 0.32f else 0.22f),
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .defaultMinSize(minHeight = 44.dp)
@@ -1726,10 +1774,6 @@ fun ReaderScreen(
                     }
                 }
             }
-        }
-    }
-}
-}
 
 @Composable
 fun ThemeButton(color: Color, name: String, isSelected: Boolean, textColor: Color, onClick: () -> Unit) {
@@ -1752,7 +1796,7 @@ fun ThemeButton(color: Color, name: String, isSelected: Boolean, textColor: Colo
             if (isSelected) {
                 Box(modifier = Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.2f), CircleShape))
                 Icon(
-                    imageVector = Icons.Filled.Settings, // You can use check icon instead
+                    imageVector = Icons.Filled.Settings,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.align(Alignment.Center).size(20.dp)
@@ -1763,3 +1807,199 @@ fun ThemeButton(color: Color, name: String, isSelected: Boolean, textColor: Colo
         Text(name, fontSize = 12.sp, color = if (isSelected) textColor else textColor.copy(alpha = 0.5f))
     }
 }
+
+@Composable
+private fun ScrollableTitleItem(
+    title: String,
+    chineseMode: Int,
+    customFontFamily: androidx.compose.ui.text.font.FontFamily?,
+    textSize: Float,
+    textColor: Color
+) {
+    val displayTitle = remember(title, chineseMode) {
+        if (chineseMode == 0) title
+        else if (chineseMode == 1) ZhConverterUtil.toSimple(title)
+        else ZhConverterUtil.toTraditional(title)
+    }
+    Text(
+        text = displayTitle,
+        fontSize = (textSize * 1.3f).sp,
+        fontWeight = FontWeight.Bold,
+        color = textColor,
+        fontFamily = customFontFamily,
+        modifier = Modifier.padding(top = 32.dp, bottom = 16.dp)
+    )
+}
+
+@Composable
+private fun ScrollableTextItem(
+    node: ChapterNode.TextNode,
+    chineseMode: Int,
+    customFontFamily: androidx.compose.ui.text.font.FontFamily?,
+    textSize: Float,
+    lineHeightMult: Float,
+    paragraphSpacing: Float,
+    textColor: Color
+) {
+    val rawText = remember(node.text, chineseMode) {
+        val raw = if (chineseMode == 0) {
+            node.text.text
+        } else if (chineseMode == 1) {
+            ZhConverterUtil.toSimple(node.text.text)
+        } else {
+            ZhConverterUtil.toTraditional(node.text.text)
+        }
+        if (!raw.startsWith("　") && !raw.startsWith("  ")) {
+            "　　" + raw
+        } else {
+            raw
+        }
+    }
+
+    if (node.text.spanStyles.isEmpty() && node.text.paragraphStyles.isEmpty()) {
+        Text(
+            text = rawText,
+            fontFamily = customFontFamily,
+            fontSize = textSize.sp,
+            lineHeight = (textSize * lineHeightMult).coerceAtLeast(textSize * 1.1f).sp,
+            color = textColor,
+            modifier = Modifier.padding(bottom = paragraphSpacing.dp)
+        )
+    } else {
+        val annotated = remember(rawText) {
+            val indentDiff = rawText.length - node.text.text.length
+            androidx.compose.ui.text.buildAnnotatedString {
+                append(rawText)
+                node.text.spanStyles.forEach {
+                    addStyle(it.item, it.start + indentDiff, it.end + indentDiff)
+                }
+                node.text.paragraphStyles.forEach {
+                    addStyle(it.item, it.start + indentDiff, it.end + indentDiff)
+                }
+            }
+        }
+        Text(
+            text = annotated,
+            fontFamily = customFontFamily,
+            fontSize = textSize.sp,
+            lineHeight = (textSize * lineHeightMult).coerceAtLeast(textSize * 1.1f).sp,
+            color = textColor,
+            modifier = Modifier.padding(bottom = paragraphSpacing.dp)
+        )
+    }
+}
+
+private sealed class ChapterSegment {
+    data class Text(val text: androidx.compose.ui.text.AnnotatedString) : ChapterSegment()
+    data class Image(val bitmap: androidx.compose.ui.graphics.ImageBitmap) : ChapterSegment()
+}
+
+@Composable
+private fun ScrollableChapterItem(
+    chapterIndex: Int,
+    chapter: ParsedChapter,
+    chineseMode: Int,
+    customFontFamily: androidx.compose.ui.text.font.FontFamily?,
+    textSize: Float,
+    lineHeightMult: Float,
+    paragraphSpacing: Float,
+    textColor: Color
+) {
+    val segments = remember(chapter, chineseMode) {
+        val list = mutableListOf<ChapterSegment>()
+        var currentTextBuilder = androidx.compose.ui.text.AnnotatedString.Builder()
+        var hasTextInCurrent = false
+
+        for (node in chapter.nodes) {
+            when (node) {
+                is ChapterNode.TextNode -> {
+                    val raw = if (chineseMode == 0) {
+                        node.text.text
+                    } else if (chineseMode == 1) {
+                        ZhConverterUtil.toSimple(node.text.text)
+                    } else {
+                        ZhConverterUtil.toTraditional(node.text.text)
+                    }
+                    val withIndent = if (!raw.startsWith("　") && !raw.startsWith("  ")) {
+                        "　　" + raw
+                    } else {
+                        raw
+                    }
+
+                    if (hasTextInCurrent) {
+                        currentTextBuilder.append("\n\n")
+                    }
+
+                    val startOffset = currentTextBuilder.length
+                    currentTextBuilder.append(withIndent)
+                    val indentDiff = withIndent.length - raw.length
+
+                    node.text.spanStyles.forEach {
+                        currentTextBuilder.addStyle(it.item, startOffset + it.start + indentDiff, startOffset + it.end + indentDiff)
+                    }
+                    node.text.paragraphStyles.forEach {
+                        currentTextBuilder.addStyle(it.item, startOffset + it.start + indentDiff, startOffset + it.end + indentDiff)
+                    }
+                    hasTextInCurrent = true
+                }
+                is ChapterNode.ImageNode -> {
+                    if (hasTextInCurrent) {
+                        list.add(ChapterSegment.Text(currentTextBuilder.toAnnotatedString()))
+                        currentTextBuilder = androidx.compose.ui.text.AnnotatedString.Builder()
+                        hasTextInCurrent = false
+                    }
+                    val bmp = node.bitmap
+                    if (bmp != null) {
+                        list.add(ChapterSegment.Image(bmp))
+                    }
+                }
+            }
+        }
+        if (hasTextInCurrent) {
+            list.add(ChapterSegment.Text(currentTextBuilder.toAnnotatedString()))
+        }
+        list
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 36.dp)
+    ) {
+        if (chapter.title.isNotBlank() && chapter.title != "Chapter") {
+            ScrollableTitleItem(
+                title = chapter.title,
+                chineseMode = chineseMode,
+                customFontFamily = customFontFamily,
+                textSize = textSize,
+                textColor = textColor
+            )
+        }
+        for (segment in segments) {
+            when (segment) {
+                is ChapterSegment.Text -> {
+                    Text(
+                        text = segment.text,
+                        fontFamily = customFontFamily,
+                        fontSize = textSize.sp,
+                        lineHeight = (textSize * lineHeightMult).coerceAtLeast(textSize * 1.15f).sp,
+                        color = textColor,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                    )
+                }
+                is ChapterSegment.Image -> {
+                    androidx.compose.foundation.Image(
+                        bitmap = segment.bitmap,
+                        contentDescription = null,
+                        contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                    )
+                }
+            }
+        }
+    }
+}
+

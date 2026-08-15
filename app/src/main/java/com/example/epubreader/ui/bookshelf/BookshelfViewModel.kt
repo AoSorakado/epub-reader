@@ -79,8 +79,8 @@ class BookshelfViewModel(private val bookDao: BookDao, application: Application)
                         }
                     }
 
-                    // 2. Parse the EPUB
-                    val epubBook = localEpubFile.inputStream().use { EpubParser.parse(it) }
+                    // 2. Parse the EPUB using high-speed random-access
+                    val epubBook = EpubParser.parse(localEpubFile)
 
                     // 3. Save Cover Image if exists
                     var coverImagePath: String? = null

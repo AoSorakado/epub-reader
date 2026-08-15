@@ -546,25 +546,15 @@ fun BookshelfScreen(
                                         draggedItem = null 
                                     }
                                 )
-                            }.pointerInput(item.id, "tap") {
-                                detectTapGestures(
-                                    onPress = {
-                                        pressedBookId = item.id
-                                        tryAwaitRelease()
-                                        pressedBookId = null
-                                    },
-                                    onTap = {
-                                        handleBookClick(item, layoutMethod == 1)
-                                    }
-                                )
                             }
                         } else Modifier
 
-                        val isItemContextMenuActive = isContextMenuOverlayActive && (activeContextMenuTarget is ContextMenuTarget.Book && (activeContextMenuTarget as ContextMenuTarget.Book).book.id == item.id && !(activeContextMenuTarget as ContextMenuTarget.Book).isInner)
+                        val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
+                        val isItemContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Book && currentContextMenu.book.id == item.id && !currentContextMenu.isInner)
                         BookItem(
                             book = item, 
                             isListLayout = layoutMethod == 1, 
-                            isPressed = (pressedBookId == item.id && !isItemContextMenuActive), 
+                            isPressed = false, 
                             backdrop = globalBackdrop, 
                             isDark = isDark,
                             isHidden = isOpeningThis || isItemContextMenuActive,
@@ -586,7 +576,8 @@ fun BookshelfScreen(
                     is Pair<*, *> -> {
                         @Suppress("UNCHECKED_CAST")
                         val series = item as Pair<String, List<BookEntity>>
-                        val isSeriesContextMenuActive = isContextMenuOverlayActive && (activeContextMenuTarget is ContextMenuTarget.Series && (activeContextMenuTarget as ContextMenuTarget.Series).series.first == series.first)
+                        val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
+                        val isSeriesContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Series && currentContextMenu.series.first == series.first)
                         val isSeriesHidden = (displaySeries?.first == series.first && seriesExpandProgress > 0.001f) || isSeriesContextMenuActive
                         SeriesItem(
                             seriesName = series.first,
@@ -772,12 +763,13 @@ fun BookshelfScreen(
                             itemsIndexed(seriesBooks) { index, book ->
                                 val volumeNumber = index + 1
                                 val isBookOpeningThis = (openingBook?.id == book.id && bookOpenProgress > 0.001f)
-                                val isInnerContextMenuActive = isContextMenuOverlayActive && (activeContextMenuTarget is ContextMenuTarget.Book && (activeContextMenuTarget as ContextMenuTarget.Book).book.id == book.id && (activeContextMenuTarget as ContextMenuTarget.Book).isInner)
+                                val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
+                                val isInnerContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Book && currentContextMenu.book.id == book.id && currentContextMenu.isInner)
                                 SeriesInnerBookRow(
                                     book = book,
                                     seriesTitle = seriesTitle,
                                     volumeNumber = volumeNumber,
-                                    isPressed = (pressedBookId == book.id && !isInnerContextMenuActive),
+                                    isPressed = false,
                                     isDark = isDark,
                                     themeAccent = themeAccent,
                                     primaryTextColor = primaryTextColor,
@@ -1067,7 +1059,11 @@ fun BookshelfScreen(
             }
 
             if (effectiveTargetBounds != Rect.Zero && target != null) {
-                val elevatedScale = lerp(1f, 1.05f, contextMenuProgress)
+                val elevatedScale = if (isContextMenuOpen) {
+                    lerp(0.93f, 1.04f, contextMenuProgress)
+                } else {
+                    lerp(1.0f, 1.04f, contextMenuProgress)
+                }
 
                 // 1. Focused Elevated Floating Item
                 Box(
@@ -1080,7 +1076,6 @@ fun BookshelfScreen(
                         .graphicsLayer {
                             scaleX = elevatedScale
                             scaleY = elevatedScale
-                            shadowElevation = 18f * contextMenuProgress
                         }
                 ) {
                     when (target) {
@@ -1674,10 +1669,11 @@ fun SeriesItem(
     modifier: Modifier = Modifier
 ) {
     var localBounds by remember { mutableStateOf(Rect.Zero) }
-    var isPressed by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isItemPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.90f else 1f,
-        animationSpec = spring(dampingRatio = 0.35f, stiffness = 450f),
+        targetValue = if (isItemPressed) 0.93f else 1f,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 320f),
         label = "seriesPressScale"
     )
 
@@ -1695,14 +1691,10 @@ fun SeriesItem(
                 }
             }
             .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
                 onClick = { onClick(localBounds) },
-                onLongClick = onLongClick?.let { handler ->
-                    {
-                        isPressed = true
-                        handler()
-                        isPressed = false
-                    }
-                }
+                onLongClick = onLongClick
             )
             .fillMaxWidth()
             .drawBackdrop(
@@ -1965,7 +1957,11 @@ fun BookItemContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val percent = (book.totalProgress * 100).toInt().coerceIn(0, 100)
+                    val isFinished = book.totalProgress >= 0.999f
+                    val isUnread = book.totalProgress <= 0.0001f && (book.lastReadPosition.isNullOrEmpty() || book.lastReadPosition == "0_0_0")
+                    val progressPercentFloat = (book.totalProgress * 100f).coerceIn(0.1f, 99.9f)
+                    val progressFormatted = String.format(java.util.Locale.US, "%.1f", progressPercentFloat)
+                    val statusText = if (isFinished) "已读完" else if (isUnread) "未读" else "进度 $progressFormatted%"
                     Text(
                         text = if (book.isWebDav) "云端同步" else "本地导入",
                         style = MaterialTheme.typography.labelSmall,
@@ -1978,10 +1974,10 @@ fun BookItemContent(
                             .background(secondaryTextColor.copy(alpha = 0.4f))
                     )
                     Text(
-                        text = if (percent >= 100) "已读完" else if (percent <= 0) "未读" else "进度 $percent%",
+                        text = statusText,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                        color = if (percent >= 100) Color(0xFF34C759) else (if (percent > 0) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else secondaryTextColor)
+                        color = if (isFinished) Color(0xFF34C759) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else secondaryTextColor)
                     )
                 }
             }
@@ -2019,8 +2015,11 @@ fun BookItemContent(
                 }
 
                 // Reading Progress Pill Badge on Cover
-                val percent = (book.totalProgress * 100).toInt().coerceIn(0, 100)
-                val progressText = if (percent >= 100) "已读完" else if (percent <= 0) "未读" else "$percent%"
+                val isCoverFinished = book.totalProgress >= 0.999f
+                val isCoverUnread = book.totalProgress <= 0.0001f && (book.lastReadPosition.isNullOrEmpty() || book.lastReadPosition == "0_0_0")
+                val coverProgressPercentFloat = (book.totalProgress * 100f).coerceIn(0.1f, 99.9f)
+                val coverProgressFormatted = String.format(java.util.Locale.US, "%.1f", coverProgressPercentFloat)
+                val progressText = if (isCoverFinished) "已读完" else if (isCoverUnread) "未读" else "$coverProgressFormatted%"
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
@@ -2032,7 +2031,7 @@ fun BookItemContent(
                 ) {
                     Text(
                         text = progressText,
-                        color = if (percent >= 100) Color(0xFF34C759) else Color.White,
+                        color = if (isCoverFinished) Color(0xFF34C759) else Color.White,
                         fontSize = 10.sp,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                     )
@@ -2109,8 +2108,8 @@ fun BookItem(
     val isItemPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (isPressed || isItemPressed) 0.92f else 1f,
-        animationSpec = spring(dampingRatio = 0.50f, stiffness = 400f),
+        targetValue = if (isPressed || isItemPressed) 0.93f else 1f,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 320f),
         label = "bookPressScale"
     )
 
@@ -2197,8 +2196,8 @@ fun SeriesInnerBookRow(
     val isItemPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (isPressed || isItemPressed) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = 0.50f, stiffness = 400f),
+        targetValue = if (isPressed || isItemPressed) 0.94f else 1f,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 320f),
         label = "seriesBookPressScale"
     )
 
@@ -2228,8 +2227,8 @@ fun SeriesInnerBookRow(
             .background(
                 brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.20f else 0.12f) else (if (isPressed || isItemPressed) 0.45f else 0.32f)),
-                        Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.12f else 0.06f) else (if (isPressed || isItemPressed) 0.28f else 0.16f))
+                        Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.16f else 0.10f) else (if (isPressed || isItemPressed) 0.26f else 0.20f)),
+                        Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.08f else 0.05f) else (if (isPressed || isItemPressed) 0.14f else 0.10f))
                     )
                 )
             )
@@ -2237,8 +2236,8 @@ fun SeriesInnerBookRow(
                 width = 0.8.dp,
                 brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.35f else 0.70f),
-                        Color.White.copy(alpha = if (isDark) 0.15f else 0.35f)
+                        Color.White.copy(alpha = if (isDark) 0.25f else 0.45f),
+                        Color.White.copy(alpha = if (isDark) 0.10f else 0.20f)
                     )
                 ),
                 shape = RoundedCornerShape(18.dp)
@@ -2327,7 +2326,11 @@ fun SeriesInnerBookRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val percent = (book.totalProgress * 100).toInt().coerceIn(0, 100)
+                    val isFinished = book.totalProgress >= 0.999f
+                    val isUnread = book.totalProgress <= 0.0001f && (book.lastReadPosition.isNullOrEmpty() || book.lastReadPosition == "0_0_0")
+                    val progressPercentFloat = (book.totalProgress * 100f).coerceIn(0.1f, 99.9f)
+                    val progressFormatted = String.format(java.util.Locale.US, "%.1f", progressPercentFloat)
+                    val statusText = if (isFinished) "已读完" else if (isUnread) "未读" else "进度 $progressFormatted%"
                     Text(
                         text = if (book.isWebDav) "云端分卷" else "本地已导入",
                         style = MaterialTheme.typography.labelMedium,
@@ -2340,10 +2343,10 @@ fun SeriesInnerBookRow(
                             .background(subtitleColor.copy(alpha = 0.4f))
                     )
                     Text(
-                        text = if (percent >= 100) "已读完" else if (percent <= 0) "未读" else "进度 $percent%",
+                        text = statusText,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                        color = if (percent >= 100) Color(0xFF34C759) else (if (percent > 0) volumeColor else subtitleColor)
+                        color = if (isFinished) Color(0xFF34C759) else (if (!isUnread) volumeColor else subtitleColor)
                     )
                 }
             }

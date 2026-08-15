@@ -21,8 +21,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.foundation.layout.Arrangement
@@ -114,8 +116,10 @@ fun MainScaffold(navController: NavHostController) {
         settingsViewModel.checkDailyStatus()
     }
 
-    val hideBottomBarRoutes = listOf("reader/{bookId}")
-    val showBottomBar = currentRoute != null && !isReaderActive && !hideBottomBarRoutes.any { currentRoute.startsWith(it.substringBefore("/")) }
+    val isReaderRoute = currentRoute?.startsWith("reader") == true
+    val showBottomBar = !isReaderActive && !isReaderRoute
+
+    var selectedTabIndex by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Layer 1: Background with pure harmonious theme gradient
@@ -126,55 +130,113 @@ fun MainScaffold(navController: NavHostController) {
                 .layerBackdrop(backgroundBackdrop)
         )
 
-        // Layer 2: Navigation content - captured by contentBackdrop with full background
-        NavHost(
-            navController = navController,
-            startDestination = Screen.Bookshelf.route,
+        // Layer 2: Preloaded 3 Main Screens (Instantly loaded from app start)
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .layerBackdrop(contentBackdrop),
-            enterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300)) },
-            exitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300)) },
-            popEnterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300)) },
-            popExitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300)) }
+                .layerBackdrop(contentBackdrop)
         ) {
-            composable(Screen.Bookshelf.route) { 
+            // Tab 0: Bookshelf (Preloaded)
+            val bookshelfAlpha by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (selectedTabIndex == 0 && !isReaderRoute) 1f else 0f,
+                animationSpec = androidx.compose.animation.core.tween(150),
+                label = "bookshelfAlpha"
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        alpha = bookshelfAlpha
+                        translationX = if (selectedTabIndex == 0 && !isReaderRoute) 0f else -10000f
+                    }
+            ) {
                 BookshelfScreen(
                     navController = navController,
                     settingsViewModel = settingsViewModel,
                     globalBackdrop = backgroundBackdrop,
                     onReaderActiveChanged = { isReaderActive = it }
-                ) 
+                )
             }
-            composable(Screen.Stats.route) { 
-                StatsScreen(navController, settingsViewModel, backgroundBackdrop) 
-            }
-            composable(Screen.Settings.route) { 
-                SettingsScreen(navController, settingsViewModel, backgroundBackdrop) 
-            }
-            composable(
-                route = "reader/{bookId}",
-                arguments = listOf(androidx.navigation.navArgument("bookId") { type = androidx.navigation.NavType.LongType }),
-                enterTransition = {
-                    androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(220))
-                },
-                exitTransition = {
-                    androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(150))
-                },
-                popEnterTransition = {
-                    androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(150))
-                },
-                popExitTransition = {
-                    androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(120))
-                }
-            ) { backStackEntry ->
-                val bookId = backStackEntry.arguments?.getLong("bookId") ?: return@composable
-                com.example.epubreader.ui.reader.ReaderScreen(
+
+            // Tab 1: Stats (Preloaded)
+            val statsAlpha by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (selectedTabIndex == 1 && !isReaderRoute) 1f else 0f,
+                animationSpec = androidx.compose.animation.core.tween(150),
+                label = "statsAlpha"
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        alpha = statsAlpha
+                        translationX = if (selectedTabIndex == 1 && !isReaderRoute) 0f else -10000f
+                    }
+            ) {
+                StatsScreen(
                     navController = navController,
-                    bookId = bookId,
                     settingsViewModel = settingsViewModel,
+                    globalBackdrop = backgroundBackdrop
+                )
+            }
+
+            // Tab 2: Settings (Preloaded)
+            val settingsAlpha by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (selectedTabIndex == 2 && !isReaderRoute) 1f else 0f,
+                animationSpec = androidx.compose.animation.core.tween(150),
+                label = "settingsAlpha"
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        alpha = settingsAlpha
+                        translationX = if (selectedTabIndex == 2 && !isReaderRoute) 0f else -10000f
+                    }
+            ) {
+                SettingsScreen(
+                    navController = navController,
+                    viewModel = settingsViewModel,
                     backgroundBackdrop = backgroundBackdrop
                 )
+            }
+
+            // NavHost for deep destinations like ReaderScreen
+            NavHost(
+                navController = navController,
+                startDestination = "main_root",
+                modifier = Modifier.fillMaxSize(),
+                enterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200)) },
+                exitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150)) },
+                popEnterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)) },
+                popExitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)) }
+            ) {
+                composable("main_root") {
+                    // Empty placeholder since the 3 main tabs are permanently pre-composed underneath!
+                }
+                composable(
+                    route = "reader/{bookId}",
+                    arguments = listOf(androidx.navigation.navArgument("bookId") { type = androidx.navigation.NavType.LongType }),
+                    enterTransition = {
+                        androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(220))
+                    },
+                    exitTransition = {
+                        androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(150))
+                    },
+                    popEnterTransition = {
+                        androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(150))
+                    },
+                    popExitTransition = {
+                        androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(120))
+                    }
+                ) { backStackEntry ->
+                    val bookId = backStackEntry.arguments?.getLong("bookId") ?: return@composable
+                    com.example.epubreader.ui.reader.ReaderScreen(
+                        navController = navController,
+                        bookId = bookId,
+                        settingsViewModel = settingsViewModel,
+                        backgroundBackdrop = backgroundBackdrop
+                    )
+                }
             }
         }
 
@@ -185,21 +247,10 @@ fun MainScaffold(navController: NavHostController) {
             exit = androidx.compose.animation.slideOutVertically(targetOffsetY = { it }, animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 300f)) + androidx.compose.animation.fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
-            val selectedIndex = bottomNavItems.indexOfFirst { it.route == currentRoute }.coerceAtLeast(0)
-            
             LiquidBottomTabs(
-                selectedIndex = selectedIndex,
+                selectedIndex = selectedTabIndex,
                 onTabSelected = { index ->
-                    val screen = bottomNavItems[index]
-                    if (currentRoute != screen.route) {
-                        navController.navigate(screen.route) {
-                            popUpTo(Screen.Bookshelf.route) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
+                    selectedTabIndex = index
                 },
                 backdrop = contentBackdrop,
                 tabsCount = bottomNavItems.size,
@@ -211,21 +262,13 @@ fun MainScaffold(navController: NavHostController) {
                     .fillMaxWidth()
                     .height(64.dp)
             ) {
-                bottomNavItems.forEachIndexed { _, screen ->
+                bottomNavItems.forEachIndexed { index, screen ->
                     val isDarkTheme = appTheme == com.example.epubreader.ui.theme.AppTheme.MIDNIGHT_GLASS
                     val defaultTabColor = if (isDarkTheme) Color(0xFFF1F5F9) else Color(0xFF2B173A)
 
                     LiquidBottomTab(
                         onClick = {
-                            if (currentRoute != screen.route) {
-                                navController.navigate(screen.route) {
-                                    popUpTo(Screen.Bookshelf.route) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
+                            selectedTabIndex = index
                         }
                     ) {
                         Icon(

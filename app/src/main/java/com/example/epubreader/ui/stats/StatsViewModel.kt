@@ -63,8 +63,8 @@ class StatsViewModel(
     ) { books, totalDurationMs, todayDurationMs, recentStats ->
         val total = books.size
         val seriesSet = books.mapNotNull { it.seriesName }.filter { it.isNotBlank() }.toSet()
-        val finished = books.count { it.totalProgress >= 0.95f }
-        val reading = books.count { it.totalProgress > 0f && it.totalProgress < 0.95f }
+        val finished = books.count { it.totalProgress >= 0.99f }
+        val reading = books.count { (it.totalProgress > 0.0001f || (!it.lastReadPosition.isNullOrEmpty() && it.lastReadPosition != "0_0_0")) && it.totalProgress < 0.99f }
         
         val progressSum = if (total > 0) {
             books.sumOf { it.totalProgress.toDouble() }.toFloat()

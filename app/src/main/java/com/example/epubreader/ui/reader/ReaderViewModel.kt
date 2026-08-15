@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.content.SharedPreferences
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -16,6 +18,8 @@ import com.example.epubreader.data.parser.EpubBook
 import com.example.epubreader.data.parser.EpubParser
 import com.example.epubreader.data.parser.HtmlToAnnotatedString
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,7 +34,20 @@ import com.example.epubreader.data.model.ReadingStatEntity
 
 sealed class ChapterNode {
     data class TextNode(val text: AnnotatedString) : ChapterNode()
-    data class ImageNode(val imageData: ByteArray) : ChapterNode()
+    data class ImageNode(val imageData: ByteArray) : ChapterNode() {
+        private var cachedBitmap: androidx.compose.ui.graphics.ImageBitmap? = null
+        val bitmap: androidx.compose.ui.graphics.ImageBitmap?
+            get() {
+                if (cachedBitmap != null) return cachedBitmap
+                val bmp = try {
+                    android.graphics.BitmapFactory.decodeByteArray(imageData, 0, imageData.size)?.asImageBitmap()
+                } catch (e: Exception) {
+                    null
+                }
+                cachedBitmap = bmp
+                return bmp
+            }
+    }
 }
 
 data class ParsedChapter(
@@ -133,7 +150,13 @@ class ReaderViewModel(
         }
     }
 
-    private fun recomputeCharacterCounts(items: List<FlatReaderItem>) {
+    private val _chapterCharCounts = MutableStateFlow<List<Int>>(emptyList())
+    val chapterCharCounts: StateFlow<List<Int>> = _chapterCharCounts.asStateFlow()
+
+    private val _chapterCumulativeCharCounts = MutableStateFlow<List<Int>>(emptyList())
+    val chapterCumulativeCharCounts: StateFlow<List<Int>> = _chapterCumulativeCharCounts.asStateFlow()
+
+    private fun recomputeCharacterCounts(items: List<FlatReaderItem>, chapters: List<ParsedChapter>) {
         val cumulative = ArrayList<Int>(items.size)
         var sum = 0
         for (item in items) {
@@ -151,6 +174,25 @@ class ReaderViewModel(
         }
         _cumulativeCharCounts.value = cumulative
         _totalCharCount.value = sum
+
+        val chCounts = chapters.map { ch ->
+            var c = ch.title.length
+            for (node in ch.nodes) {
+                c += when (node) {
+                    is ChapterNode.TextNode -> node.text.text.length
+                    is ChapterNode.ImageNode -> 50
+                }
+            }
+            c.coerceAtLeast(1)
+        }
+        val chCum = ArrayList<Int>(chCounts.size)
+        var chSum = 0
+        for (cnt in chCounts) {
+            chCum.add(chSum)
+            chSum += cnt
+        }
+        _chapterCharCounts.value = chCounts
+        _chapterCumulativeCharCounts.value = chCum
     }
 
     private val _isLoading = MutableStateFlow(true)
@@ -159,9 +201,37 @@ class ReaderViewModel(
     private val _loadingProgress = MutableStateFlow(0f)
     val loadingProgress: StateFlow<Float> = _loadingProgress.asStateFlow()
 
+    private val liquidPrefs: SharedPreferences = application.getSharedPreferences("liquid_settings", Context.MODE_PRIVATE)
+
+    private fun computeEffectiveThemeIndex(): Int {
+        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val isNightTime = (currentHour >= 19 || currentHour < 7)
+        val autoNight = liquidPrefs.getBoolean("autoNightMode", false)
+        val appThemeStr = liquidPrefs.getString("appTheme", "OCEAN_WAVE") ?: "OCEAN_WAVE"
+        val isMidnight = appThemeStr == "MIDNIGHT_GLASS" || (autoNight && isNightTime)
+        
+        return if (isMidnight) {
+            2 // 暗夜黑曜
+        } else {
+            prefs.getInt("userPreferredDayReadingTheme", prefs.getInt("themeIndex", 0))
+        }
+    }
+
     // Preferences for themes (0 = White, 1 = Sepia, 2 = Dark)
-    private val _themeIndex = MutableStateFlow(prefs.getInt("themeIndex", 0))
+    private val _themeIndex = MutableStateFlow(computeEffectiveThemeIndex())
     val themeIndex: StateFlow<Int> = _themeIndex.asStateFlow()
+
+    private val liquidPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "appTheme" || key == "autoNightMode") {
+            val newTheme = computeEffectiveThemeIndex()
+            _themeIndex.value = newTheme
+            prefs.edit().putInt("themeIndex", newTheme).apply()
+        }
+    }
+
+    init {
+        liquidPrefs.registerOnSharedPreferenceChangeListener(liquidPrefsListener)
+    }
 
     private val _textSize = MutableStateFlow(prefs.getFloat("textSize", 18f))
     val textSize: StateFlow<Float> = _textSize.asStateFlow()
@@ -206,6 +276,9 @@ class ReaderViewModel(
     fun setTheme(index: Int) {
         _themeIndex.value = index
         prefs.edit().putInt("themeIndex", index).apply()
+        if (index != 2) {
+            prefs.edit().putInt("userPreferredDayReadingTheme", index).apply()
+        }
     }
 
     fun setTextSize(size: Float) {
@@ -266,7 +339,7 @@ class ReaderViewModel(
         viewModelScope.launch {
             _isLoading.value = true
             
-            val book = dao.getBookById(bookId)
+            var book = dao.getBookById(bookId)
             _bookEntity.value = book
             
             if (book == null) {
@@ -274,9 +347,18 @@ class ReaderViewModel(
                 return@launch
             }
 
+            // 1. Asynchronously check and sync progress in background without blocking book open
+            if (book.isWebDav) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    val synced = syncProgressFromCloud(context, book)
+                    _bookEntity.value = synced
+                }
+            }
+
             withContext(Dispatchers.IO) {
                 try {
-                    val inputStream: InputStream = if (book.isWebDav) {
+                    // Ultra-fast EPUB Parsing using random-access File whenever possible
+                    val parsedBook = if (book.isWebDav) {
                         val prefs = context.getSharedPreferences("liquid_settings", Context.MODE_PRIVATE)
                         val url = prefs.getString("webdav_url", "") ?: ""
                         val user = prefs.getString("webdav_user", "") ?: ""
@@ -287,90 +369,101 @@ class ReaderViewModel(
                         if (!cacheFile.exists()) {
                             client.downloadFile(book.filePath, cacheFile)
                         }
-                        FileInputStream(cacheFile)
-                    } else {
-                        if (book.filePath.startsWith("content://")) {
-                            context.contentResolver.openInputStream(Uri.parse(book.filePath)) 
-                                ?: throw Exception("Cannot open content URI")
+                        EpubParser.parse(cacheFile)
+                    } else if (book.filePath.startsWith("content://")) {
+                        val cacheFile = File(context.cacheDir, "content_${book.id}.epub")
+                        if (!cacheFile.exists() || cacheFile.length() == 0L) {
+                            context.contentResolver.openInputStream(Uri.parse(book.filePath))?.use { input ->
+                                cacheFile.outputStream().use { output -> input.copyTo(output) }
+                            }
+                        }
+                        if (cacheFile.exists() && cacheFile.length() > 0L) {
+                            EpubParser.parse(cacheFile)
                         } else {
-                            FileInputStream(File(book.filePath))
+                            context.contentResolver.openInputStream(Uri.parse(book.filePath))?.use { input ->
+                                EpubParser.parse(input)
+                            } ?: throw Exception("Cannot open content URI")
+                        }
+                    } else {
+                        val file = File(book.filePath)
+                        if (file.exists()) {
+                            EpubParser.parse(file)
+                        } else {
+                            context.contentResolver.openInputStream(Uri.parse(book.filePath))?.use { input ->
+                                EpubParser.parse(input)
+                            } ?: throw Exception("Cannot open book file: ${book.filePath}")
                         }
                     }
 
-                    // Parse EPUB Structure
-                    val parsedBook = EpubParser.parse(inputStream)
                     _epubBook.value = parsedBook
                     _toc.value = parsedBook.toc
 
-                    val totalChapters = parsedBook.chapters.size
-                    val resultList = mutableListOf<ParsedChapter>()
-                    
+                    // Multi-core parallel chapter parsing
                     val imageRegex = Regex("<(?:img|image|object)[^>]*?(?:src|href|data)\\s*=\\s*[\"']([^\"']+)[\"'][^>]*?>", RegexOption.IGNORE_CASE)
                     
-                    for ((index, chapter) in parsedBook.chapters.withIndex()) {
-                        val nodes = mutableListOf<ChapterNode>()
-                        var lastIndex = 0
-                        
-                        val matches = imageRegex.findAll(chapter.content)
-                        for (match in matches) {
-                            // Extract text before image
-                            val textBefore = chapter.content.substring(lastIndex, match.range.first)
-                            if (textBefore.isNotBlank()) {
-                                val parsed = HtmlToAnnotatedString.parse(textBefore)
-                                splitAndAddTextNodes(parsed, nodes)
-                            }
-                            
-                            // Extract image
-                            val src = match.groupValues[1]
-                            val absoluteImagePath = resolvePath(chapter.href, src)
-                            val imageData = parsedBook.images[absoluteImagePath.lowercase()]
-                            if (imageData != null) {
-                                nodes.add(ChapterNode.ImageNode(imageData))
-                            } else {
-                                val available = parsedBook.images.keys.take(10).joinToString(", ")
-                                nodes.add(ChapterNode.TextNode(HtmlToAnnotatedString.parse("[Image missing: $absoluteImagePath] (Keys: $available)")))
-                            }
-                            
-                            lastIndex = match.range.last + 1
-                        }
-                        
-                        // Extract remaining text
-                        if (lastIndex < chapter.content.length) {
-                            val remainingText = chapter.content.substring(lastIndex)
-                            if (remainingText.isNotBlank()) {
-                                val parsed = HtmlToAnnotatedString.parse(remainingText)
-                                splitAndAddTextNodes(parsed, nodes)
-                            }
-                        }
-                        
-                        // Fallback debug information if the chapter is completely empty but has HTML content
-                        if (nodes.isEmpty() && chapter.content.isNotBlank()) {
-                            val debugContent = if (chapter.content.length > 200) chapter.content.take(200) + "..." else chapter.content
-                            nodes.add(ChapterNode.TextNode(androidx.compose.ui.text.AnnotatedString("[Unrecognized Content]\n$debugContent")))
-                        }
-                        
-                        resultList.add(ParsedChapter(chapter.title, nodes.toList()))
-                        
-                        _loadingProgress.value = (index + 1).toFloat() / totalChapters
-                        
-                        // Emit partial results every 5 chapters to show UI quickly
-                        if (index % 5 == 0 || index == totalChapters - 1) {
-                            val parsedList = resultList.toList()
-                            _parsedChapters.value = parsedList
-                            val flattened = parsedList.flatMapIndexed { cIdx, ch ->
-                                val list = mutableListOf<FlatReaderItem>()
-                                if (ch.title.isNotBlank() && ch.title != "Chapter") {
-                                    list.add(FlatReaderItem.Title(cIdx, ch.title))
+                    val parsedChapters = withContext(Dispatchers.Default) {
+                        parsedBook.chapters.mapIndexed { index, chapter ->
+                            async {
+                                val nodes = mutableListOf<ChapterNode>()
+                                var lastIndex = 0
+                                
+                                val matches = imageRegex.findAll(chapter.content)
+                                for (match in matches) {
+                                    // Extract text before image
+                                    val textBefore = chapter.content.substring(lastIndex, match.range.first)
+                                    if (textBefore.isNotBlank()) {
+                                        val parsed = HtmlToAnnotatedString.parse(textBefore)
+                                        splitAndAddTextNodes(parsed, nodes)
+                                    }
+                                    
+                                    // Extract image
+                                    val src = match.groupValues[1]
+                                    val absoluteImagePath = resolvePath(chapter.href, src)
+                                    val imageData = parsedBook.images[absoluteImagePath.lowercase()]
+                                    if (imageData != null) {
+                                        nodes.add(ChapterNode.ImageNode(imageData))
+                                    } else {
+                                        val available = parsedBook.images.keys.take(10).joinToString(", ")
+                                        nodes.add(ChapterNode.TextNode(HtmlToAnnotatedString.parse("[Image missing: $absoluteImagePath] (Keys: $available)")))
+                                    }
+                                    
+                                    lastIndex = match.range.last + 1
                                 }
-                                ch.nodes.forEachIndexed { nIdx, n ->
-                                    list.add(FlatReaderItem.Node(cIdx, nIdx, n))
+                                
+                                // Extract remaining text
+                                if (lastIndex < chapter.content.length) {
+                                    val remainingText = chapter.content.substring(lastIndex)
+                                    if (remainingText.isNotBlank()) {
+                                        val parsed = HtmlToAnnotatedString.parse(remainingText)
+                                        splitAndAddTextNodes(parsed, nodes)
+                                    }
                                 }
-                                list
+                                
+                                // Fallback debug information if the chapter is completely empty but has HTML content
+                                if (nodes.isEmpty() && chapter.content.isNotBlank()) {
+                                    val debugContent = if (chapter.content.length > 200) chapter.content.take(200) + "..." else chapter.content
+                                    nodes.add(ChapterNode.TextNode(androidx.compose.ui.text.AnnotatedString("[Unrecognized Content]\n$debugContent")))
+                                }
+                                
+                                ParsedChapter(chapter.title, nodes.toList())
                             }
-                            _flatItems.value = flattened
-                            recomputeCharacterCounts(flattened)
-                        }
+                        }.awaitAll()
                     }
+
+                    _parsedChapters.value = parsedChapters
+                    val flattened = parsedChapters.flatMapIndexed { cIdx, ch ->
+                        val list = mutableListOf<FlatReaderItem>()
+                        if (ch.title.isNotBlank() && ch.title != "Chapter") {
+                            list.add(FlatReaderItem.Title(cIdx, ch.title))
+                        }
+                        ch.nodes.forEachIndexed { nIdx, n ->
+                            list.add(FlatReaderItem.Node(cIdx, nIdx, n))
+                        }
+                        list
+                    }
+                    _flatItems.value = flattened
+                    recomputeCharacterCounts(flattened, parsedChapters)
+                    _loadingProgress.value = 1f
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
@@ -435,26 +528,25 @@ class ReaderViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        liquidPrefs.unregisterOnSharedPreferenceChangeListener(liquidPrefsListener)
         flushReadingDuration()
     }
 
-    fun saveProgress(flatIndex: Int, offset: Int) {
+    fun saveProgress(chapterIndex: Int, offset: Int, nodeIndex: Int = 0, progressOverride: Float? = null) {
         flushReadingDuration()
         @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
             val book = _bookEntity.value ?: return@launch
-            val flatItem = _flatItems.value.getOrNull(flatIndex) ?: return@launch
-            val chapterIndex = flatItem.chapterIndex
-            val nodeIndex = if (flatItem is FlatReaderItem.Node) flatItem.nodeIndex else 0
-            
             val newPosition = "${chapterIndex}_${offset}_${nodeIndex}"
             
-            // Calculate total progress (approximate)
-            val totalNodes = _parsedChapters.value.sumOf { it.nodes.size }
+            // Calculate total progress (accurate chapter + node calculation or continuous override)
+            val totalChapters = _parsedChapters.value.size.coerceAtLeast(1)
+            val totalNodes = _parsedChapters.value.sumOf { it.nodes.size }.coerceAtLeast(1)
             val currentNodes = _parsedChapters.value.take(chapterIndex).sumOf { it.nodes.size } + nodeIndex
-            val progress = if (totalNodes > 0) currentNodes.toFloat() / totalNodes else 0f
+            val defaultProgress = (currentNodes.toFloat() / totalNodes.toFloat()).coerceIn(0f, 1f)
+            val progress = progressOverride?.coerceIn(0f, 1f) ?: defaultProgress
 
-            val isFirstTimeFinished = (progress >= 0.99f && (book.totalProgress < 0.99f))
+            val isFirstTimeFinished = (progress >= 0.999f && (book.totalProgress < 0.999f))
             val updatedBook = book.copy(
                 lastReadPosition = newPosition,
                 lastReadTime = System.currentTimeMillis(),
@@ -469,6 +561,214 @@ class ReaderViewModel(
                     type = com.example.epubreader.ui.components.toast.ToastType.Success,
                     durationMs = 4000L
                 )
+            }
+        }
+    }
+
+    private suspend fun syncProgressFromCloud(context: Context, currentBook: BookEntity): BookEntity {
+        val prefs = context.getSharedPreferences("liquid_settings", Context.MODE_PRIVATE)
+        val url = prefs.getString("webdav_url", "") ?: ""
+        val user = prefs.getString("webdav_user", "") ?: ""
+        val pass = prefs.getString("webdav_pass", "") ?: ""
+
+        if (url.isBlank()) return currentBook
+
+        withContext(Dispatchers.Main) {
+            com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                text = "☁️ 正在从云端同步最新阅读进度...",
+                type = com.example.epubreader.ui.components.toast.ToastType.Info,
+                durationMs = 2500L
+            )
+        }
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val client = WebDavClient(url, user, pass)
+                val remoteJsonStr = client.getTextFile("/.epub_reader/progress_sync.json")
+                    ?: client.getTextFile("/epub_reader_progress.json")
+
+                if (!remoteJsonStr.isNullOrBlank()) {
+                    val rootJson = org.json.JSONObject(remoteJsonStr)
+                    val itemsArray = rootJson.optJSONArray("items")
+                    if (itemsArray != null) {
+                        for (i in 0 until itemsArray.length()) {
+                            val itemObj = itemsArray.getJSONObject(i)
+                            val filePath = itemObj.optString("filePath", "")
+                            val title = itemObj.optString("title", "")
+                            
+                            val matches = (filePath.isNotBlank() && filePath == currentBook.filePath) ||
+                                          (title.isNotBlank() && title == currentBook.title)
+                            
+                            if (matches) {
+                                val remoteLastReadTime = itemObj.optLong("lastReadTime", 0L)
+                                val remotePos = itemObj.optString("lastReadPosition", "")
+                                val remoteProgress = itemObj.optDouble("totalProgress", 0.0).toFloat()
+
+                                if (remoteLastReadTime > currentBook.lastReadTime && remotePos.isNotBlank()) {
+                                    val updatedBook = currentBook.copy(
+                                        lastReadPosition = remotePos,
+                                        totalProgress = remoteProgress,
+                                        lastReadTime = remoteLastReadTime
+                                    )
+                                    dao.updateBook(updatedBook)
+                                    withContext(Dispatchers.Main) {
+                                        com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                                            text = "☁️ 已从云端同步最新阅读进度 (${(remoteProgress * 100).toInt()}%)",
+                                            type = com.example.epubreader.ui.components.toast.ToastType.Success,
+                                            durationMs = 3000L
+                                        )
+                                    }
+                                    return@withContext updatedBook
+                                } else {
+                                    withContext(Dispatchers.Main) {
+                                        com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                                            text = "☁️ 云端进度已同步，当前为最新进度",
+                                            type = com.example.epubreader.ui.components.toast.ToastType.Success,
+                                            durationMs = 2500L
+                                        )
+                                    }
+                                    return@withContext currentBook
+                                }
+                            }
+                        }
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                        text = "☁️ 云端进度检查完毕，当前为最新进度",
+                        type = com.example.epubreader.ui.components.toast.ToastType.Success,
+                        durationMs = 2500L
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                        text = "☁️ 云端进度同步失败: ${e.localizedMessage ?: "连接超时"}",
+                        type = com.example.epubreader.ui.components.toast.ToastType.Error,
+                        durationMs = 3000L
+                    )
+                }
+            }
+            currentBook
+        }
+    }
+
+    private var hasUploadedOnClose = false
+
+    fun uploadProgressToCloud(context: Context) {
+        if (hasUploadedOnClose) return
+        hasUploadedOnClose = true
+
+        val book = _bookEntity.value ?: return
+        val prefs = context.getSharedPreferences("liquid_settings", Context.MODE_PRIVATE)
+        val url = prefs.getString("webdav_url", "") ?: ""
+        val user = prefs.getString("webdav_user", "") ?: ""
+        val pass = prefs.getString("webdav_pass", "") ?: ""
+
+        if (url.isBlank()) return
+
+        com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+            text = "☁️ 正在上传最新阅读进度至云端...",
+            type = com.example.epubreader.ui.components.toast.ToastType.Info,
+            durationMs = 2500L
+        )
+
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+            try {
+                val client = WebDavClient(url, user, pass)
+                val bookDao = AppDatabase.getDatabase(context).bookDao()
+                val latestBook = bookDao.getBookById(book.id) ?: book
+
+                if (latestBook.lastReadPosition.isNullOrBlank()) return@launch
+
+                // Fetch remote json to merge
+                try {
+                    client.createDirectory("/.epub_reader")
+                } catch (ignored: Exception) {}
+
+                val remoteJsonStr = client.getTextFile("/.epub_reader/progress_sync.json")
+                    ?: client.getTextFile("/epub_reader_progress.json")
+
+                val remoteItemsMap = mutableMapOf<String, org.json.JSONObject>()
+                if (!remoteJsonStr.isNullOrBlank()) {
+                    try {
+                        val rootJson = org.json.JSONObject(remoteJsonStr)
+                        val itemsArray = rootJson.optJSONArray("items")
+                        if (itemsArray != null) {
+                            for (i in 0 until itemsArray.length()) {
+                                val itemObj = itemsArray.getJSONObject(i)
+                                val filePath = itemObj.optString("filePath", "")
+                                val title = itemObj.optString("title", "")
+                                val key = if (filePath.isNotBlank()) filePath else title
+                                if (key.isNotBlank()) {
+                                    remoteItemsMap[key] = itemObj
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                // Update current book in remote items
+                val currentBookObj = org.json.JSONObject().apply {
+                    put("title", latestBook.title)
+                    put("author", latestBook.author)
+                    put("filePath", latestBook.filePath)
+                    put("fileName", latestBook.filePath.substringAfterLast("/"))
+                    put("lastReadPosition", latestBook.lastReadPosition ?: "")
+                    put("totalProgress", latestBook.totalProgress.toDouble())
+                    put("lastReadTime", latestBook.lastReadTime)
+                }
+
+                val keyByPath = latestBook.filePath
+                val keyByTitle = latestBook.title
+                val finalKey = if (keyByPath.isNotBlank()) keyByPath else keyByTitle
+                remoteItemsMap[finalKey] = currentBookObj
+
+                val mergedArray = org.json.JSONArray()
+                for ((_, obj) in remoteItemsMap) {
+                    mergedArray.put(obj)
+                }
+
+                val outputJson = org.json.JSONObject().apply {
+                    put("version", 1)
+                    put("lastSyncTime", System.currentTimeMillis())
+                    put("items", mergedArray)
+                }
+
+                val jsonContent = outputJson.toString(2)
+                var (uploadSuccess, uploadError) = client.uploadTextFile("/epub_reader_progress.json", jsonContent)
+                if (!uploadSuccess) {
+                    val res2 = client.uploadTextFile("/.epub_reader/progress_sync.json", jsonContent)
+                    uploadSuccess = res2.first
+                    uploadError = res2.second
+                }
+
+                withContext(Dispatchers.Main) {
+                    if (uploadSuccess) {
+                        com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                            text = "☁️ 阅读进度已成功上传至云端",
+                            type = com.example.epubreader.ui.components.toast.ToastType.Success,
+                            durationMs = 3000L
+                        )
+                    } else {
+                        com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                            text = "☁️ 上传云端进度失败: ${uploadError ?: "网络异常"}",
+                            type = com.example.epubreader.ui.components.toast.ToastType.Error,
+                            durationMs = 3500L
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    com.example.epubreader.ui.components.toast.GlobalToastManager.show(
+                        text = "☁️ 上传云端进度失败: ${e.localizedMessage ?: "连接失败"}",
+                        type = com.example.epubreader.ui.components.toast.ToastType.Error,
+                        durationMs = 3500L
+                    )
+                }
             }
         }
     }

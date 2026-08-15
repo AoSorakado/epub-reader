@@ -12,6 +12,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -100,6 +102,8 @@ fun SettingsScreen(
     var rootCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var buttonBounds by remember { mutableStateOf(Rect.Zero) }
     var themeButtonBounds by remember { mutableStateOf(Rect.Zero) }
+    val themeCoordsRef = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val webDavCoordsRef = remember { arrayOfNulls<LayoutCoordinates>(1) }
 
     val syncState by viewModel.syncState.collectAsState()
     val syncMessage by viewModel.syncMessage.collectAsState()
@@ -110,6 +114,8 @@ fun SettingsScreen(
     val pageAnimStyle by viewModel.pageAnimStyle.collectAsState()
     val isCustomThemeThreeColors by viewModel.isCustomThemeThreeColors.collectAsState()
     val customColors by viewModel.customColors.collectAsState()
+    val isProgressSyncing by viewModel.isProgressSyncing.collectAsState()
+    val lastProgressSyncTime by viewModel.lastProgressSyncTime.collectAsState()
 
     var isCustomThemeExpanded by remember { mutableStateOf(false) }
     var isThemeExpanded by remember { mutableStateOf(false) }
@@ -176,11 +182,13 @@ fun SettingsScreen(
             containerColor = Color.Transparent,
             contentColor = primaryTextColor
         ) { padding ->
+            val scrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(horizontal = 16.dp),
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 val themeAccent = getThemeAccentColor(appTheme, if (isCustomThemeThreeColors) customColors else customColors.take(2))
@@ -194,11 +202,7 @@ fun SettingsScreen(
                             .fillMaxWidth()
                             .height(60.dp)
                             .onGloballyPositioned { coords ->
-                                if (!isThemeTransitioning) {
-                                    rootCoords?.let { root ->
-                                        themeButtonBounds = root.localBoundingBoxOf(coords, clipBounds = false)
-                                    }
-                                }
+                                themeCoordsRef[0] = coords
                             }
                             .graphicsLayer {
                                 alpha = if (isThemeTransitioning) 0f else 1f
@@ -215,7 +219,18 @@ fun SettingsScreen(
                                 onDrawSurface = { drawRect(Color.White.copy(alpha = 0.10f)) }
                             )
                             .clip(RoundedCornerShape(24.dp))
-                            .clickable { if (!isThemeTransitioning) isThemeExpanded = true }
+                            .clickable {
+                                if (!isThemeTransitioning) {
+                                    rootCoords?.let { root ->
+                                        themeCoordsRef[0]?.let { coords ->
+                                            if (coords.isAttached) {
+                                                themeButtonBounds = root.localBoundingBoxOf(coords, clipBounds = false)
+                                            }
+                                        }
+                                    }
+                                    isThemeExpanded = true
+                                }
+                            }
                             .padding(horizontal = 20.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -374,12 +389,8 @@ fun SettingsScreen(
                             .fillMaxWidth()
                             .height(56.dp)
                             .onGloballyPositioned { coords ->
-                            if (!isTransitioning) {
-                                rootCoords?.let { root ->
-                                    buttonBounds = root.localBoundingBoxOf(coords, clipBounds = false)
-                                }
+                                webDavCoordsRef[0] = coords
                             }
-                        }
                         .graphicsLayer {
                             // Completely hidden when morphing takes over
                             alpha = if (isTransitioning) 0f else 1f
@@ -401,11 +412,131 @@ fun SettingsScreen(
                                 drawRect(Color.White.copy(alpha = 0.10f))
                             }
                         )
-                        .clickable { if (!isTransitioning) isWebDavExpanded = true },
+                        .clickable {
+                            if (!isTransitioning) {
+                                rootCoords?.let { root ->
+                                    webDavCoordsRef[0]?.let { coords ->
+                                        if (coords.isAttached) {
+                                            buttonBounds = root.localBoundingBoxOf(coords, clipBounds = false)
+                                        }
+                                    }
+                                }
+                                isWebDavExpanded = true
+                            }
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     CollapsedWebDavButton(primaryTextColor = primaryTextColor)
                 }
+
+                // 2. Reading Progress Cloud Sync Card
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .drawBackdrop(
+                            backdrop = backgroundBackdrop,
+                            shape = { RoundedCornerShape(22.dp) },
+                            effects = {
+                                vibrancy()
+                                blur(3f.dp.toPx())
+                                lens(8f.dp.toPx(), 16f.dp.toPx(), chromaticAberration = true)
+                            },
+                            highlight = { Highlight.Plain },
+                            onDrawSurface = {
+                                drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
+                            }
+                        )
+                        .border(
+                            width = 0.6.dp,
+                            color = Color.White.copy(alpha = if (isDark) 0.25f else 0.50f),
+                            shape = RoundedCornerShape(22.dp)
+                        )
+                        .clip(RoundedCornerShape(22.dp))
+                        .padding(horizontal = 18.dp, vertical = 14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            val syncRotation by androidx.compose.animation.core.animateFloatAsState(
+                                targetValue = if (isProgressSyncing) 360f else 0f,
+                                animationSpec = if (isProgressSyncing) {
+                                    androidx.compose.animation.core.infiniteRepeatable(
+                                        animation = androidx.compose.animation.core.tween(1000, easing = androidx.compose.animation.core.LinearEasing)
+                                    )
+                                } else {
+                                    androidx.compose.animation.core.spring()
+                                },
+                                label = "syncRotation"
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(themeAccent.copy(alpha = if (isDark) 0.22f else 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Sync,
+                                    contentDescription = "Sync Progress",
+                                    tint = themeAccent,
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .graphicsLayer { rotationZ = syncRotation }
+                                )
+                            }
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "阅读进度云同步",
+                                    fontSize = 15.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryTextColor
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (lastProgressSyncTime > 0) {
+                                        "上次同步: ${formatSyncTime(lastProgressSyncTime)} · 多端实时互通"
+                                    } else {
+                                        "同步至 WebDAV 云端，支持多设备跨端续读"
+                                    },
+                                    fontSize = 12.sp,
+                                    color = secondaryTextColor,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        LiquidButton(
+                            onClick = { viewModel.syncReadingProgress() },
+                            backdrop = backgroundBackdrop,
+                            surfaceColor = themeAccent.copy(alpha = if (isDark) 0.30f else 0.18f),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .height(38.dp)
+                                .defaultMinSize(minWidth = 72.dp)
+                        ) {
+                            Text(
+                                text = if (isProgressSyncing) "同步中..." else "立即同步",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = themeAccent
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(140.dp))
             }
         }
         }
@@ -982,3 +1113,13 @@ fun ExpandedThemePickerContent(
         }
     }
 }
+
+private fun formatSyncTime(timestamp: Long): String {
+    if (timestamp <= 0) return "未同步"
+    val diff = System.currentTimeMillis() - timestamp
+    if (diff < 60_000) return "刚刚"
+    if (diff < 3600_000) return "${diff / 60_000} 分钟前"
+    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+    return sdf.format(java.util.Date(timestamp))
+}
+

@@ -5,6 +5,7 @@ import com.example.epubreader.data.model.network.WebDavResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -20,14 +21,28 @@ class WebDavClient(
     private val username: String,
     private val password: String
 ) {
+    private val credential = if (username.isNotBlank() || password.isNotBlank()) {
+        Credentials.basic(username, password)
+    } else null
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val req = chain.request()
+            val newReq = if (credential != null && req.header("Authorization") == null) {
+                req.newBuilder().header("Authorization", credential).build()
+            } else req
+            chain.proceed(newReq)
+        }
         .authenticator { _, response ->
-            val credential = Credentials.basic(username, password)
-            response.request.newBuilder()
-                .header("Authorization", credential)
-                .build()
+            if (response.request.header("Authorization") != null) {
+                null
+            } else if (credential != null) {
+                response.request.newBuilder()
+                    .header("Authorization", credential)
+                    .build()
+            } else null
         }
         .build()
 
@@ -158,14 +173,88 @@ class WebDavClient(
         true
     }
 
-    suspend fun streamFile(path: String, block: (java.io.InputStream) -> Unit): Boolean = withContext(Dispatchers.IO) {
-        val url = if (path.startsWith("http")) path else {
-            val startIndex = baseUrl.indexOf("://") + 3
-            val slashIndex = baseUrl.indexOf("/", startIndex)
-            val serverHost = if (slashIndex != -1) baseUrl.substring(0, slashIndex) else baseUrl
-            if (path.startsWith("/")) serverHost + path else "$baseUrl/$path"
+    fun resolveUrl(path: String): String {
+        if (path.startsWith("http://") || path.startsWith("https://")) {
+            return path
         }
-        
+        val cleanBase = baseUrl.trimEnd('/')
+        return try {
+            val uri = java.net.URI(baseUrl)
+            val hostOrigin = "${uri.scheme}://${uri.authority}"
+            val basePath = uri.path?.trimEnd('/') ?: ""
+
+            if (path.startsWith("/")) {
+                if (basePath.isNotEmpty() && path.startsWith(basePath)) {
+                    "$hostOrigin$path"
+                } else if (basePath.isEmpty()) {
+                    "$hostOrigin$path"
+                } else {
+                    "$hostOrigin$basePath$path"
+                }
+            } else {
+                "$cleanBase/$path"
+            }
+        } catch (e: Exception) {
+            val cleanPath = path.trimStart('/')
+            "$cleanBase/$cleanPath"
+        }
+    }
+
+    suspend fun uploadTextFile(path: String, content: String): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        val url = resolveUrl(path)
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody = content.toRequestBody(mediaType)
+        val request = Request.Builder()
+            .url(url)
+            .put(requestBody)
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    Pair(true, null)
+                } else {
+                    val code = response.code
+                    val msg = response.message
+                    Pair(false, "HTTP $code ($msg)")
+                }
+            }
+        } catch (e: Exception) {
+            Pair(false, e.localizedMessage ?: "连接失败")
+        }
+    }
+
+    suspend fun getTextFile(path: String): String? = withContext(Dispatchers.IO) {
+        val url = resolveUrl(path)
+        val request = Request.Builder().url(url).get().build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    response.body?.string()
+                } else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun createDirectory(path: String): Boolean = withContext(Dispatchers.IO) {
+        val url = resolveUrl(path)
+        val request = Request.Builder()
+            .url(url)
+            .method("MKCOL", "".toRequestBody())
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful || response.code == 405 // 405 means directory already exists
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun streamFile(path: String, block: (java.io.InputStream) -> Unit): Boolean = withContext(Dispatchers.IO) {
+        val url = resolveUrl(path)
         val request = Request.Builder().url(url).build()
 
         client.newCall(request).execute().use { response ->

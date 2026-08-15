@@ -22,24 +22,24 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import com.example.epubreader.ui.reader.components.SimulationPageView
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import eu.wewox.pagecurl.ExperimentalPageCurlApi
-import eu.wewox.pagecurl.config.PageCurlConfig
-import eu.wewox.pagecurl.config.rememberPageCurlConfig
-import eu.wewox.pagecurl.page.PageCurl
-import eu.wewox.pagecurl.page.rememberPageCurlState
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalPageCurlApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PagedReaderView(
     pages: List<ReaderPage>,
@@ -55,7 +55,9 @@ fun PagedReaderView(
     lineHeightMult: Float,
     paragraphSpacing: Float,
     customFontFamily: FontFamily?,
+    customFontUri: String? = null,
     bookTitle: String,
+    topPadding: Dp = 48.dp,
     modifier: Modifier = Modifier
 ) {
     if (pages.isEmpty()) {
@@ -75,73 +77,27 @@ fun PagedReaderView(
 
     when (pageAnimStyle) {
         // ==========================================
-        // 0. 仿真 / 拟真 (Authentic Book Paper Curl Simulation)
+        // 0. 仿真 / 拟真 (Classic High-Fidelity 120Hz Simulation View)
         // ==========================================
         0 -> {
-            val curlState = rememberPageCurlState(initialCurrent = safeCurrentPage)
-            val curlConfig = rememberPageCurlConfig(
-                backPageColor = bgColor,
-                backPageContentAlpha = 0.08f,
-                shadowColor = Color.Black,
-                shadowAlpha = 0.22f,
-                shadowRadius = 8.dp
-            )
-
-            LaunchedEffect(safeCurrentPage) {
-                if (safeCurrentPage != curlState.current) {
-                    curlState.snapTo(safeCurrentPage)
-                }
-            }
-
-            LaunchedEffect(curlState.current) {
-                if (curlState.current != safeCurrentPage) {
-                    onPageChanged(curlState.current)
-                }
-            }
-
-            Box(
+            SimulationPageView(
+                pages = pages,
+                currentPageIndex = safeCurrentPage,
+                onPageChanged = onPageChanged,
+                onToggleToolbars = onToggleToolbars,
+                onOpenToc = onOpenToc,
+                bgColor = bgColor,
+                textColor = textColor,
+                secondaryTextColor = secondaryTextColor,
+                textSize = textSize,
+                lineHeightMult = lineHeightMult,
+                paragraphSpacing = paragraphSpacing,
+                customFontFamily = customFontFamily,
+                customFontUri = customFontUri,
+                bookTitle = bookTitle,
+                topPadding = topPadding,
                 modifier = modifier
-                    .fillMaxSize()
-                    .background(bgColor)
-            ) {
-                PageCurl(
-                    count = pages.size,
-                    state = curlState,
-                    config = curlConfig,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(bgColor)
-                ) { index ->
-                    key(index) {
-                        val page = pages.getOrNull(index) ?: return@PageCurl
-                        SinglePageRender(
-                            page = page,
-                            totalPages = pages.size,
-                            bookTitle = bookTitle,
-                            bgColor = bgColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            textSize = textSize,
-                            lineHeightMult = lineHeightMult,
-                            paragraphSpacing = paragraphSpacing,
-                            customFontFamily = customFontFamily,
-                            onOpenToc = onOpenToc,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-
-                // Central hit-zone for menu toggle
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.44f)
-                        .fillMaxHeight(0.65f)
-                        .align(Alignment.Center)
-                        .pointerInput(Unit) {
-                            detectTapGestures(onTap = { onToggleToolbars() })
-                        }
-                )
-            }
+            )
         }
 
         // ==========================================
@@ -209,6 +165,7 @@ fun PagedReaderView(
                             lineHeightMult = lineHeightMult,
                             paragraphSpacing = paragraphSpacing,
                             customFontFamily = customFontFamily,
+                            topPadding = topPadding,
                             onOpenToc = onOpenToc,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -360,6 +317,7 @@ fun PagedReaderView(
                                     lineHeightMult = lineHeightMult,
                                     paragraphSpacing = paragraphSpacing,
                                     customFontFamily = customFontFamily,
+                                    topPadding = topPadding,
                                     onOpenToc = onOpenToc,
                                     modifier = Modifier.fillMaxSize()
                                 )
@@ -376,6 +334,7 @@ fun PagedReaderView(
                                 lineHeightMult = lineHeightMult,
                                 paragraphSpacing = paragraphSpacing,
                                 customFontFamily = customFontFamily,
+                                topPadding = topPadding,
                                 onOpenToc = onOpenToc,
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -396,6 +355,7 @@ fun PagedReaderView(
                                 lineHeightMult = lineHeightMult,
                                 paragraphSpacing = paragraphSpacing,
                                 customFontFamily = customFontFamily,
+                                topPadding = topPadding,
                                 onOpenToc = onOpenToc,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -412,6 +372,7 @@ fun PagedReaderView(
                                     lineHeightMult = lineHeightMult,
                                     paragraphSpacing = paragraphSpacing,
                                     customFontFamily = customFontFamily,
+                                    topPadding = topPadding,
                                     onOpenToc = onOpenToc,
                                     modifier = Modifier
                                         .fillMaxSize()
@@ -432,6 +393,7 @@ fun PagedReaderView(
                                 lineHeightMult = lineHeightMult,
                                 paragraphSpacing = paragraphSpacing,
                                 customFontFamily = customFontFamily,
+                                topPadding = topPadding,
                                 onOpenToc = onOpenToc,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -489,6 +451,7 @@ fun PagedReaderView(
                     lineHeightMult = lineHeightMult,
                     paragraphSpacing = paragraphSpacing,
                     customFontFamily = customFontFamily,
+                    topPadding = topPadding,
                     onOpenToc = onOpenToc,
                     modifier = Modifier
                         .fillMaxSize()
@@ -509,6 +472,7 @@ fun PagedReaderView(
                             lineHeightMult = lineHeightMult,
                             paragraphSpacing = paragraphSpacing,
                             customFontFamily = customFontFamily,
+                            topPadding = topPadding,
                             onOpenToc = onOpenToc,
                             modifier = Modifier
                                 .fillMaxSize()
@@ -555,6 +519,7 @@ fun PagedReaderView(
                     lineHeightMult = lineHeightMult,
                     paragraphSpacing = paragraphSpacing,
                     customFontFamily = customFontFamily,
+                    topPadding = topPadding,
                     onOpenToc = onOpenToc,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -575,14 +540,21 @@ private fun SinglePageRender(
     lineHeightMult: Float,
     paragraphSpacing: Float,
     customFontFamily: FontFamily?,
+    topPadding: Dp = 48.dp,
     onOpenToc: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val titleFontSize = remember(textSize) { (textSize * 1.32f).sp }
+    val titleLineHeight = remember(textSize) { (textSize * 1.32f * 1.32f).sp }
+    val bodyFontSize = remember(textSize) { textSize.sp }
+    val bodyLineHeight = remember(textSize, lineHeightMult) { (textSize * lineHeightMult).coerceAtLeast(textSize * 1.15f).sp }
+    val bottomSpacing = remember(paragraphSpacing) { paragraphSpacing.dp }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(bgColor)
-            .padding(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 20.dp)
+            .padding(start = 18.dp, end = 18.dp, top = topPadding, bottom = 20.dp)
     ) {
         // Page Body Elements (Occupies main viewport cleanly)
         Column(
@@ -595,42 +567,47 @@ private fun SinglePageRender(
                     is PageElement.Title -> {
                         Text(
                             text = element.title,
-                            fontSize = (textSize * 1.32f).sp,
+                            fontSize = titleFontSize,
                             fontWeight = FontWeight.Bold,
                             color = textColor,
                             fontFamily = customFontFamily,
-                            lineHeight = (textSize * 1.32f * 1.32f).sp,
+                            lineHeight = titleLineHeight,
                             modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
                         )
                     }
                     is PageElement.Paragraph -> {
-                        val displayText = if (!element.isContinuation && !element.text.text.startsWith("　") && !element.text.text.startsWith("  ")) {
-                            "　　" + element.text.text
-                        } else {
-                            element.text.text
+                        val displayText = remember(element.text.text, element.isContinuation) {
+                            if (!element.isContinuation && !element.text.text.startsWith("　") && !element.text.text.startsWith("  ")) {
+                                "　　" + element.text.text
+                            } else {
+                                element.text.text
+                            }
                         }
                         Text(
                             text = displayText,
                             fontFamily = customFontFamily,
-                            fontSize = textSize.sp,
-                            lineHeight = (textSize * lineHeightMult).coerceAtLeast(textSize * 1.15f).sp,
+                            fontSize = bodyFontSize,
+                            lineHeight = bodyLineHeight,
                             color = textColor,
-                            modifier = Modifier.padding(bottom = paragraphSpacing.dp)
+                            modifier = Modifier.padding(bottom = bottomSpacing)
                         )
                     }
                     is PageElement.Image -> {
-                        androidx.compose.foundation.Image(
-                            bitmap = element.bitmap,
-                            contentDescription = null,
-                            contentScale = ContentScale.FillWidth,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 12.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                        )
+                        element.bitmap?.let { bmp ->
+                            androidx.compose.foundation.Image(
+                                bitmap = bmp,
+                                contentDescription = null,
+                                contentScale = ContentScale.FillWidth,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 12.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                            )
+                        }
                     }
                 }
             }
         }
     }
 }
+
