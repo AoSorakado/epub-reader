@@ -1,6 +1,7 @@
 package com.example.epubreader.ui.reader
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -66,16 +67,16 @@ fun PagedReaderView(
 
     when (pageAnimStyle) {
         // ==========================================
-        // 0. 仿真 / 拟真 (True Physical Page Curl & Corner Peel)
+        // 0. 仿真 / 拟真 (Physical PageCurl with Theme Paper Color & Full Edge Bleed)
         // ==========================================
         0 -> {
             val curlState = rememberPageCurlState(initialCurrent = safeCurrentPage)
             val curlConfig = rememberPageCurlConfig(
                 backPageColor = bgColor,
-                backPageContentAlpha = 0.04f,
+                backPageContentAlpha = 0.0f,
                 shadowColor = Color.Black,
-                shadowAlpha = 0.35f,
-                shadowRadius = 16.dp,
+                shadowAlpha = 0.28f,
+                shadowRadius = 12.dp,
                 dragInteraction = PageCurlConfig.GestureDragInteraction(
                     pointerBehavior = PageCurlConfig.DragInteraction.PointerBehavior.PageEdge
                 )
@@ -102,7 +103,9 @@ fun PagedReaderView(
                     count = pages.size,
                     state = curlState,
                     config = curlConfig,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(bgColor)
                 ) { index ->
                     key(index) {
                         val page = pages.getOrNull(index) ?: return@PageCurl
@@ -225,7 +228,7 @@ fun PagedReaderView(
                     if (safeCurrentPage < pages.size - 1) {
                         coroutineScope.launch {
                             dragDirection = -1
-                            coverOffset.animateTo(-widthPx, tween(260))
+                            coverOffset.animateTo(-widthPx, tween(320, easing = FastOutSlowInEasing))
                             onPageChanged(safeCurrentPage + 1)
                             coverOffset.snapTo(0f)
                             dragDirection = 0
@@ -238,7 +241,7 @@ fun PagedReaderView(
                         coroutineScope.launch {
                             dragDirection = 1
                             coverOffset.snapTo(-widthPx)
-                            coverOffset.animateTo(0f, tween(260))
+                            coverOffset.animateTo(0f, tween(320, easing = FastOutSlowInEasing))
                             onPageChanged(safeCurrentPage - 1)
                             coverOffset.snapTo(0f)
                             dragDirection = 0
@@ -272,14 +275,14 @@ fun PagedReaderView(
                                     -1 -> {
                                         if (currentVal < -widthPx * 0.18f || velocity < -500f) {
                                             coroutineScope.launch {
-                                                coverOffset.animateTo(-widthPx, tween(200))
+                                                coverOffset.animateTo(-widthPx, tween(260, easing = FastOutSlowInEasing))
                                                 onPageChanged(safeCurrentPage + 1)
                                                 coverOffset.snapTo(0f)
                                                 dragDirection = 0
                                             }
                                         } else {
                                             coroutineScope.launch {
-                                                coverOffset.animateTo(0f, tween(200))
+                                                coverOffset.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
                                                 dragDirection = 0
                                             }
                                         }
@@ -287,14 +290,14 @@ fun PagedReaderView(
                                     1 -> {
                                         if (currentVal > -widthPx * 0.82f || velocity > 500f) {
                                             coroutineScope.launch {
-                                                coverOffset.animateTo(0f, tween(200))
+                                                coverOffset.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
                                                 onPageChanged(safeCurrentPage - 1)
                                                 coverOffset.snapTo(0f)
                                                 dragDirection = 0
                                             }
                                         } else {
                                             coroutineScope.launch {
-                                                coverOffset.animateTo(-widthPx, tween(200))
+                                                coverOffset.animateTo(-widthPx, tween(260, easing = FastOutSlowInEasing))
                                                 dragDirection = 0
                                             }
                                         }
@@ -304,7 +307,7 @@ fun PagedReaderView(
                             },
                             onDragCancel = {
                                 coroutineScope.launch {
-                                    coverOffset.animateTo(0f, tween(200))
+                                    coverOffset.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
                                     dragDirection = 0
                                 }
                             },
@@ -437,7 +440,7 @@ fun PagedReaderView(
                 if (target in 0 until pages.size && target != safeCurrentPage) {
                     coroutineScope.launch {
                         targetPageIndex = target
-                        fadeProgress.animateTo(1f, tween(260))
+                        fadeProgress.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
                         onPageChanged(target)
                         targetPageIndex = null
                         fadeProgress.snapTo(0f)

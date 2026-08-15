@@ -257,6 +257,7 @@ fun ReaderScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(bgColor)
     ) {
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize().background(bgColor), contentAlignment = Alignment.Center) {
