@@ -41,6 +41,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.Shadow
 import com.example.epubreader.data.db.AppDatabase
 import com.example.epubreader.data.model.BookEntity
 import com.example.epubreader.ui.theme.getThemeAccentColor
@@ -115,6 +121,7 @@ fun StatsScreen(
                     subtitle = if (state.totalReadingMinutes >= 60) "${state.totalReadingMinutes / 60}小时${state.totalReadingMinutes % 60}分" else "累计阅读时长",
                     icon = Icons.Filled.Timer,
                     iconColor = themeAccent,
+                    backdrop = globalBackdrop,
                     primaryTextColor = primaryTextColor,
                     secondaryTextColor = secondaryTextColor,
                     isDark = isDark
@@ -127,6 +134,7 @@ fun StatsScreen(
                     subtitle = if (state.todayReadingMinutes > 0) "保持好习惯" else "待开始阅读",
                     icon = Icons.Filled.LocalFireDepartment,
                     iconColor = Color(0xFFFF5722),
+                    backdrop = globalBackdrop,
                     primaryTextColor = primaryTextColor,
                     secondaryTextColor = secondaryTextColor,
                     isDark = isDark
@@ -149,6 +157,7 @@ fun StatsScreen(
                     subtitle = "本地及云端",
                     icon = Icons.AutoMirrored.Filled.MenuBook,
                     iconColor = Color(0xFF3B82F6),
+                    backdrop = globalBackdrop,
                     primaryTextColor = primaryTextColor,
                     secondaryTextColor = secondaryTextColor,
                     isDark = isDark
@@ -161,6 +170,7 @@ fun StatsScreen(
                     subtitle = "收录系列",
                     icon = Icons.AutoMirrored.Filled.LibraryBooks,
                     iconColor = Color(0xFF8B5CF6),
+                    backdrop = globalBackdrop,
                     primaryTextColor = primaryTextColor,
                     secondaryTextColor = secondaryTextColor,
                     isDark = isDark
@@ -175,6 +185,7 @@ fun StatsScreen(
                 activeDaysCount = state.activeDaysCount,
                 currentStreakDays = state.currentStreakDays,
                 maxStreakDays = state.maxStreakDays,
+                backdrop = globalBackdrop,
                 themeAccent = themeAccent,
                 primaryTextColor = primaryTextColor,
                 secondaryTextColor = secondaryTextColor,
@@ -186,6 +197,7 @@ fun StatsScreen(
             // 3. Weekly Reading Trend Line Chart (近 7 天阅读趋势)
             WeeklyTrendChartCard(
                 weeklyTrend = state.weeklyTrend,
+                backdrop = globalBackdrop,
                 themeAccent = themeAccent,
                 primaryTextColor = primaryTextColor,
                 secondaryTextColor = secondaryTextColor,
@@ -199,6 +211,7 @@ fun StatsScreen(
                 total = state.totalBooks,
                 finished = state.finishedBooks,
                 reading = state.readingBooks,
+                backdrop = globalBackdrop,
                 themeAccent = themeAccent,
                 primaryTextColor = primaryTextColor,
                 secondaryTextColor = secondaryTextColor,
@@ -229,6 +242,7 @@ fun StatsScreen(
                                 tag = "最近在读",
                                 tagColor = themeAccent,
                                 book = book,
+                                backdrop = globalBackdrop,
                                 primaryTextColor = primaryTextColor,
                                 secondaryTextColor = secondaryTextColor,
                                 isDark = isDark,
@@ -243,6 +257,7 @@ fun StatsScreen(
                                     tag = "最新导入",
                                     tagColor = Color(0xFF10B981),
                                     book = book,
+                                    backdrop = globalBackdrop,
                                     primaryTextColor = primaryTextColor,
                                     secondaryTextColor = secondaryTextColor,
                                     isDark = isDark,
@@ -266,6 +281,7 @@ fun LiquidStatCard(
     subtitle: String? = null,
     icon: ImageVector,
     iconColor: Color,
+    backdrop: com.kyant.backdrop.Backdrop,
     primaryTextColor: Color,
     secondaryTextColor: Color,
     isDark: Boolean
@@ -273,28 +289,54 @@ fun LiquidStatCard(
     Box(
         modifier = modifier
             .height(130.dp)
-            .shadow(
-                elevation = if (isDark) 0.dp else 4.dp,
-                shape = RoundedCornerShape(22.dp),
-                ambientColor = Color.Black.copy(alpha = 0.05f),
-                spotColor = Color.Black.copy(alpha = 0.08f)
-            )
-            .clip(RoundedCornerShape(22.dp))
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.12f else 0.55f),
-                        Color.White.copy(alpha = if (isDark) 0.04f else 0.30f)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(22.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = { 
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
+                    ) 
+                },
+                onDrawSurface = { 
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                            )
+                        )
                     )
-                )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                iconColor.copy(alpha = if (isDark) 0.18f else 0.24f),
+                                iconColor.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
+                }
             )
             .border(
                 width = 0.8.dp,
-                brush = Brush.verticalGradient(
+                brush = Brush.linearGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.38f else 0.75f),
-                        Color.White.copy(alpha = if (isDark) 0.08f else 0.25f)
-                    )
+                        iconColor.copy(alpha = if (isDark) 0.50f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                        Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+                        iconColor.copy(alpha = if (isDark) 0.25f else 0.35f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                 ),
                 shape = RoundedCornerShape(22.dp)
             )
@@ -366,6 +408,7 @@ fun LiquidStatCard(
 @Composable
 fun WeeklyTrendChartCard(
     weeklyTrend: List<DayReadingStat>,
+    backdrop: com.kyant.backdrop.Backdrop,
     themeAccent: Color,
     primaryTextColor: Color,
     secondaryTextColor: Color,
@@ -389,28 +432,54 @@ fun WeeklyTrendChartCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .shadow(
-                elevation = if (isDark) 0.dp else 4.dp,
-                shape = RoundedCornerShape(24.dp),
-                ambientColor = Color.Black.copy(alpha = 0.05f),
-                spotColor = Color.Black.copy(alpha = 0.08f)
-            )
-            .clip(RoundedCornerShape(24.dp))
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.12f else 0.55f),
-                        Color.White.copy(alpha = if (isDark) 0.04f else 0.30f)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(24.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = { 
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
+                    ) 
+                },
+                onDrawSurface = { 
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                            )
+                        )
                     )
-                )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                themeAccent.copy(alpha = if (isDark) 0.16f else 0.22f),
+                                themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
+                }
             )
             .border(
                 width = 0.8.dp,
-                brush = Brush.verticalGradient(
+                brush = Brush.linearGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.38f else 0.75f),
-                        Color.White.copy(alpha = if (isDark) 0.08f else 0.25f)
-                    )
+                        themeAccent.copy(alpha = if (isDark) 0.50f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                        Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+                        themeAccent.copy(alpha = if (isDark) 0.25f else 0.35f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                 ),
                 shape = RoundedCornerShape(24.dp)
             )
@@ -566,6 +635,7 @@ fun ProgressRingCard(
     total: Int,
     finished: Int,
     reading: Int,
+    backdrop: com.kyant.backdrop.Backdrop,
     themeAccent: Color,
     primaryTextColor: Color,
     secondaryTextColor: Color,
@@ -584,28 +654,54 @@ fun ProgressRingCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .shadow(
-                elevation = if (isDark) 0.dp else 4.dp,
-                shape = RoundedCornerShape(24.dp),
-                ambientColor = Color.Black.copy(alpha = 0.05f),
-                spotColor = Color.Black.copy(alpha = 0.08f)
-            )
-            .clip(RoundedCornerShape(24.dp))
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.12f else 0.55f),
-                        Color.White.copy(alpha = if (isDark) 0.04f else 0.30f)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(24.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = { 
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
+                    ) 
+                },
+                onDrawSurface = { 
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                            )
+                        )
                     )
-                )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                themeAccent.copy(alpha = if (isDark) 0.16f else 0.22f),
+                                themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
+                }
             )
             .border(
                 width = 0.8.dp,
-                brush = Brush.verticalGradient(
+                brush = Brush.linearGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.38f else 0.75f),
-                        Color.White.copy(alpha = if (isDark) 0.08f else 0.25f)
-                    )
+                        themeAccent.copy(alpha = if (isDark) 0.50f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                        Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+                        themeAccent.copy(alpha = if (isDark) 0.25f else 0.35f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                 ),
                 shape = RoundedCornerShape(24.dp)
             )
@@ -722,6 +818,7 @@ fun RecentBookLiquidCard(
     tag: String,
     tagColor: Color,
     book: BookEntity,
+    backdrop: com.kyant.backdrop.Backdrop,
     primaryTextColor: Color,
     secondaryTextColor: Color,
     isDark: Boolean,
@@ -731,32 +828,58 @@ fun RecentBookLiquidCard(
         modifier = Modifier
             .width(190.dp)
             .height(260.dp)
-            .shadow(
-                elevation = if (isDark) 0.dp else 4.dp,
-                shape = RoundedCornerShape(22.dp),
-                ambientColor = Color.Black.copy(alpha = 0.05f),
-                spotColor = Color.Black.copy(alpha = 0.08f)
-            )
-            .clip(RoundedCornerShape(22.dp))
-            .clickable(onClick = onClick)
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.12f else 0.55f),
-                        Color.White.copy(alpha = if (isDark) 0.04f else 0.30f)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(22.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = { 
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
+                    ) 
+                },
+                onDrawSurface = { 
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                            )
+                        )
                     )
-                )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                tagColor.copy(alpha = if (isDark) 0.18f else 0.24f),
+                                tagColor.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
+                }
             )
             .border(
                 width = 0.8.dp,
-                brush = Brush.verticalGradient(
+                brush = Brush.linearGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.38f else 0.75f),
-                        Color.White.copy(alpha = if (isDark) 0.08f else 0.25f)
-                    )
+                        tagColor.copy(alpha = if (isDark) 0.50f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                        Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+                        tagColor.copy(alpha = if (isDark) 0.25f else 0.35f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                 ),
                 shape = RoundedCornerShape(22.dp)
             )
+            .clickable(onClick = onClick)
             .padding(14.dp)
     ) {
         Column {
@@ -845,6 +968,7 @@ fun AnnualHeatmapCard(
     activeDaysCount: Int,
     currentStreakDays: Int,
     maxStreakDays: Int,
+    backdrop: com.kyant.backdrop.Backdrop,
     themeAccent: Color,
     primaryTextColor: Color,
     secondaryTextColor: Color,
@@ -873,28 +997,54 @@ fun AnnualHeatmapCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .shadow(
-                elevation = if (isDark) 0.dp else 4.dp,
-                shape = RoundedCornerShape(22.dp),
-                ambientColor = Color.Black.copy(alpha = 0.05f),
-                spotColor = Color.Black.copy(alpha = 0.08f)
-            )
-            .clip(RoundedCornerShape(22.dp))
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.12f else 0.55f),
-                        Color.White.copy(alpha = if (isDark) 0.04f else 0.30f)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(22.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = { 
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
+                    ) 
+                },
+                onDrawSurface = { 
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                            )
+                        )
                     )
-                )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                themeAccent.copy(alpha = if (isDark) 0.16f else 0.22f),
+                                themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
+                }
             )
             .border(
                 width = 0.8.dp,
-                brush = Brush.verticalGradient(
+                brush = Brush.linearGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.38f else 0.75f),
-                        Color.White.copy(alpha = if (isDark) 0.08f else 0.25f)
-                    )
+                        themeAccent.copy(alpha = if (isDark) 0.50f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                        Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+                        themeAccent.copy(alpha = if (isDark) 0.25f else 0.35f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                 ),
                 shape = RoundedCornerShape(22.dp)
             )

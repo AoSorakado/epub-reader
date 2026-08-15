@@ -598,6 +598,7 @@ fun BookshelfScreen(
                             isPressed = false, 
                             backdrop = globalBackdrop, 
                             isDark = isDark,
+                            themeAccent = themeAccent,
                             isHidden = isOpeningThis || isItemContextMenuActive || isEditingThis,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor,
@@ -628,6 +629,7 @@ fun BookshelfScreen(
                             isHidden = isSeriesHidden,
                             isListLayout = layoutMethod == 1,
                             isDark = isDark,
+                            themeAccent = themeAccent,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor,
                             onPositioned = { coords ->
@@ -1164,6 +1166,7 @@ fun BookshelfScreen(
                                     isPressed = false,
                                     backdrop = globalBackdrop,
                                     isDark = isDark,
+                                    themeAccent = themeAccent,
                                     primaryTextColor = primaryTextColor,
                                     secondaryTextColor = secondaryTextColor
                                 )
@@ -1177,6 +1180,7 @@ fun BookshelfScreen(
                                 backdrop = globalBackdrop,
                                 isListLayout = layoutMethod == 1,
                                 isDark = isDark,
+                                themeAccent = themeAccent,
                                 primaryTextColor = primaryTextColor,
                                 secondaryTextColor = secondaryTextColor,
                                 onClick = {}
@@ -1870,6 +1874,7 @@ fun SeriesItem(
     isHidden: Boolean = false,
     isListLayout: Boolean = false,
     isDark: Boolean = false,
+    themeAccent: Color = Color(0xFF007AFF),
     primaryTextColor: Color = Color(0xFF1E1E24),
     secondaryTextColor: Color = Color(0xFF543866),
     onPositioned: ((LayoutCoordinates) -> Unit)? = null,
@@ -1925,20 +1930,35 @@ fun SeriesItem(
                     drawRect(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
-                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                                Color.White.copy(alpha = if (isDark) (if (isItemPressed) 0.18f else 0.14f) else (if (isItemPressed) 0.28f else 0.24f)),
+                                Color.White.copy(alpha = if (isDark) (if (isItemPressed) 0.05f else 0.04f) else (if (isItemPressed) 0.12f else 0.10f))
                             )
                         )
-                    ) 
+                    )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                themeAccent.copy(alpha = if (isDark) 0.16f else 0.22f),
+                                themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
                 }
             )
             .border(
                 width = 0.8.dp,
-                brush = Brush.verticalGradient(
+                brush = Brush.linearGradient(
                     colors = listOf(
+                        themeAccent.copy(alpha = if (isDark) 0.50f else 0.70f),
                         Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
-                        Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
-                    )
+                        Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+                        themeAccent.copy(alpha = if (isDark) 0.25f else 0.35f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                 ),
                 shape = RoundedCornerShape(22.dp)
             )
@@ -2428,6 +2448,7 @@ fun BookItem(
     isPressed: Boolean = false,
     backdrop: com.kyant.backdrop.Backdrop,
     isDark: Boolean = false,
+    themeAccent: Color = Color(0xFF007AFF),
     primaryTextColor: Color = Color(0xFF1E1E24),
     secondaryTextColor: Color = Color(0xFF543866),
     isHidden: Boolean = false,
@@ -2485,20 +2506,35 @@ fun BookItem(
                     drawRect(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
-                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                                Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.18f else 0.14f) else (if (isPressed || isItemPressed) 0.28f else 0.24f)),
+                                Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.05f else 0.04f) else (if (isPressed || isItemPressed) 0.12f else 0.10f))
                             )
                         )
-                    ) 
+                    )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                themeAccent.copy(alpha = if (isDark) 0.16f else 0.22f),
+                                themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
                 }
             )
             .border(
                 width = 0.8.dp,
-                brush = Brush.verticalGradient(
+                brush = Brush.linearGradient(
                     colors = listOf(
+                        themeAccent.copy(alpha = if (isDark) 0.50f else 0.70f),
                         Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
-                        Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
-                    )
+                        Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+                        themeAccent.copy(alpha = if (isDark) 0.25f else 0.35f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                 ),
                 shape = RoundedCornerShape(22.dp)
             )
@@ -2769,15 +2805,30 @@ fun SeriesInnerBookRow(
                             )
                         )
                     )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                themeAccent.copy(alpha = if (isDark) 0.16f else 0.22f),
+                                themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
                 }
             )
             .border(
                 width = 0.8.dp,
-                brush = Brush.verticalGradient(
+                brush = Brush.linearGradient(
                     colors = listOf(
+                        themeAccent.copy(alpha = if (isDark) 0.50f else 0.70f),
                         Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
-                        Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
-                    )
+                        Color.White.copy(alpha = if (isDark) 0.08f else 0.20f),
+                        themeAccent.copy(alpha = if (isDark) 0.25f else 0.35f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                 ),
                 shape = RoundedCornerShape(20.dp)
             )
