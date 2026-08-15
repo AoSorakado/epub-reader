@@ -13,14 +13,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -179,12 +177,13 @@ fun PagedReaderView(
                 // 0: 仿真 / 拟真 3D 翻页 (Simulation / 3D Page Curl)
                 0 -> {
                     if (offsetVal < 0) {
-                        // Turning Next: Underneath page is Next Page, Top page is Current Page flipping away
+                        // Turning Next: Underneath page is Next Page (opaque paper background)
                         if (safeCurrentPage + 1 < pages.size) {
                             SinglePageRender(
                                 page = pages[safeCurrentPage + 1],
                                 totalPages = pages.size,
                                 bookTitle = bookTitle,
+                                bgColor = bgColor,
                                 textColor = textColor,
                                 secondaryTextColor = secondaryTextColor,
                                 textSize = textSize,
@@ -193,7 +192,8 @@ fun PagedReaderView(
                                 customFontFamily = customFontFamily,
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .drawBehind {
+                                    .drawWithContent {
+                                        drawContent()
                                         // Shadow on incoming page cast by turning page
                                         val shadowAlpha = (1f - abs(progress)) * 0.22f
                                         drawRect(Color.Black.copy(alpha = shadowAlpha))
@@ -201,11 +201,12 @@ fun PagedReaderView(
                             )
                         }
 
-                        // Current Page flipping with 3D rotation & back spine gradient
+                        // Current Page flipping with 3D rotation, drop shadow & fold spine lighting
                         SinglePageRender(
                             page = pages[safeCurrentPage],
                             totalPages = pages.size,
                             bookTitle = bookTitle,
+                            bgColor = bgColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             textSize = textSize,
@@ -214,13 +215,15 @@ fun PagedReaderView(
                             customFontFamily = customFontFamily,
                             modifier = Modifier
                                 .fillMaxSize()
+                                .shadow(elevation = (16 * abs(progress)).dp, shape = RectangleShape, clip = false)
                                 .graphicsLayer {
                                     cameraDistance = 12000f
                                     transformOrigin = TransformOrigin(0f, 0.5f)
-                                    rotationY = progress * 75f
+                                    rotationY = progress * 65f
                                     translationX = offsetVal * 0.35f
                                 }
-                                .drawBehind {
+                                .drawWithContent {
+                                    drawContent()
                                     // Curl fold edge highlight and shadow
                                     val foldX = size.width * (1f + progress)
                                     if (abs(progress) > 0.01f) {
@@ -228,12 +231,12 @@ fun PagedReaderView(
                                             brush = Brush.horizontalGradient(
                                                 colors = listOf(
                                                     Color.Transparent,
-                                                    Color.Black.copy(alpha = 0.12f * abs(progress)),
-                                                    Color.White.copy(alpha = 0.25f * abs(progress)),
+                                                    Color.Black.copy(alpha = 0.15f * abs(progress)),
+                                                    Color.White.copy(alpha = 0.30f * abs(progress)),
                                                     Color.Transparent
                                                 ),
-                                                startX = (foldX - 80f).coerceAtLeast(0f),
-                                                endX = foldX + 40f
+                                                startX = (foldX - 90f).coerceAtLeast(0f),
+                                                endX = foldX + 50f
                                             )
                                         )
                                     }
@@ -245,6 +248,7 @@ fun PagedReaderView(
                             page = pages[safeCurrentPage],
                             totalPages = pages.size,
                             bookTitle = bookTitle,
+                            bgColor = bgColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             textSize = textSize,
@@ -253,7 +257,8 @@ fun PagedReaderView(
                             customFontFamily = customFontFamily,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .drawBehind {
+                                .drawWithContent {
+                                    drawContent()
                                     val shadowAlpha = progress * 0.22f
                                     drawRect(Color.Black.copy(alpha = shadowAlpha))
                                 }
@@ -264,6 +269,7 @@ fun PagedReaderView(
                                 page = pages[safeCurrentPage - 1],
                                 totalPages = pages.size,
                                 bookTitle = bookTitle,
+                                bgColor = bgColor,
                                 textColor = textColor,
                                 secondaryTextColor = secondaryTextColor,
                                 textSize = textSize,
@@ -272,10 +278,11 @@ fun PagedReaderView(
                                 customFontFamily = customFontFamily,
                                 modifier = Modifier
                                     .fillMaxSize()
+                                    .shadow(elevation = (16 * progress).dp, shape = RectangleShape, clip = false)
                                     .graphicsLayer {
                                         cameraDistance = 12000f
                                         transformOrigin = TransformOrigin(0f, 0.5f)
-                                        rotationY = -75f + (progress * 75f)
+                                        rotationY = -65f + (progress * 65f)
                                         translationX = -widthPx + (offsetVal * 0.65f)
                                     }
                             )
@@ -285,6 +292,7 @@ fun PagedReaderView(
                             page = pages[safeCurrentPage],
                             totalPages = pages.size,
                             bookTitle = bookTitle,
+                            bgColor = bgColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             textSize = textSize,
@@ -304,6 +312,7 @@ fun PagedReaderView(
                             page = pages[safeCurrentPage - 1],
                             totalPages = pages.size,
                             bookTitle = bookTitle,
+                            bgColor = bgColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             textSize = textSize,
@@ -312,6 +321,7 @@ fun PagedReaderView(
                             customFontFamily = customFontFamily,
                             modifier = Modifier
                                 .fillMaxSize()
+                                .shadow(elevation = 12.dp, shape = RectangleShape, clip = false)
                                 .graphicsLayer { translationX = offsetVal - widthPx }
                         )
                     }
@@ -321,6 +331,7 @@ fun PagedReaderView(
                         page = pages[safeCurrentPage],
                         totalPages = pages.size,
                         bookTitle = bookTitle,
+                        bgColor = bgColor,
                         textColor = textColor,
                         secondaryTextColor = secondaryTextColor,
                         textSize = textSize,
@@ -329,6 +340,7 @@ fun PagedReaderView(
                         customFontFamily = customFontFamily,
                         modifier = Modifier
                             .fillMaxSize()
+                            .shadow(elevation = 12.dp, shape = RectangleShape, clip = false)
                             .graphicsLayer { translationX = offsetVal }
                     )
 
@@ -338,6 +350,7 @@ fun PagedReaderView(
                             page = pages[safeCurrentPage + 1],
                             totalPages = pages.size,
                             bookTitle = bookTitle,
+                            bgColor = bgColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             textSize = textSize,
@@ -346,6 +359,7 @@ fun PagedReaderView(
                             customFontFamily = customFontFamily,
                             modifier = Modifier
                                 .fillMaxSize()
+                                .shadow(elevation = 12.dp, shape = RectangleShape, clip = false)
                                 .graphicsLayer { translationX = offsetVal + widthPx }
                         )
                     }
@@ -360,6 +374,7 @@ fun PagedReaderView(
                                 page = pages[safeCurrentPage + 1],
                                 totalPages = pages.size,
                                 bookTitle = bookTitle,
+                                bgColor = bgColor,
                                 textColor = textColor,
                                 secondaryTextColor = secondaryTextColor,
                                 textSize = textSize,
@@ -374,6 +389,7 @@ fun PagedReaderView(
                             page = pages[safeCurrentPage],
                             totalPages = pages.size,
                             bookTitle = bookTitle,
+                            bgColor = bgColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             textSize = textSize,
@@ -382,8 +398,8 @@ fun PagedReaderView(
                             customFontFamily = customFontFamily,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .graphicsLayer { translationX = offsetVal }
                                 .shadow(elevation = 16.dp, shape = RectangleShape, clip = false)
+                                .graphicsLayer { translationX = offsetVal }
                         )
                     } else if (offsetVal > 0) {
                         // Underneath: Current Page
@@ -391,6 +407,7 @@ fun PagedReaderView(
                             page = pages[safeCurrentPage],
                             totalPages = pages.size,
                             bookTitle = bookTitle,
+                            bgColor = bgColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             textSize = textSize,
@@ -405,6 +422,7 @@ fun PagedReaderView(
                                 page = pages[safeCurrentPage - 1],
                                 totalPages = pages.size,
                                 bookTitle = bookTitle,
+                                bgColor = bgColor,
                                 textColor = textColor,
                                 secondaryTextColor = secondaryTextColor,
                                 textSize = textSize,
@@ -413,15 +431,16 @@ fun PagedReaderView(
                                 customFontFamily = customFontFamily,
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .graphicsLayer { translationX = offsetVal - widthPx }
                                     .shadow(elevation = 16.dp, shape = RectangleShape, clip = false)
-                        )
+                                    .graphicsLayer { translationX = offsetVal - widthPx }
+                            )
                         }
                     } else {
                         SinglePageRender(
                             page = pages[safeCurrentPage],
                             totalPages = pages.size,
                             bookTitle = bookTitle,
+                            bgColor = bgColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             textSize = textSize,
@@ -438,11 +457,13 @@ fun PagedReaderView(
                     val fadeRatio = abs(progress)
                     val targetPage = if (offsetVal < 0) safeCurrentPage + 1 else safeCurrentPage - 1
 
+                    // Base/underneath page
                     if (targetPage in 0 until pages.size && fadeRatio > 0.01f) {
                         SinglePageRender(
                             page = pages[targetPage],
                             totalPages = pages.size,
                             bookTitle = bookTitle,
+                            bgColor = bgColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             textSize = textSize,
@@ -459,10 +480,12 @@ fun PagedReaderView(
                         )
                     }
 
+                    // Top page fading out
                     SinglePageRender(
                         page = pages[safeCurrentPage],
                         totalPages = pages.size,
                         bookTitle = bookTitle,
+                        bgColor = bgColor,
                         textColor = textColor,
                         secondaryTextColor = secondaryTextColor,
                         textSize = textSize,
@@ -485,6 +508,7 @@ fun PagedReaderView(
                         page = pages[safeCurrentPage],
                         totalPages = pages.size,
                         bookTitle = bookTitle,
+                        bgColor = bgColor,
                         textColor = textColor,
                         secondaryTextColor = secondaryTextColor,
                         textSize = textSize,
@@ -504,6 +528,7 @@ private fun SinglePageRender(
     page: ReaderPage,
     totalPages: Int,
     bookTitle: String,
+    bgColor: Color,
     textColor: Color,
     secondaryTextColor: Color,
     textSize: Float,
@@ -515,6 +540,7 @@ private fun SinglePageRender(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .background(bgColor)
             .padding(top = 52.dp, bottom = 42.dp, start = 24.dp, end = 24.dp)
     ) {
         // Page Top Header
