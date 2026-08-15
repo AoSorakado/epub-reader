@@ -1099,11 +1099,7 @@ fun BookshelfScreen(
             }
 
             if (effectiveTargetBounds != Rect.Zero && target != null) {
-                val elevatedScale = if (isContextMenuOpen) {
-                    lerp(0.93f, 1.04f, contextMenuProgress)
-                } else {
-                    lerp(1.0f, 1.04f, contextMenuProgress)
-                }
+                val elevatedScale = lerp(1.0f, 1.04f, contextMenuProgress)
 
                 // 1. Focused Elevated Floating Item
                 Box(
@@ -1114,7 +1110,7 @@ fun BookshelfScreen(
                             height = with(density) { effectiveTargetBounds.height.toDp() }
                         )
                         .graphicsLayer {
-                            alpha = if (showEditDialogForBook != null) 0f else contextMenuProgress
+                            alpha = if (showEditDialogForBook != null || isEditExpanded) 0f else 1f
                             scaleX = elevatedScale
                             scaleY = elevatedScale
                         }
@@ -1677,7 +1673,7 @@ fun BookshelfScreen(
         if ((isEditExpanded || editExpandProgress > 0.001f) && activeEditBook != null) {
             val book = activeEditBook!!
             val expandedWidthPx = minOf(screenWidthPx * 0.90f, with(density) { 420.dp.toPx() })
-            val expandedHeightPx = minOf(screenHeightPx * 0.82f, with(density) { 560.dp.toPx() })
+            val expandedHeightPx = minOf(screenHeightPx * 0.85f, with(density) { 440.dp.toPx() })
             val targetLeft = (screenWidthPx - expandedWidthPx) / 2f
             val targetTop = (screenHeightPx - expandedHeightPx) / 2f
 
@@ -1796,6 +1792,7 @@ fun BookshelfScreen(
                             themeAccent = themeAccent,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor,
+                            showCardContainer = false,
                             onDismissRequest = { isEditExpanded = false },
                             onConfirm = { newTitle, newAuthor, newSeries, newCoverUri ->
                                 viewModel.updateBookInfo(book, newTitle, newAuthor, newSeries, newCoverUri, context)

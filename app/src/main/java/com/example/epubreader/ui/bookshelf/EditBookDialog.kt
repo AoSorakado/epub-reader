@@ -57,6 +57,7 @@ fun EditBookDialog(
     themeAccent: Color = Color(0xFF007AFF),
     primaryTextColor: Color = Color(0xFF1E1E24),
     secondaryTextColor: Color = Color(0xFF543866),
+    showCardContainer: Boolean = true,
     onDismissRequest: () -> Unit,
     onConfirm: (newTitle: String, newAuthor: String, newSeries: String?, newCoverUri: Uri?) -> Unit
 ) {
@@ -138,8 +139,8 @@ fun EditBookDialog(
         sdf.format(Date(book.addedTime))
     }
 
-    Column(
-        modifier = Modifier
+    val containerModifier = if (showCardContainer) {
+        Modifier
             .fillMaxWidth()
             .drawBackdrop(
                 backdrop = backdrop,
@@ -174,7 +175,15 @@ fun EditBookDialog(
                 ),
                 shape = RoundedCornerShape(24.dp)
             )
-            .padding(20.dp),
+            .padding(20.dp)
+    } else {
+        Modifier
+            .fillMaxWidth()
+            .padding(20.dp)
+    }
+
+    Column(
+        modifier = containerModifier,
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // Header
