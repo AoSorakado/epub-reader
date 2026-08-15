@@ -8,13 +8,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.epubreader.R
 
-// Official Claude (Anthropic Sans) UI Font Family
+// Signature Claude (Anthropic Serif) Typography Font Family (Exact match to Claude chat & reading)
 val ClaudeUIFontFamily = FontFamily(
-    Font(R.font.anthropic_sans_regular, FontWeight.Normal),
-    Font(R.font.anthropic_sans_medium, FontWeight.Medium),
-    Font(R.font.anthropic_sans_semibold, FontWeight.SemiBold),
-    Font(R.font.anthropic_sans_bold, FontWeight.Bold),
-    Font(R.font.anthropic_sans_extrabold, FontWeight.ExtraBold)
+    Font(R.font.anthropic_serif_regular, FontWeight.Normal),
+    Font(R.font.anthropic_serif_medium, FontWeight.Medium),
+    Font(R.font.anthropic_serif_semibold, FontWeight.SemiBold),
+    Font(R.font.anthropic_serif_bold, FontWeight.Bold),
+    Font(R.font.anthropic_serif_extrabold, FontWeight.ExtraBold)
 )
 
 // Claude-inspired Typography: Clean, intellectual, balanced human-centered typography with optical tracking
