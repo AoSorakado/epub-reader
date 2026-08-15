@@ -1714,22 +1714,39 @@ fun SeriesItem(
             .fillMaxWidth()
             .drawBackdrop(
                 backdrop = backdrop,
-                shape = { RoundedCornerShape(20.dp) },
+                shape = { RoundedCornerShape(22.dp) },
                 effects = {
                     vibrancy()
-                    blur(3f.dp.toPx())
+                    blur(4f.dp.toPx())
                     lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
                 },
                 highlight = { Highlight.Plain },
                 shadow = { 
                     Shadow(
-                        radius = 10.dp,
-                        color = Color.Black.copy(alpha = 0.08f)
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
                     ) 
                 },
                 onDrawSurface = { 
-                    drawRect(Color.White.copy(alpha = 0.12f)) 
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                            )
+                        )
+                    ) 
                 }
+            )
+            .border(
+                width = 0.8.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                        Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
+                    )
+                ),
+                shape = RoundedCornerShape(22.dp)
             )
             .padding(10.dp)
     ) {
@@ -1840,39 +1857,83 @@ fun SeriesItemContent(
                                 scaleY = scaleVal
                                 rotationZ = rotVal
                             }
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(0.6.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
+                            .clip(RoundedCornerShape(10.dp))
+                            .border(
+                                0.7.dp,
+                                Brush.verticalGradient(
+                                    listOf(Color.White.copy(alpha = 0.50f), Color.White.copy(alpha = 0.20f))
+                                ),
+                                RoundedCornerShape(10.dp)
+                            ),
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        shadowElevation = (6 - rank * 2).dp
+                        shadowElevation = (8 - rank * 2).dp
                     ) {
-                        if (book.coverImage != null && File(book.coverImage).exists()) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(File(book.coverImage))
-                                    .crossfade(false)
-                                    .build(),
-                                contentDescription = "Cover",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                Text("暂无封面", style = MaterialTheme.typography.bodySmall)
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (book.coverImage != null && File(book.coverImage).exists()) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(File(book.coverImage))
+                                        .crossfade(false)
+                                        .build(),
+                                    contentDescription = "Cover",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.2f))) {
+                                    Text("暂无封面", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                                }
                             }
+                            // Spine 3D Shadow
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .width(6.dp)
+                                    .align(Alignment.CenterStart)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                Color.Black.copy(alpha = 0.35f),
+                                                Color.White.copy(alpha = 0.15f),
+                                                Color.Transparent
+                                            )
+                                        )
+                                    )
+                            )
                         }
                     }
                 }
                 
+                // Series Volume Badge
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(4.dp)
+                        .padding(5.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color.Black.copy(alpha = 0.45f))
-                        .border(0.6.dp, Color.White.copy(alpha = 0.40f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.Black.copy(alpha = 0.70f),
+                                    Color.Black.copy(alpha = 0.50f)
+                                )
+                            )
+                        )
+                        .border(
+                            0.6.dp,
+                            Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.55f), Color.White.copy(alpha = 0.20f))
+                            ),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 7.dp, vertical = 3.dp)
                 ) {
-                    Text("${books.size} 册", color = Color.White, fontSize = 10.5.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text(
+                        "${books.size} 册",
+                        color = Color.White,
+                        fontSize = 10.5.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
+                        letterSpacing = 0.2.sp
+                    )
                 }
             }
             
@@ -1913,13 +1974,20 @@ fun BookItemContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(80.dp),
+                .height(84.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(56.dp, 80.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(58.dp, 84.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .border(
+                        0.6.dp,
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.15f))
+                        ),
+                        RoundedCornerShape(10.dp)
+                    )
             ) {
                 if (book.coverImage != null && File(book.coverImage).exists()) {
                     AsyncImage(
@@ -1941,6 +2009,23 @@ fun BookItemContent(
                         Text("暂无", style = MaterialTheme.typography.bodySmall, color = Color.White)
                     }
                 }
+
+                // Spine 3D illusion
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(6.dp)
+                        .align(Alignment.CenterStart)
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color.Black.copy(alpha = 0.35f),
+                                    Color.White.copy(alpha = 0.15f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                )
             }
             
             Spacer(modifier = Modifier.width(16.dp))
@@ -1992,7 +2077,7 @@ fun BookItemContent(
                         text = statusText,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                        color = if (isFinished) Color(0xFF34C759) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else secondaryTextColor)
+                        color = if (isFinished) Color(0xFF10B981) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else secondaryTextColor)
                     )
                 }
             }
@@ -2006,7 +2091,14 @@ fun BookItemContent(
                 modifier = Modifier
                     .aspectRatio(0.7f)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(10.dp))
+                    .border(
+                        0.6.dp,
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.15f))
+                        ),
+                        RoundedCornerShape(10.dp)
+                    )
             ) {
                 if (book.coverImage != null && File(book.coverImage).exists()) {
                     AsyncImage(
@@ -2023,13 +2115,30 @@ fun BookItemContent(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.15f))
+                            .background(Color.Black.copy(alpha = 0.18f))
                     ) {
                         Text("暂无封面", style = MaterialTheme.typography.bodySmall, color = Color.White)
                     }
                 }
 
-                // Reading Progress Pill Badge on Cover
+                // Physical 3D Book Spine illusion on left edge
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(6.dp)
+                        .align(Alignment.CenterStart)
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color.Black.copy(alpha = 0.38f),
+                                    Color.White.copy(alpha = 0.16f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                )
+
+                // Frosted Glass Progress Pill Badge on Cover
                 val isCoverFinished = book.totalProgress >= 0.999f
                 val isCoverUnread = book.totalProgress <= 0.0001f && (book.lastReadPosition.isNullOrEmpty() || book.lastReadPosition == "0_0_0")
                 val coverProgressPercentFloat = (book.totalProgress * 100f).coerceIn(0.1f, 99.9f)
@@ -2038,28 +2147,42 @@ fun BookItemContent(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(4.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color.Black.copy(alpha = 0.50f))
-                        .border(0.5.dp, Color.White.copy(alpha = 0.40f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                        .padding(5.dp)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.Black.copy(alpha = 0.65f),
+                                    Color.Black.copy(alpha = 0.50f)
+                                )
+                            )
+                        )
+                        .border(
+                            0.5.dp,
+                            Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.15f))
+                            ),
+                            RoundedCornerShape(7.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.5.dp)
                 ) {
                     Text(
                         text = progressText,
-                        color = if (isCoverFinished) Color(0xFF34C759) else Color.White,
+                        color = if (isCoverFinished) Color(0xFF10B981) else Color(0xFFF1F5F9),
                         fontSize = 10.sp,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        letterSpacing = 0.2.sp
                     )
                 }
 
-                // Micro Progress Bar along bottom edge
+                // Micro Glowing Progress Bar along bottom edge
                 if (book.totalProgress > 0f) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
-                            .height(2.5.dp)
-                            .background(Color.Black.copy(alpha = 0.35f))
+                            .height(3.dp)
+                            .background(Color.Black.copy(alpha = 0.45f))
                     ) {
                         Box(
                             modifier = Modifier
@@ -2069,7 +2192,7 @@ fun BookItemContent(
                                     brush = Brush.horizontalGradient(
                                         colors = listOf(
                                             if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF),
-                                            if (isDark) Color(0xFF818CF8) else Color(0xFF5856D6)
+                                            if (isDark) Color(0xFF818CF8) else Color(0xFF6366F1)
                                         )
                                     )
                                 )
@@ -2151,22 +2274,39 @@ fun BookItem(
             )
             .drawBackdrop(
                 backdrop = backdrop,
-                shape = { RoundedCornerShape(20.dp) },
+                shape = { RoundedCornerShape(22.dp) },
                 effects = {
                     vibrancy()
-                    blur(3f.dp.toPx())
+                    blur(4f.dp.toPx())
                     lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
                 },
                 highlight = { Highlight.Plain },
                 shadow = { 
                     Shadow(
-                        radius = 10.dp,
-                        color = Color.Black.copy(alpha = 0.08f)
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
                     ) 
                 },
                 onDrawSurface = { 
-                    drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f)) 
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                            )
+                        )
+                    ) 
                 }
+            )
+            .border(
+                width = 0.8.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                        Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
+                    )
+                ),
+                shape = RoundedCornerShape(22.dp)
             )
             .padding(10.dp)
     ) {
