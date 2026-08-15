@@ -329,6 +329,7 @@ fun EditBookDialog(
                     value = title,
                     onValueChange = { title = it },
                     textStyle = TextStyle(
+                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
                         fontSize = 14.sp,
                         color = primaryTextColor,
                         fontWeight = FontWeight.Normal
@@ -368,6 +369,7 @@ fun EditBookDialog(
                         value = author,
                         onValueChange = { author = it },
                         textStyle = TextStyle(
+                            fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
                             fontSize = 14.sp,
                             color = primaryTextColor,
                             fontWeight = FontWeight.Normal
@@ -402,6 +404,7 @@ fun EditBookDialog(
                         value = series,
                         onValueChange = { series = it },
                         textStyle = TextStyle(
+                            fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
                             fontSize = 14.sp,
                             color = primaryTextColor,
                             fontWeight = FontWeight.Normal

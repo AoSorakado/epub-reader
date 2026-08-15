@@ -832,47 +832,65 @@ fun ExpandedWebDavForm(
         unfocusedContainerColor = if (isDark) Color.White.copy(alpha = 0.06f) else Color.White.copy(alpha = 0.10f)
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    CompositionLocalProvider(
+        LocalTextStyle provides androidx.compose.ui.text.TextStyle(fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily)
     ) {
-        Text(
-            "WebDAV 配置",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = primaryTextColor
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "WebDAV 配置",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = primaryTextColor
+            )
 
-        OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            label = { Text("Server URL") },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth(),
-            colors = fieldColors
-        )
-        OutlinedTextField(
-            value = user,
-            onValueChange = { user = it },
-            label = { Text("Username") },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth(),
-            colors = fieldColors
-        )
-        OutlinedTextField(
-            value = pass,
-            onValueChange = { pass = it },
-            label = { Text("Password") },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth(),
-            colors = fieldColors
-        )
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = { Text("Server URL", fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily) },
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                    fontSize = 15.sp,
+                    color = primaryTextColor
+                ),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth(),
+                colors = fieldColors
+            )
+            OutlinedTextField(
+                value = user,
+                onValueChange = { user = it },
+                label = { Text("Username", fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily) },
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                    fontSize = 15.sp,
+                    color = primaryTextColor
+                ),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth(),
+                colors = fieldColors
+            )
+            OutlinedTextField(
+                value = pass,
+                onValueChange = { pass = it },
+                label = { Text("Password", fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily) },
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                    fontSize = 15.sp,
+                    color = primaryTextColor
+                ),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth(),
+                colors = fieldColors
+            )
 
         Spacer(modifier = Modifier.weight(1f))
 
@@ -914,6 +932,7 @@ fun ExpandedWebDavForm(
                 Text("同步书库", color = if (isDark) Color(0xFF38BDF8) else Color(0xFF9C27B0), fontSize = 17.sp, fontWeight = FontWeight.Bold)
             }
         }
+    }
     }
 }
 

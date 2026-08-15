@@ -1988,13 +1988,13 @@ fun SeriesItemContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(80.dp),
+                .height(86.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(56.dp, 80.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(60.dp, 86.dp)
+                    .clip(RoundedCornerShape(10.dp))
             ) {
                 val maxVisible = minOf(3, books.size)
                 for (i in maxVisible - 1 downTo 0) {
@@ -2011,7 +2011,7 @@ fun SeriesItemContent(
                                 scaleX = scaleVal
                                 scaleY = scaleVal
                             }
-                            .clip(RoundedCornerShape(8.dp)),
+                            .clip(RoundedCornerShape(10.dp)),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shadowElevation = (maxVisible - i).dp
                     ) {
@@ -2029,14 +2029,54 @@ fun SeriesItemContent(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.SpaceEvenly
             ) {
                 Text(
                     text = seriesName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    color = primaryTextColor
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 15.5.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    ),
+                    color = primaryTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+
+                Text(
+                    text = "包含 ${books.size} 本系列丛书",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                    ),
+                    color = secondaryTextColor.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background((if (isDark) Color(0xFF8B5CF6) else Color(0xFF7C3AED)).copy(alpha = if (isDark) 0.16f else 0.10f))
+                            .border(
+                                0.5.dp,
+                                (if (isDark) Color(0xFF8B5CF6) else Color(0xFF7C3AED)).copy(alpha = if (isDark) 0.30f else 0.20f),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .padding(horizontal = 6.5.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "${books.size} 册全套",
+                            fontSize = 11.5.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            color = if (isDark) Color(0xFFC084FC) else Color(0xFF7C3AED)
+                        )
+                    }
+                }
             }
         }
     } else {
@@ -2188,12 +2228,12 @@ fun BookItemContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(84.dp),
+                .height(86.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(58.dp, 84.dp)
+                    .size(60.dp, 86.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .border(
                         0.6.dp,
@@ -2248,25 +2288,31 @@ fun BookItemContent(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.SpaceEvenly
             ) {
                 Text(
                     text = book.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 15.5.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    ),
                     color = primaryTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+
                 Text(
-                    text = book.author ?: "未知作者",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = secondaryTextColor,
+                    text = if (book.author.isNullOrBlank() || book.author.equals("Unknown", ignoreCase = true)) "暂无作者信息" else book.author,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                    ),
+                    color = secondaryTextColor.copy(alpha = 0.85f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -2276,23 +2322,47 @@ fun BookItemContent(
                     val progressPercentFloat = (book.totalProgress * 100f).coerceIn(0.1f, 99.9f)
                     val progressFormatted = String.format(java.util.Locale.US, "%.1f", progressPercentFloat)
                     val statusText = if (isFinished) "已读完" else if (isUnread) "未读" else "进度 $progressFormatted%"
-                    Text(
-                        text = if (book.isWebDav) "云端同步" else "本地导入",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)
-                    )
+
+                    // 1. Source Tag Pill
                     Box(
                         modifier = Modifier
-                            .size(3.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(secondaryTextColor.copy(alpha = 0.4f))
-                    )
-                    Text(
-                        text = statusText,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                        color = if (isFinished) Color(0xFF10B981) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else secondaryTextColor)
-                    )
+                            .clip(RoundedCornerShape(6.dp))
+                            .background((if (book.isWebDav) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else (if (isDark) Color.White else Color.Black)).copy(alpha = if (isDark) 0.12f else 0.08f))
+                            .border(
+                                0.5.dp,
+                                (if (book.isWebDav) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else (if (isDark) Color.White else Color.Black)).copy(alpha = if (isDark) 0.25f else 0.15f),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .padding(horizontal = 6.5.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = if (book.isWebDav) "云端同步" else "本地导入",
+                            fontSize = 11.5.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                            color = if (book.isWebDav) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else secondaryTextColor
+                        )
+                    }
+
+                    // 2. Reading Status Pill
+                    val statusBgColor = if (isFinished) Color(0xFF10B981) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else Color.Gray)
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(statusBgColor.copy(alpha = if (isDark) 0.14f else 0.10f))
+                            .border(
+                                0.5.dp,
+                                statusBgColor.copy(alpha = if (isDark) 0.30f else 0.20f),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .padding(horizontal = 6.5.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = statusText,
+                            fontSize = 11.5.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            color = if (isFinished) Color(0xFF10B981) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else secondaryTextColor)
+                        )
+                    }
                 }
             }
         }
