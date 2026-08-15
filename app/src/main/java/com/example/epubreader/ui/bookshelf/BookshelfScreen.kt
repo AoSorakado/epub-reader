@@ -2527,7 +2527,7 @@ fun SeriesInnerBookRow(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 84.dp)
+            .heightIn(min = 92.dp)
             .onGloballyPositioned { coords ->
                 onPositioned?.invoke(coords)
             }
@@ -2546,45 +2546,74 @@ fun SeriesInnerBookRow(
                     )
                 } else Modifier
             )
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(
-                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.16f else 0.10f) else (if (isPressed || isItemPressed) 0.26f else 0.20f)),
-                        Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.08f else 0.05f) else (if (isPressed || isItemPressed) 0.14f else 0.10f))
+                        Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.16f else 0.10f) else (if (isPressed || isItemPressed) 0.28f else 0.22f)),
+                        Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.08f else 0.04f) else (if (isPressed || isItemPressed) 0.14f else 0.08f))
                     )
                 )
             )
             .border(
                 width = 0.8.dp,
-                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = if (isDark) 0.25f else 0.45f),
-                        Color.White.copy(alpha = if (isDark) 0.10f else 0.20f)
+                        Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                        Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
                     )
                 ),
-                shape = RoundedCornerShape(18.dp)
+                shape = RoundedCornerShape(20.dp)
             )
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             val volumeColor = if (isDark) Color(0xFF38BDF8) else themeAccent
             val titleColor = if (isDark) Color(0xFFF8FAFC) else primaryTextColor
             val subtitleColor = if (isDark) Color(0xFF94A3B8) else secondaryTextColor
 
-            Text(
-                text = volumeNumber.toString().padStart(2, '0'),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
-                color = volumeColor,
-                modifier = Modifier.width(32.dp)
-            )
+            // Frosted Volume Number Badge
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(36.dp, 36.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(if (isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.35f))
+                    .border(
+                        0.6.dp,
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.White.copy(alpha = if (isDark) 0.35f else 0.60f),
+                                Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
+                            )
+                        ),
+                        RoundedCornerShape(11.dp)
+                    )
+            ) {
+                Text(
+                    text = volumeNumber.toString().padStart(2, '0'),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
+                    color = volumeColor
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Premium 3D Book Cover with Spine Illusion
             Box(
                 modifier = Modifier
-                    .size(44.dp, 64.dp)
+                    .size(50.dp, 72.dp)
                     .clip(RoundedCornerShape(10.dp))
+                    .border(
+                        0.6.dp,
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.15f))
+                        ),
+                        RoundedCornerShape(10.dp)
+                    )
             ) {
                 if (book.coverImage != null && File(book.coverImage).exists()) {
                     AsyncImage(
@@ -2606,6 +2635,23 @@ fun SeriesInnerBookRow(
                         Text("暂无", style = MaterialTheme.typography.labelSmall, color = Color.White)
                     }
                 }
+
+                // Spine 3D physical book bind shadow and highlight
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(6.dp)
+                        .align(Alignment.CenterStart)
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color.Black.copy(alpha = 0.35f),
+                                    Color.White.copy(alpha = 0.15f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                )
 
                 // Micro progress track on cover bottom
                 if (book.totalProgress > 0f) {
@@ -2635,7 +2681,12 @@ fun SeriesInnerBookRow(
 
             Spacer(modifier = Modifier.width(14.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.Center
+            ) {
                 Text(
                     text = compactTitle,
                     style = MaterialTheme.typography.titleMedium,
@@ -2656,8 +2707,8 @@ fun SeriesInnerBookRow(
                     val statusText = if (isFinished) "已读完" else if (isUnread) "未读" else "进度 $progressFormatted%"
                     Text(
                         text = if (book.isWebDav) "云端分卷" else "本地已导入",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = subtitleColor
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)
                     )
                     Box(
                         modifier = Modifier
@@ -2667,9 +2718,9 @@ fun SeriesInnerBookRow(
                     )
                     Text(
                         text = statusText,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelSmall,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                        color = if (isFinished) Color(0xFF34C759) else (if (!isUnread) volumeColor else subtitleColor)
+                        color = if (isFinished) Color(0xFF10B981) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else subtitleColor)
                     )
                 }
             }
