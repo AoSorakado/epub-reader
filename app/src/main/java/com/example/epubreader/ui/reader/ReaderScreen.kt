@@ -895,12 +895,18 @@ fun ReaderScreen(
                             shape = { RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }) },
                             effects = {
                                 vibrancy()
-                                blur(5f.dp.toPx())
-                                lens(8f.dp.toPx(), 16f.dp.toPx(), chromaticAberration = true)
+                                blur(10f.dp.toPx())
+                                lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
                             },
                             highlight = { Highlight.Plain },
                             onDrawSurface = {
-                                val surfaceColor = if (themeIndex == 2) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.22f)
+                                val surfaceColor = if (themeIndex == 2) {
+                                    Color(0xFF0F172A).copy(alpha = 0.72f)
+                                } else if (themeIndex == 1) {
+                                    Color(0xFFF7ECDA).copy(alpha = 0.76f)
+                                } else {
+                                    Color(0xFFFFFFFF).copy(alpha = 0.78f)
+                                }
                                 drawRect(surfaceColor)
                             },
                             exportedBackdrop = bottomSheetBackdrop
@@ -1018,8 +1024,8 @@ fun ReaderScreen(
                                     val sepiaColor = if (isCustomTheme) customColors.getOrElse(1) { Color(0xFFF4ECD8) } else Color(0xFFF4ECD8)
                                     val darkColor = if (isCustomTheme) customColors.getOrElse(2) { Color(0xFF1C1C1E) } else Color(0xFF1C1C1E)
 
-                                    val themeSelectedBg = if (themeIndex == 2) Color.White.copy(0.25f) else Color.Black.copy(0.12f)
-                                    val themeUnselectedBg = if (themeIndex == 2) Color.White.copy(0.05f) else Color.Black.copy(0.04f)
+                                    val themeSelectedBg = if (themeIndex == 2) Color(0xFF38BDF8).copy(0.28f) else if (themeIndex == 1) Color(0xFFC07020).copy(0.22f) else Color(0xFF007AFF).copy(0.18f)
+                                    val themeUnselectedBg = if (themeIndex == 2) Color.White.copy(0.08f) else Color.White.copy(0.55f)
 
                                     LiquidButton(
                                         onClick = { viewModel.setTheme(0) },
@@ -1138,6 +1144,9 @@ fun ReaderScreen(
 
                                 Spacer(modifier = Modifier.height(24.dp))
 
+                                val activeSurface = if (themeIndex == 2) Color(0xFF38BDF8).copy(0.28f) else if (themeIndex == 1) Color(0xFFC07020).copy(0.22f) else Color(0xFF007AFF).copy(0.18f)
+                                val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.08f) else Color.White.copy(0.55f)
+
                                 // 5. Simplified / Traditional Chinese Converter
                                 Text("简繁转换", style = headerStyle)
                                 Spacer(modifier = Modifier.height(14.dp))
@@ -1145,9 +1154,6 @@ fun ReaderScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    val activeSurface = if (themeIndex == 2) Color.White.copy(0.28f) else Color.Black.copy(0.12f)
-                                    val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.06f) else Color.Black.copy(0.04f)
-
                                     LiquidButton(
                                         onClick = { viewModel.setChineseMode(0) },
                                         backdrop = readerBackdrop,
@@ -1183,9 +1189,6 @@ fun ReaderScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    val activeSurface = if (themeIndex == 2) Color.White.copy(0.28f) else Color.Black.copy(0.12f)
-                                    val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.06f) else Color.Black.copy(0.04f)
-
                                     LiquidButton(
                                         onClick = { viewModel.setCustomFontUri(null) },
                                         backdrop = readerBackdrop,
@@ -1220,9 +1223,6 @@ fun ReaderScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    val activeSurface = if (themeIndex == 2) Color.White.copy(0.28f) else Color.Black.copy(0.12f)
-                                    val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.06f) else Color.Black.copy(0.04f)
-
                                     LiquidButton(
                                         onClick = { viewModel.setPageTurnMode(0) },
                                         backdrop = readerBackdrop,
@@ -1256,9 +1256,6 @@ fun ReaderScreen(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        val activeSurface = if (themeIndex == 2) Color.White.copy(0.28f) else Color.Black.copy(0.12f)
-                                        val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.06f) else Color.Black.copy(0.04f)
-
                                         animStyles.forEachIndexed { index, name ->
                                             LiquidButton(
                                                 onClick = { viewModel.setPageAnimStyle(index) },
@@ -1349,12 +1346,18 @@ fun ReaderScreen(
                             shape = { RoundedCornerShape(with(density) { currentCornerRadius.coerceAtLeast(0f).toDp() }) },
                             effects = {
                                 vibrancy()
-                                blur(5f.dp.toPx())
-                                lens(8f.dp.toPx(), 16f.dp.toPx(), chromaticAberration = true)
+                                blur(10f.dp.toPx())
+                                lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
                             },
                             highlight = { Highlight.Plain },
                             onDrawSurface = {
-                                val surfaceColor = if (themeIndex == 2) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.22f)
+                                val surfaceColor = if (themeIndex == 2) {
+                                    Color(0xFF0F172A).copy(alpha = 0.72f)
+                                } else if (themeIndex == 1) {
+                                    Color(0xFFF7ECDA).copy(alpha = 0.76f)
+                                } else {
+                                    Color(0xFFFFFFFF).copy(alpha = 0.78f)
+                                }
                                 drawRect(surfaceColor)
                             },
                             exportedBackdrop = bottomSheetBackdrop
