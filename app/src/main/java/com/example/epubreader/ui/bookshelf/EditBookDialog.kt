@@ -1,5 +1,6 @@
 package com.example.epubreader.ui.bookshelf
 
+import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.epubreader.data.model.BookEntity
+import com.example.epubreader.data.network.WebDavClient
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -40,6 +42,8 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -56,6 +60,7 @@ fun EditBookDialog(
     onDismissRequest: () -> Unit,
     onConfirm: (newTitle: String, newAuthor: String, newSeries: String?, newCoverUri: Uri?) -> Unit
 ) {
+    val context = LocalContext.current
     var title by remember { mutableStateOf(book.title) }
     var author by remember { mutableStateOf(book.author) }
     var series by remember { mutableStateOf(book.seriesName ?: "") }
@@ -68,15 +73,61 @@ fun EditBookDialog(
     }
 
     val isTxt = book.filePath.endsWith(".txt", ignoreCase = true)
-    val fileSizeText = remember(book.filePath) {
-        val f = File(book.filePath)
-        if (f.exists()) {
-            val len = f.length()
-            if (len >= 1024 * 1024) {
-                String.format(Locale.US, "%.1f MB", len.toDouble() / (1024.0 * 1024.0))
+    val ext = if (isTxt) "txt" else "epub"
+    var remoteFileSize by remember { mutableStateOf<Long?>(null) }
+    var isFetchingRemoteSize by remember { mutableStateOf(false) }
+
+    LaunchedEffect(book.id, book.filePath, book.isWebDav) {
+        if (book.isWebDav) {
+            val cacheFile = File(context.cacheDir, "webdav_${book.id}.$ext")
+            if (cacheFile.exists() && cacheFile.length() > 0) {
+                remoteFileSize = cacheFile.length()
             } else {
-                String.format(Locale.US, "%.1f KB", len.toDouble() / 1024.0)
+                isFetchingRemoteSize = true
+                withContext(Dispatchers.IO) {
+                    try {
+                        val prefs = context.getSharedPreferences("liquid_settings", Context.MODE_PRIVATE)
+                        val url = prefs.getString("webdav_url", "") ?: ""
+                        val user = prefs.getString("webdav_user", "") ?: ""
+                        val pass = prefs.getString("webdav_pass", "") ?: ""
+                        if (url.isNotBlank()) {
+                            val client = WebDavClient(url, user, pass)
+                            val size = client.getFileSize(book.filePath)
+                            if (size > 0) {
+                                remoteFileSize = size
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        isFetchingRemoteSize = false
+                    }
+                }
             }
+        }
+    }
+
+    val fileSizeText = remember(book.filePath, book.isWebDav, remoteFileSize, isFetchingRemoteSize) {
+        val sizeBytes = if (book.isWebDav) {
+            val cacheFile = File(context.cacheDir, "webdav_${book.id}.$ext")
+            if (cacheFile.exists() && cacheFile.length() > 0) {
+                cacheFile.length()
+            } else {
+                remoteFileSize
+            }
+        } else {
+            val f = File(book.filePath)
+            if (f.exists()) f.length() else null
+        }
+
+        if (sizeBytes != null && sizeBytes > 0) {
+            if (sizeBytes >= 1024 * 1024) {
+                String.format(Locale.US, "%.1f MB", sizeBytes.toDouble() / (1024.0 * 1024.0))
+            } else {
+                String.format(Locale.US, "%.1f KB", sizeBytes.toDouble() / 1024.0)
+            }
+        } else if (book.isWebDav) {
+            if (isFetchingRemoteSize) "获取中..." else "云端存储"
         } else {
             "未知大小"
         }

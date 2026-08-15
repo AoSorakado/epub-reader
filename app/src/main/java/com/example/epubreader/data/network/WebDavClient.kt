@@ -267,4 +267,60 @@ class WebDavClient(
         }
         true
     }
+
+    suspend fun getFileSize(path: String): Long = withContext(Dispatchers.IO) {
+        val url = resolveUrl(path)
+        // 1. Try HEAD request
+        try {
+            val headRequest = Request.Builder().url(url).head().build()
+            client.newCall(headRequest).execute().use { response ->
+                if (response.isSuccessful) {
+                    val lengthHeader = response.header("Content-Length")?.toLongOrNull()
+                    if (lengthHeader != null && lengthHeader > 0) {
+                        return@withContext lengthHeader
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore and fallback to PROPFIND
+        }
+
+        // 2. Try PROPFIND Depth: 0
+        try {
+            val propfindRequest = Request.Builder()
+                .url(url)
+                .method("PROPFIND", "".toRequestBody())
+                .header("Depth", "0")
+                .build()
+
+            client.newCall(propfindRequest).execute().use { response ->
+                if (response.isSuccessful) {
+                    val xml = response.body?.string() ?: ""
+                    val parser = Xml.newPullParser()
+                    parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+                    parser.setInput(StringReader(xml))
+                    var eventType = parser.eventType
+                    var currentTag = ""
+                    while (eventType != XmlPullParser.END_DOCUMENT) {
+                        if (eventType == XmlPullParser.START_TAG) {
+                            currentTag = parser.name
+                        } else if (eventType == XmlPullParser.TEXT) {
+                            if (currentTag.contains("getcontentlength", ignoreCase = true)) {
+                                val len = parser.text.trim().toLongOrNull()
+                                if (len != null && len > 0) {
+                                    return@withContext len
+                                }
+                            }
+                        }
+                        eventType = parser.next()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore
+        }
+
+        0L
+    }
 }
+
