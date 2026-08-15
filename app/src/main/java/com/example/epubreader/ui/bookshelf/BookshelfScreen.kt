@@ -894,7 +894,6 @@ fun BookshelfScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = if (openingBookIsInner) 14.dp else 10.dp, vertical = if (openingBookIsInner) 10.dp else 10.dp)
                             .graphicsLayer {
                                 alpha = collapsedAlpha
                             },
@@ -902,25 +901,30 @@ fun BookshelfScreen(
                     ) {
                         if (openingBookIsInner) {
                             val (sTitle, volNum) = openingInnerSeriesInfo ?: Pair(book.seriesName ?: "", 1)
-                            SeriesInnerBookRow(
+                            SeriesInnerBookContent(
                                 book = book,
                                 seriesTitle = sTitle,
                                 volumeNumber = volNum,
-                                backdrop = globalBackdrop,
-                                isPressed = false,
                                 isDark = isDark,
                                 themeAccent = themeAccent,
                                 primaryTextColor = primaryTextColor,
                                 secondaryTextColor = secondaryTextColor
                             )
                         } else {
-                            BookItemContent(
-                                book = book,
-                                isListLayout = openingBookIsListLayout,
-                                isDark = isDark,
-                                primaryTextColor = primaryTextColor,
-                                secondaryTextColor = secondaryTextColor
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                BookItemContent(
+                                    book = book,
+                                    isListLayout = openingBookIsListLayout,
+                                    isDark = isDark,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor
+                                )
+                            }
                         }
                     }
                 }
@@ -1800,12 +1804,10 @@ fun BookshelfScreen(
                     ) {
                         if (isEditingInnerBook) {
                             val (sTitle, volNum) = editInnerSeriesInfo ?: Pair(book.seriesName ?: "", 1)
-                            SeriesInnerBookRow(
+                            SeriesInnerBookContent(
                                 book = book,
                                 seriesTitle = sTitle,
                                 volumeNumber = volNum,
-                                backdrop = bookshelfBackdrop,
-                                isPressed = false,
                                 isDark = isDark,
                                 themeAccent = themeAccent,
                                 primaryTextColor = primaryTextColor,
@@ -2512,6 +2514,188 @@ fun BookItem(
     }
 }
 
+@Composable
+fun SeriesInnerBookContent(
+    book: BookEntity,
+    seriesTitle: String,
+    volumeNumber: Int,
+    isDark: Boolean = false,
+    themeAccent: Color = Color(0xFF007AFF),
+    primaryTextColor: Color = Color(0xFF1E1E24),
+    secondaryTextColor: Color = Color(0xFF543866),
+    modifier: Modifier = Modifier
+) {
+    val compactTitle = book.title
+        .removePrefix(seriesTitle)
+        .trim()
+        .removePrefix(seriesTitle)
+        .trim()
+        .let { title ->
+            if (title.matches(Regex("[0-9０-９]+"))) "第 $title 卷" else title
+        }
+        .ifBlank { "第 $volumeNumber 卷" }
+
+    Row(
+        modifier = modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val volumeColor = if (isDark) Color(0xFF38BDF8) else themeAccent
+        val titleColor = if (isDark) Color(0xFFF8FAFC) else primaryTextColor
+        val subtitleColor = if (isDark) Color(0xFF94A3B8) else secondaryTextColor
+
+        // Frosted Volume Number Badge
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(36.dp, 36.dp)
+                .clip(RoundedCornerShape(11.dp))
+                .background(if (isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.35f))
+                .border(
+                    0.6.dp,
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = if (isDark) 0.35f else 0.60f),
+                            Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
+                        )
+                    ),
+                    RoundedCornerShape(11.dp)
+                )
+        ) {
+            Text(
+                text = volumeNumber.toString().padStart(2, '0'),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
+                color = volumeColor
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Premium 3D Book Cover with Spine Illusion
+        Box(
+            modifier = Modifier
+                .size(50.dp, 72.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .border(
+                    0.6.dp,
+                    Brush.verticalGradient(
+                        listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.15f))
+                    ),
+                    RoundedCornerShape(10.dp)
+                )
+        ) {
+            if (book.coverImage != null && File(book.coverImage).exists()) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(File(book.coverImage))
+                        .crossfade(false)
+                        .build(),
+                    contentDescription = "Cover",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.15f))
+                ) {
+                    Text("暂无", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                }
+            }
+
+            // Spine 3D physical book bind shadow and highlight
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(6.dp)
+                    .align(Alignment.CenterStart)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                Color.Black.copy(alpha = 0.35f),
+                                Color.White.copy(alpha = 0.15f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+
+            // Micro progress track on cover bottom
+            if (book.totalProgress > 0f) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(2.5.dp)
+                        .background(Color.Black.copy(alpha = 0.35f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(book.totalProgress.coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .background(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(
+                                        if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF),
+                                        if (isDark) Color(0xFF818CF8) else Color(0xFF5856D6)
+                                    )
+                                )
+                            )
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = compactTitle,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                color = titleColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val isFinished = book.totalProgress >= 0.999f
+                val isUnread = book.totalProgress <= 0.0001f && (book.lastReadPosition.isNullOrEmpty() || book.lastReadPosition == "0_0_0")
+                val progressPercentFloat = (book.totalProgress * 100f).coerceIn(0.1f, 99.9f)
+                val progressFormatted = String.format(java.util.Locale.US, "%.1f", progressPercentFloat)
+                val statusText = if (isFinished) "已读完" else if (isUnread) "未读" else "进度 $progressFormatted%"
+                Text(
+                    text = if (book.isWebDav) "云端分卷" else "本地已导入",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(3.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(subtitleColor.copy(alpha = 0.4f))
+                )
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    color = if (isFinished) Color(0xFF10B981) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else subtitleColor)
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SeriesInnerBookRow(
@@ -2530,16 +2714,6 @@ fun SeriesInnerBookRow(
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val compactTitle = book.title
-        .removePrefix(seriesTitle)
-        .trim()
-        .removePrefix(seriesTitle)
-        .trim()
-        .let { title ->
-            if (title.matches(Regex("[0-9０-９]+"))) "第 $title 卷" else title
-        }
-        .ifBlank { "第 $volumeNumber 卷" }
-        
     val interactionSource = remember { MutableInteractionSource() }
     val isItemPressed by interactionSource.collectIsPressedAsState()
 
@@ -2608,164 +2782,14 @@ fun SeriesInnerBookRow(
                 shape = RoundedCornerShape(20.dp)
             )
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val volumeColor = if (isDark) Color(0xFF38BDF8) else themeAccent
-            val titleColor = if (isDark) Color(0xFFF8FAFC) else primaryTextColor
-            val subtitleColor = if (isDark) Color(0xFF94A3B8) else secondaryTextColor
-
-            // Frosted Volume Number Badge
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(36.dp, 36.dp)
-                    .clip(RoundedCornerShape(11.dp))
-                    .background(if (isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.35f))
-                    .border(
-                        0.6.dp,
-                        Brush.verticalGradient(
-                            listOf(
-                                Color.White.copy(alpha = if (isDark) 0.35f else 0.60f),
-                                Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
-                            )
-                        ),
-                        RoundedCornerShape(11.dp)
-                    )
-            ) {
-                Text(
-                    text = volumeNumber.toString().padStart(2, '0'),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
-                    color = volumeColor
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // Premium 3D Book Cover with Spine Illusion
-            Box(
-                modifier = Modifier
-                    .size(50.dp, 72.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .border(
-                        0.6.dp,
-                        Brush.verticalGradient(
-                            listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.15f))
-                        ),
-                        RoundedCornerShape(10.dp)
-                    )
-            ) {
-                if (book.coverImage != null && File(book.coverImage).exists()) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(File(book.coverImage))
-                            .crossfade(false)
-                            .build(),
-                        contentDescription = "Cover",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.15f))
-                    ) {
-                        Text("暂无", style = MaterialTheme.typography.labelSmall, color = Color.White)
-                    }
-                }
-
-                // Spine 3D physical book bind shadow and highlight
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(6.dp)
-                        .align(Alignment.CenterStart)
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(
-                                    Color.Black.copy(alpha = 0.35f),
-                                    Color.White.copy(alpha = 0.15f),
-                                    Color.Transparent
-                                )
-                            )
-                        )
-                )
-
-                // Micro progress track on cover bottom
-                if (book.totalProgress > 0f) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(2.5.dp)
-                            .background(Color.Black.copy(alpha = 0.35f))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(book.totalProgress.coerceIn(0f, 1f))
-                                .fillMaxHeight()
-                                .background(
-                                    brush = Brush.horizontalGradient(
-                                        colors = listOf(
-                                            if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF),
-                                            if (isDark) Color(0xFF818CF8) else Color(0xFF5856D6)
-                                        )
-                                    )
-                                )
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = compactTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    color = titleColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val isFinished = book.totalProgress >= 0.999f
-                    val isUnread = book.totalProgress <= 0.0001f && (book.lastReadPosition.isNullOrEmpty() || book.lastReadPosition == "0_0_0")
-                    val progressPercentFloat = (book.totalProgress * 100f).coerceIn(0.1f, 99.9f)
-                    val progressFormatted = String.format(java.util.Locale.US, "%.1f", progressPercentFloat)
-                    val statusText = if (isFinished) "已读完" else if (isUnread) "未读" else "进度 $progressFormatted%"
-                    Text(
-                        text = if (book.isWebDav) "云端分卷" else "本地已导入",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size(3.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(subtitleColor.copy(alpha = 0.4f))
-                    )
-                    Text(
-                        text = statusText,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                        color = if (isFinished) Color(0xFF10B981) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else subtitleColor)
-                    )
-                }
-            }
-        }
+        SeriesInnerBookContent(
+            book = book,
+            seriesTitle = seriesTitle,
+            volumeNumber = volumeNumber,
+            isDark = isDark,
+            themeAccent = themeAccent,
+            primaryTextColor = primaryTextColor,
+            secondaryTextColor = secondaryTextColor
+        )
     }
 }
