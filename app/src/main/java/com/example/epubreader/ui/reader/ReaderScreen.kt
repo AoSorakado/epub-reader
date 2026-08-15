@@ -653,14 +653,16 @@ fun ReaderScreen(
             } // End of captured Box
 
             // --- Glass Overlays Layer ---
-            
-            // 1. Top Toolbar (Back, Reading Progress Capsule, and Settings Buttons)
-            AnimatedVisibility(
-                visible = showToolbars,
-                enter = slideInVertically(initialOffsetY = { -it }, animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
-                exit = slideOutVertically(targetOffsetY = { -it }, animationSpec = androidx.compose.animation.core.tween(250)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(250)),
-                modifier = Modifier.align(Alignment.TopCenter)
+            CompositionLocalProvider(
+                LocalTextStyle provides androidx.compose.ui.text.TextStyle(fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily)
             ) {
+                // 1. Top Toolbar (Back, Reading Progress Capsule, and Settings Buttons)
+                AnimatedVisibility(
+                    visible = showToolbars,
+                    enter = slideInVertically(initialOffsetY = { -it }, animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
+                    exit = slideOutVertically(targetOffsetY = { -it }, animationSpec = androidx.compose.animation.core.tween(250)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(250)),
+                    modifier = Modifier.align(Alignment.TopCenter)
+                ) {
                 val currentChapterIndex by remember(pageTurnMode, pagedCurrentIndex) {
                     derivedStateOf {
                         if (pageTurnMode == 0) {
@@ -781,6 +783,7 @@ fun ReaderScreen(
                             if (expanded) {
                                 Text(
                                     text = "$estimatedTimeText · $progressPercentText%",
+                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = textColor,
@@ -789,6 +792,7 @@ fun ReaderScreen(
                             } else {
                                 Text(
                                     text = "$progressPercentText%",
+                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
                                     fontSize = 13.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = textColor
@@ -1825,6 +1829,7 @@ fun ReaderScreen(
                     }
                 }
             }
+        }
 
 @Composable
 fun ThemeButton(color: Color, name: String, isSelected: Boolean, textColor: Color, onClick: () -> Unit) {

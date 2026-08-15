@@ -175,17 +175,19 @@ fun EditBookDialog(
                 ),
                 shape = RoundedCornerShape(24.dp)
             )
-            .padding(20.dp)
     } else {
         Modifier
             .fillMaxWidth()
             .padding(20.dp)
     }
 
-    Column(
-        modifier = containerModifier,
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+    CompositionLocalProvider(
+        LocalTextStyle provides TextStyle(fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily)
     ) {
+        Column(
+            modifier = containerModifier,
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
         // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -523,5 +525,6 @@ fun EditBookDialog(
                 )
             }
         }
+    }
     }
 }
