@@ -175,6 +175,31 @@ class ReaderViewModel(
     private val _customFontUri = MutableStateFlow(prefs.getString("customFontUri", ""))
     val customFontUri: StateFlow<String?> = _customFontUri.asStateFlow()
 
+    // 0: 连续滚动, 1: 左右翻页
+    private val _pageTurnMode = MutableStateFlow(prefs.getInt("pageTurnMode", 0))
+    val pageTurnMode: StateFlow<Int> = _pageTurnMode.asStateFlow()
+
+    // 0: 仿真, 1: 平移, 2: 覆盖, 3: 淡入, 4: 无动画
+    private val _pageAnimStyle = MutableStateFlow(prefs.getInt("pageAnimStyle", 0))
+    val pageAnimStyle: StateFlow<Int> = _pageAnimStyle.asStateFlow()
+
+    private val _currentPageIndex = MutableStateFlow(0)
+    val currentPageIndex: StateFlow<Int> = _currentPageIndex.asStateFlow()
+
+    fun setPageTurnMode(mode: Int) {
+        _pageTurnMode.value = mode
+        prefs.edit().putInt("pageTurnMode", mode).apply()
+    }
+
+    fun setPageAnimStyle(style: Int) {
+        _pageAnimStyle.value = style
+        prefs.edit().putInt("pageAnimStyle", style).apply()
+    }
+
+    fun setCurrentPageIndex(index: Int) {
+        _currentPageIndex.value = index
+    }
+
     fun setTheme(index: Int) {
         _themeIndex.value = index
         prefs.edit().putInt("themeIndex", index).apply()

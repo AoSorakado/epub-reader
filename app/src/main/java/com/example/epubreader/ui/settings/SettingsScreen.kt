@@ -7,6 +7,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,6 +56,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.NavController
 import com.example.epubreader.ui.components.liquid.LiquidToggle
 import com.example.epubreader.ui.components.liquid.LiquidSlider
+import com.example.epubreader.ui.components.liquid.LiquidButton
 import com.example.epubreader.ui.theme.AppTheme
 import com.example.epubreader.ui.theme.getThemeGradient
 import com.example.epubreader.ui.theme.getThemeAccentColor
@@ -103,6 +106,8 @@ fun SettingsScreen(
     val appTheme by viewModel.appTheme.collectAsState()
     val autoNightMode by viewModel.autoNightMode.collectAsState()
     val immersiveStatusBar by viewModel.immersiveStatusBar.collectAsState()
+    val pageTurnMode by viewModel.pageTurnMode.collectAsState()
+    val pageAnimStyle by viewModel.pageAnimStyle.collectAsState()
     val isCustomThemeThreeColors by viewModel.isCustomThemeThreeColors.collectAsState()
     val customColors by viewModel.customColors.collectAsState()
 
@@ -253,6 +258,91 @@ fun SettingsScreen(
                             backdrop = backgroundBackdrop,
                             accentColor = themeAccent
                         )
+                    }
+
+                    // Page Turn Mode Switcher
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("翻页模式", fontSize = 15.sp, color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            LiquidButton(
+                                onClick = { viewModel.setPageTurnMode(0) },
+                                backdrop = backgroundBackdrop,
+                                surfaceColor = if (pageTurnMode == 0) themeAccent.copy(alpha = 0.35f) else Color.White.copy(0.08f),
+                                modifier = Modifier.weight(1f).height(44.dp)
+                            ) {
+                                Text(
+                                    "上下连续滚动",
+                                    fontSize = 14.sp,
+                                    fontWeight = if (pageTurnMode == 0) FontWeight.ExtraBold else FontWeight.Normal,
+                                    color = if (pageTurnMode == 0) Color.White else primaryTextColor
+                                )
+                            }
+                            LiquidButton(
+                                onClick = { viewModel.setPageTurnMode(1) },
+                                backdrop = backgroundBackdrop,
+                                surfaceColor = if (pageTurnMode == 1) themeAccent.copy(alpha = 0.35f) else Color.White.copy(0.08f),
+                                modifier = Modifier.weight(1f).height(44.dp)
+                            ) {
+                                Text(
+                                    "左右分页翻页",
+                                    fontSize = 14.sp,
+                                    fontWeight = if (pageTurnMode == 1) FontWeight.ExtraBold else FontWeight.Normal,
+                                    color = if (pageTurnMode == 1) Color.White else primaryTextColor
+                                )
+                            }
+                        }
+                    }
+
+                    // Page Turn Animation Switcher (Only visible when pageTurnMode == 1)
+                    AnimatedVisibility(
+                        visible = pageTurnMode == 1,
+                        enter = expandVertically(spring(0.78f, 320f)) + fadeIn(),
+                        exit = shrinkVertically(spring(0.82f, 340f)) + fadeOut()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text("翻页动画效果", fontSize = 15.sp, color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val animOptions = listOf(
+                                    0 to "仿真",
+                                    1 to "平移",
+                                    2 to "覆盖",
+                                    3 to "淡入",
+                                    4 to "无"
+                                )
+                                animOptions.forEach { (styleIndex, label) ->
+                                    val isSelected = pageAnimStyle == styleIndex
+                                    LiquidButton(
+                                        onClick = { viewModel.setPageAnimStyle(styleIndex) },
+                                        backdrop = backgroundBackdrop,
+                                        surfaceColor = if (isSelected) themeAccent.copy(alpha = 0.35f) else Color.White.copy(0.08f),
+                                        modifier = Modifier.weight(1f).height(40.dp)
+                                    ) {
+                                        Text(
+                                            label,
+                                            fontSize = 13.sp,
+                                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else primaryTextColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 

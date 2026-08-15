@@ -13,6 +13,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -155,6 +157,8 @@ fun ReaderScreen(
     val paragraphSpacing by viewModel.paragraphSpacing.collectAsState()
     val chineseMode by viewModel.chineseMode.collectAsState()
     val customFontUri by viewModel.customFontUri.collectAsState()
+    val pageTurnMode by viewModel.pageTurnMode.collectAsState()
+    val pageAnimStyle by viewModel.pageAnimStyle.collectAsState()
 
     val settingsViewModel: com.example.epubreader.ui.settings.SettingsViewModel = viewModel()
     val appTheme by settingsViewModel.appTheme.collectAsState()
@@ -282,22 +286,87 @@ fun ReaderScreen(
                 }.coerceAtLeast(0)
             }
             
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            var containerWidthPx by remember { mutableStateOf(0f) }
+            var containerHeightPx by remember { mutableStateOf(0f) }
+
+            val pages = remember(
+                flatItems,
+                chineseMode,
+                containerWidthPx,
+                containerHeightPx,
+                textSize,
+                lineHeightMult,
+                paragraphSpacing
+            ) {
+                if (containerWidthPx > 100f && containerHeightPx > 200f) {
+                    val contentWidthPx = containerWidthPx - with(density) { 48.dp.toPx() }
+                    val contentHeightPx = containerHeightPx - with(density) { (52.dp + 42.dp + 12.dp + 8.dp).toPx() }
+                    val textSizePx = with(density) { textSize.sp.toPx() }
+                    val lineHeightPx = (textSizePx * lineHeightMult).coerceAtLeast(textSizePx * 1.15f)
+                    val paragraphSpacingPx = with(density) { paragraphSpacing.dp.toPx() }
+
+                    ReaderPagination.paginate(
+                        flatItems = flatItems,
+                        chineseMode = chineseMode,
+                        contentWidthPx = contentWidthPx,
+                        contentHeightPx = contentHeightPx,
+                        textSizePx = textSizePx,
+                        lineHeightPx = lineHeightPx,
+                        paragraphSpacingPx = paragraphSpacingPx
+                    )
+                } else emptyList()
+            }
+
+            var pagedCurrentIndex by remember { mutableStateOf(0) }
+
+            LaunchedEffect(pages.isNotEmpty()) {
+                if (pages.isNotEmpty() && pagedCurrentIndex == 0 && initialFlatIndex > 0) {
+                    val matched = pages.indexOfFirst { it.flatItemIndex >= initialFlatIndex }
+                    if (matched >= 0) {
+                        pagedCurrentIndex = matched
+                    }
+                }
+            }
+
+            fun onPagedIndexChanged(newPage: Int) {
+                pagedCurrentIndex = newPage
+                val current = pages.getOrNull(newPage)
+                if (current != null) {
+                    viewModel.saveProgress(current.flatItemIndex, 0)
+                }
+            }
+
             val listState = rememberLazyListState(
                 initialFirstVisibleItemIndex = initialFlatIndex,
                 initialFirstVisibleItemScrollOffset = initialOffset
             )
             
             val lifecycleOwner = LocalLifecycleOwner.current
-            DisposableEffect(lifecycleOwner, listState) {
+            DisposableEffect(lifecycleOwner, listState, pagedCurrentIndex, pageTurnMode) {
                 val observer = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
-                        viewModel.saveProgress(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+                        if (pageTurnMode == 0) {
+                            viewModel.saveProgress(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+                        } else {
+                            val current = pages.getOrNull(pagedCurrentIndex)
+                            if (current != null) {
+                                viewModel.saveProgress(current.flatItemIndex, 0)
+                            }
+                        }
                     }
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose {
                     lifecycleOwner.lifecycle.removeObserver(observer)
-                    viewModel.saveProgress(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+                    if (pageTurnMode == 0) {
+                        viewModel.saveProgress(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+                    } else {
+                        val current = pages.getOrNull(pagedCurrentIndex)
+                        if (current != null) {
+                            viewModel.saveProgress(current.flatItemIndex, 0)
+                        }
+                    }
                 }
             }
 
@@ -306,128 +375,159 @@ fun ReaderScreen(
                     .fillMaxSize()
                     .background(bgColor)
                     .layerBackdrop(readerBackdrop)
+                    .onGloballyPositioned { coords ->
+                        containerWidthPx = coords.size.width.toFloat()
+                        containerHeightPx = coords.size.height.toFloat()
+                    }
             ) {
-                // Main continuous scrolling area
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { 
-                            showToolbars = !showToolbars
-                            if (!showToolbars) showSettings = false
-                        },
-                    contentPadding = PaddingValues(top = 80.dp, bottom = 100.dp, start = 24.dp, end = 24.dp)
-                ) {
-                item {
-                    Text(
-                        text = bookEntity?.title ?: "未知书名",
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = textColor,
-                        modifier = Modifier.padding(bottom = 32.dp),
-                        lineHeight = 40.sp
-                    )
-                }
-                
-                               items(flatItems) { item ->
-                    when (item) {
-                        is com.example.epubreader.ui.reader.FlatReaderItem.Title -> {
+                if (pageTurnMode == 0) {
+                    // Main continuous scrolling area
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { 
+                                showToolbars = !showToolbars
+                                if (!showToolbars) showSettings = false
+                            },
+                        contentPadding = PaddingValues(top = 80.dp, bottom = 100.dp, start = 24.dp, end = 24.dp)
+                    ) {
+                        item {
                             Text(
-                                text = item.title,
-                                fontSize = (textSize * 1.3f).sp,
+                                text = bookEntity?.title ?: "未知书名",
+                                fontSize = 32.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = textColor,
-                                modifier = Modifier.padding(top = 32.dp, bottom = 16.dp)
+                                modifier = Modifier.padding(bottom = 32.dp),
+                                lineHeight = 40.sp
                             )
                         }
-                        is com.example.epubreader.ui.reader.FlatReaderItem.Node -> {
-                            val node = item.node
-                            when (node) {
-                                is ChapterNode.TextNode -> {
-                                    val displayAnnotated = remember(node.text, chineseMode) {
-                                        if (chineseMode == 0) node.text
-                                        else {
-                                            val newStr = if (chineseMode == 1) ZhConverterUtil.toSimple(node.text.text) else ZhConverterUtil.toTraditional(node.text.text)
-                                            buildAnnotatedString {
-                                                append(newStr)
-                                                node.text.spanStyles.forEach { addStyle(it.item, it.start, it.end) }
-                                                node.text.paragraphStyles.forEach { addStyle(it.item, it.start, it.end) }
-                                            }
-                                        }
-                                    }
+                        
+                        items(flatItems) { item ->
+                            when (item) {
+                                is com.example.epubreader.ui.reader.FlatReaderItem.Title -> {
                                     Text(
-                                        text = displayAnnotated,
-                                        fontFamily = customFontFamily,
-                                        fontSize = textSize.sp,
-                                        lineHeight = (textSize * lineHeightMult).coerceAtLeast(textSize * 1.1f).sp,
+                                        text = item.title,
+                                        fontSize = (textSize * 1.3f).sp,
+                                        fontWeight = FontWeight.Bold,
                                         color = textColor,
-                                        modifier = Modifier.padding(bottom = paragraphSpacing.dp)
+                                        modifier = Modifier.padding(top = 32.dp, bottom = 16.dp)
                                     )
                                 }
-                                is ChapterNode.ImageNode -> {
-                                    val bitmap = remember(node.imageData) {
-                                        BitmapFactory.decodeByteArray(node.imageData, 0, node.imageData.size)?.asImageBitmap()
-                                    }
-                                    if (bitmap != null) {
-                                        androidx.compose.foundation.Image(
-                                            bitmap = bitmap,
-                                            contentDescription = null,
-                                            contentScale = ContentScale.FillWidth,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(bottom = 16.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                        )
+                                is com.example.epubreader.ui.reader.FlatReaderItem.Node -> {
+                                    val node = item.node
+                                    when (node) {
+                                        is ChapterNode.TextNode -> {
+                                            val displayAnnotated = remember(node.text, chineseMode) {
+                                                if (chineseMode == 0) node.text
+                                                else {
+                                                    val newStr = if (chineseMode == 1) ZhConverterUtil.toSimple(node.text.text) else ZhConverterUtil.toTraditional(node.text.text)
+                                                    buildAnnotatedString {
+                                                        append(newStr)
+                                                        node.text.spanStyles.forEach { addStyle(it.item, it.start, it.end) }
+                                                        node.text.paragraphStyles.forEach { addStyle(it.item, it.start, it.end) }
+                                                    }
+                                                }
+                                            }
+                                            Text(
+                                                text = displayAnnotated,
+                                                fontFamily = customFontFamily,
+                                                fontSize = textSize.sp,
+                                                lineHeight = (textSize * lineHeightMult).coerceAtLeast(textSize * 1.1f).sp,
+                                                color = textColor,
+                                                modifier = Modifier.padding(bottom = paragraphSpacing.dp)
+                                            )
+                                        }
+                                        is ChapterNode.ImageNode -> {
+                                            val bitmap = remember(node.imageData) {
+                                                BitmapFactory.decodeByteArray(node.imageData, 0, node.imageData.size)?.asImageBitmap()
+                                            }
+                                            if (bitmap != null) {
+                                                androidx.compose.foundation.Image(
+                                                    bitmap = bitmap,
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.FillWidth,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(bottom = 16.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
+                    } // End of LazyColumn
+                } else {
+                    // Paged Reader View (Horizontal Page Turn)
+                    PagedReaderView(
+                        pages = pages,
+                        currentPageIndex = pagedCurrentIndex,
+                        onPageChanged = { onPagedIndexChanged(it) },
+                        onToggleToolbars = {
+                            showToolbars = !showToolbars
+                            if (!showToolbars) showSettings = false
+                        },
+                        pageAnimStyle = pageAnimStyle,
+                        bgColor = bgColor,
+                        textColor = textColor,
+                        secondaryTextColor = if (themeIndex == 2) Color(0xFF94A3B8) else Color(0xFF64748B),
+                        textSize = textSize,
+                        lineHeightMult = lineHeightMult,
+                        paragraphSpacing = paragraphSpacing,
+                        customFontFamily = customFontFamily,
+                        bookTitle = bookEntity?.title ?: "轻小说阅读",
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
-            } // End of LazyColumn
-        } // End of captured Box
+            } // End of captured Box
 
-        // Background Dimming Overlay
-        AnimatedVisibility(
-            visible = showSettings,
-            enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
-            exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(300))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.4f))
-                    .pointerInput(Unit) {
-                        detectTapGestures { showSettings = false }
-                    }
-            )
-        }
-
-        // --- Glass Overlays Layer ---
-        
-        // 1. Top Toolbar (Back, Reading Progress Capsule, and Settings Buttons)
-        AnimatedVisibility(
-            visible = showToolbars,
-            enter = slideInVertically(initialOffsetY = { -it }, animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
-            exit = slideOutVertically(targetOffsetY = { -it }, animationSpec = androidx.compose.animation.core.tween(250)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(250)),
-            modifier = Modifier.align(Alignment.TopCenter)
-        ) {
-            val totalItems = flatItems.size
-            val currentItemIndex = listState.firstVisibleItemIndex
-            val calculatedProgress = if (totalItems > 0) {
-                (currentItemIndex.toFloat() / totalItems.toFloat()).coerceIn(0f, 1f)
-            } else {
-                bookEntity?.totalProgress ?: 0f
+            // Background Dimming Overlay
+            AnimatedVisibility(
+                visible = showSettings,
+                enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
+                exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(300))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.4f))
+                        .pointerInput(Unit) {
+                            detectTapGestures { showSettings = false }
+                        }
+                )
             }
-            val progressPercent = (calculatedProgress * 100).toInt()
-            val estimatedTimeText = viewModel.getEstimatedRemainingTimeText(currentItemIndex)
 
-            LaunchedEffect(currentItemIndex) {
-                viewModel.updateReadingPosition(currentItemIndex)
-            }
+            // --- Glass Overlays Layer ---
+            
+            // 1. Top Toolbar (Back, Reading Progress Capsule, and Settings Buttons)
+            AnimatedVisibility(
+                visible = showToolbars,
+                enter = slideInVertically(initialOffsetY = { -it }, animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
+                exit = slideOutVertically(targetOffsetY = { -it }, animationSpec = androidx.compose.animation.core.tween(250)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(250)),
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                val totalItems = flatItems.size
+                val currentItemIndex = if (pageTurnMode == 0) {
+                    listState.firstVisibleItemIndex
+                } else {
+                    pages.getOrNull(pagedCurrentIndex)?.flatItemIndex ?: 0
+                }
+                val calculatedProgress = if (pageTurnMode == 0) {
+                    if (totalItems > 0) (currentItemIndex.toFloat() / totalItems.toFloat()).coerceIn(0f, 1f) else (bookEntity?.totalProgress ?: 0f)
+                } else {
+                    if (pages.isNotEmpty()) ((pagedCurrentIndex + 1).toFloat() / pages.size.toFloat()).coerceIn(0f, 1f) else (bookEntity?.totalProgress ?: 0f)
+                }
+                val progressPercent = (calculatedProgress * 100).toInt()
+                val estimatedTimeText = viewModel.getEstimatedRemainingTimeText(currentItemIndex)
+
+                LaunchedEffect(currentItemIndex) {
+                    viewModel.updateReadingPosition(currentItemIndex)
+                }
 
             // Continuous Reading Health / Eye Rest Reminder (60 min, 90 min, 120 min)
             LaunchedEffect(Unit) {
@@ -917,6 +1017,79 @@ fun ReaderScreen(
                                         modifier = Modifier.weight(1f).height(46.dp)
                                     ) {
                                         Text("导入字体", style = buttonTextStyle, fontWeight = if (isCustom) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.height(28.dp))
+                                
+                                Text("翻页方式", style = headerStyle)
+                                Spacer(modifier = Modifier.height(16.dp))
+                                
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    val activeSurface = if (themeIndex == 2) Color.White.copy(0.30f) else Color.White.copy(0.35f)
+                                    val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.08f) else Color.White.copy(0.08f)
+
+                                    LiquidButton(
+                                        onClick = { viewModel.setPageTurnMode(0) },
+                                        backdrop = readerBackdrop,
+                                        surfaceColor = if (pageTurnMode == 0) activeSurface else inactiveSurface,
+                                        modifier = Modifier.weight(1f).height(46.dp)
+                                    ) {
+                                        Text("上下滚动", style = buttonTextStyle, fontWeight = if (pageTurnMode == 0) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                    }
+                                    LiquidButton(
+                                        onClick = { viewModel.setPageTurnMode(1) },
+                                        backdrop = readerBackdrop,
+                                        surfaceColor = if (pageTurnMode == 1) activeSurface else inactiveSurface,
+                                        modifier = Modifier.weight(1f).height(46.dp)
+                                    ) {
+                                        Text("左右翻页", style = buttonTextStyle, fontWeight = if (pageTurnMode == 1) FontWeight.ExtraBold else FontWeight.SemiBold)
+                                    }
+                                }
+
+                                AnimatedVisibility(
+                                    visible = pageTurnMode == 1,
+                                    enter = expandVertically(spring(0.78f, 320f)) + fadeIn(),
+                                    exit = shrinkVertically(spring(0.82f, 340f)) + fadeOut()
+                                ) {
+                                    Column {
+                                        Spacer(modifier = Modifier.height(24.dp))
+                                        Text("翻页动画", style = headerStyle)
+                                        Spacer(modifier = Modifier.height(14.dp))
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            val animOptions = listOf(
+                                                0 to "仿真",
+                                                1 to "平移",
+                                                2 to "覆盖",
+                                                3 to "淡入",
+                                                4 to "无"
+                                            )
+                                            val activeSurface = if (themeIndex == 2) Color.White.copy(0.30f) else Color.White.copy(0.35f)
+                                            val inactiveSurface = if (themeIndex == 2) Color.White.copy(0.08f) else Color.White.copy(0.08f)
+
+                                            animOptions.forEach { (styleIndex, label) ->
+                                                val isSelected = pageAnimStyle == styleIndex
+                                                LiquidButton(
+                                                    onClick = { viewModel.setPageAnimStyle(styleIndex) },
+                                                    backdrop = readerBackdrop,
+                                                    surfaceColor = if (isSelected) activeSurface else inactiveSurface,
+                                                    modifier = Modifier.weight(1f).height(42.dp)
+                                                ) {
+                                                    Text(
+                                                        label,
+                                                        style = buttonTextStyle.copy(fontSize = 13.sp),
+                                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                                 

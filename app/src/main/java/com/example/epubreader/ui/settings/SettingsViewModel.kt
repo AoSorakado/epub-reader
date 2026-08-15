@@ -56,6 +56,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _immersiveStatusBar = MutableStateFlow(prefs.getBoolean("immersiveStatusBar", false))
     val immersiveStatusBar: StateFlow<Boolean> = _immersiveStatusBar.asStateFlow()
 
+    private val readerPrefs = application.getSharedPreferences("reader_settings", Context.MODE_PRIVATE)
+
+    private val _pageTurnMode = MutableStateFlow(readerPrefs.getInt("pageTurnMode", 0)) // 0: 滚动, 1: 翻页
+    val pageTurnMode: StateFlow<Int> = _pageTurnMode.asStateFlow()
+
+    private val _pageAnimStyle = MutableStateFlow(readerPrefs.getInt("pageAnimStyle", 0)) // 0: 仿真, 1: 平移, 2: 覆盖, 3: 淡入, 4: 无
+    val pageAnimStyle: StateFlow<Int> = _pageAnimStyle.asStateFlow()
+
+    fun setPageTurnMode(mode: Int) {
+        _pageTurnMode.value = mode
+        readerPrefs.edit().putInt("pageTurnMode", mode).apply()
+    }
+
+    fun setPageAnimStyle(style: Int) {
+        _pageAnimStyle.value = style
+        readerPrefs.edit().putInt("pageAnimStyle", style).apply()
+    }
+
     private val _isCustomThemeThreeColors = MutableStateFlow(prefs.getBoolean("isCustomThemeThreeColors", false))
     val isCustomThemeThreeColors: StateFlow<Boolean> = _isCustomThemeThreeColors.asStateFlow()
 
