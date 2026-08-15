@@ -1552,6 +1552,45 @@ fun ReaderScreen(
                         }
                     }
 
+                                // Current reading chapter for unique TOC selection
+                                val currentChapter = if (pageTurnMode == 0) {
+                                    parsedChapters.getOrNull(listState.firstVisibleItemIndex)
+                                } else {
+                                    pages.getOrNull(pagedCurrentIndex)?.let { p -> parsedChapters.getOrNull(p.chapterIndex) }
+                                }
+                                val currentChIdx = if (pageTurnMode == 0) listState.firstVisibleItemIndex else (pages.getOrNull(pagedCurrentIndex)?.chapterIndex ?: 0)
+
+                                val currentTocIndex = remember(tocList, currentChIdx, currentChapter, pagedCurrentIndex, pageTurnMode) {
+                                    if (tocList.isEmpty()) -1
+                                    else {
+                                        val currentTitle = (if (pageTurnMode == 0) currentChapter?.title else pages.getOrNull(pagedCurrentIndex)?.chapterTitle)?.trim() ?: ""
+                                        var found = if (currentTitle.isNotBlank()) {
+                                            tocList.indexOfFirst { it.title.trim().equals(currentTitle, ignoreCase = true) }
+                                        } else -1
+
+                                        if (found < 0 && currentTitle.isNotBlank()) {
+                                            found = tocList.indexOfFirst {
+                                                val t = it.title.trim()
+                                                t.isNotEmpty() && (t.contains(currentTitle) || currentTitle.contains(t))
+                                            }
+                                        }
+
+                                        val epubCh = viewModel.epubBook.value?.chapters?.getOrNull(currentChIdx)
+                                        if (found < 0 && epubCh != null) {
+                                            val withoutAnchor = epubCh.href.substringBefore("#")
+                                            val fileName = withoutAnchor.substringAfterLast("/")
+                                            found = tocList.indexOfFirst {
+                                                it.href.contains(withoutAnchor) || withoutAnchor.contains(it.href) || it.href.substringAfterLast("/") == fileName
+                                            }
+                                        }
+
+                                        if (found < 0) {
+                                            found = currentChIdx.coerceIn(0, tocList.lastIndex)
+                                        }
+                                        found
+                                    }
+                                }
+
                                 // Chapters LazyColumn (Rich EPUB TOC with exact chapter and section names)
                                 LazyColumn(
                                     modifier = Modifier
@@ -1561,11 +1600,7 @@ fun ReaderScreen(
                                 ) {
                                     if (tocList.isNotEmpty()) {
                                         itemsIndexed(tocList) { idx, tocItem ->
-                                            val isCurrent = if (pageTurnMode == 0) {
-                                                listState.firstVisibleItemIndex == idx || parsedChapters.getOrNull(listState.firstVisibleItemIndex)?.title == tocItem.title
-                                            } else {
-                                                pages.getOrNull(pagedCurrentIndex)?.chapterTitle == tocItem.title
-                                            }
+                                            val isCurrent = (idx == currentTocIndex)
 
                                             val onItemClick = {
                                                 val withoutAnchor = tocItem.href.substringBefore("#")
@@ -1687,7 +1722,7 @@ fun ReaderScreen(
                                         }
                                     } else {
                                         itemsIndexed(parsedChapters) { idx, chapter ->
-                                            val isCurrent = idx == currentChapterIndex
+                                            val isCurrent = idx == currentChIdx
                                             val onChapterClick = {
                                                 if (pageTurnMode == 0) {
                                                     coroutineScope.launch { listState.scrollToItem(idx, 0) }

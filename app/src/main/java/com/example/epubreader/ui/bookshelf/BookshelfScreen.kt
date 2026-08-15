@@ -813,6 +813,7 @@ fun BookshelfScreen(
                                     book = book,
                                     seriesTitle = seriesTitle,
                                     volumeNumber = volumeNumber,
+                                    backdrop = bookshelfBackdrop,
                                     isPressed = false,
                                     isDark = isDark,
                                     themeAccent = themeAccent,
@@ -1128,6 +1129,7 @@ fun BookshelfScreen(
                                     book = target.book,
                                     seriesTitle = selectedSeries?.first ?: "",
                                     volumeNumber = if (index >= 0) index + 1 else 1,
+                                    backdrop = globalBackdrop,
                                     isPressed = false,
                                     isDark = isDark,
                                     themeAccent = themeAccent,
@@ -1781,6 +1783,7 @@ fun BookshelfScreen(
                                 book = book,
                                 seriesTitle = sTitle,
                                 volumeNumber = volNum,
+                                backdrop = bookshelfBackdrop,
                                 isPressed = false,
                                 isDark = isDark,
                                 themeAccent = themeAccent,
@@ -2494,6 +2497,7 @@ fun SeriesInnerBookRow(
     book: BookEntity,
     seriesTitle: String,
     volumeNumber: Int,
+    backdrop: com.kyant.backdrop.Backdrop,
     isPressed: Boolean = false,
     isDark: Boolean = false,
     themeAccent: Color = Color(0xFF007AFF),
@@ -2546,14 +2550,31 @@ fun SeriesInnerBookRow(
                     )
                 } else Modifier
             )
-            .clip(RoundedCornerShape(20.dp))
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.16f else 0.10f) else (if (isPressed || isItemPressed) 0.28f else 0.22f)),
-                        Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.08f else 0.04f) else (if (isPressed || isItemPressed) 0.14f else 0.08f))
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(20.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = {
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
                     )
-                )
+                },
+                onDrawSurface = {
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.18f else 0.12f) else (if (isPressed || isItemPressed) 0.28f else 0.22f)),
+                                Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.06f else 0.03f) else (if (isPressed || isItemPressed) 0.12f else 0.08f))
+                            )
+                        )
+                    )
+                }
             )
             .border(
                 width = 0.8.dp,
