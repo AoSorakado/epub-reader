@@ -746,7 +746,7 @@ fun ReaderScreen(
                     onClick = { handleExit() },
                     backdrop = readerBackdrop,
                     shape = CircleShape,
-                    modifier = Modifier.size(44.dp)
+                    modifier = Modifier.requiredSize(44.dp)
                 ) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = textColor)
                 }
@@ -773,15 +773,15 @@ fun ReaderScreen(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier.padding(horizontal = 14.dp)
+                        modifier = Modifier.padding(horizontal = 11.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.AutoStories,
                             contentDescription = null,
                             tint = textColor.copy(alpha = 0.85f),
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         AnimatedContent(
                             targetState = isCapsuleExpanded,
                             contentAlignment = Alignment.Center,
@@ -799,39 +799,31 @@ fun ReaderScreen(
                                     Text(
                                         text = "$estimatedTimeText · $progressPercentText%",
                                         fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 13.sp,
+                                        fontSize = 12.5.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = textColor,
                                         maxLines = 1
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
                                     Text(
                                         text = "·",
                                         fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 13.sp,
+                                        fontSize = 12.5.sp,
                                         color = textColor.copy(alpha = 0.45f)
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
                                     Text(
                                         text = batteryAndTime.time,
                                         fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 13.sp,
+                                        fontSize = 12.5.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = textColor.copy(alpha = 0.9f)
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
                                     MiniBatteryIndicator(
                                         level = batteryAndTime.level,
                                         isCharging = batteryAndTime.isCharging,
                                         tintColor = textColor
-                                    )
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    Text(
-                                        text = "${batteryAndTime.level}%",
-                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = textColor.copy(alpha = 0.75f)
                                     )
                                 }
                             } else {
@@ -842,26 +834,26 @@ fun ReaderScreen(
                                     Text(
                                         text = "$progressPercentText%",
                                         fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 13.5.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = textColor
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
                                     Text(
                                         text = "·",
                                         fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 13.sp,
+                                        fontSize = 12.5.sp,
                                         color = textColor.copy(alpha = 0.45f)
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
                                     Text(
                                         text = batteryAndTime.time,
                                         fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 13.sp,
+                                        fontSize = 12.5.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = textColor.copy(alpha = 0.9f)
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
                                     MiniBatteryIndicator(
                                         level = batteryAndTime.level,
                                         isCharging = batteryAndTime.isCharging,
@@ -882,7 +874,7 @@ fun ReaderScreen(
                     backdrop = readerBackdrop,
                     shape = CircleShape,
                     modifier = Modifier
-                        .size(44.dp)
+                        .requiredSize(44.dp)
                         .onGloballyPositioned { coordinates ->
                             settingsButtonBounds = coordinates.boundsInRoot()
                         }
