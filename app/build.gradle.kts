@@ -82,6 +82,13 @@ dependencies {
     // Jsoup for HTML & EPUB TOC Parsing
     implementation("org.jsoup:jsoup:1.17.2")
 
+    // AndroidX Media3 for High-Performance 4K MKV Video Playback & Streaming
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-ui:1.3.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.3.1")
+    implementation("androidx.media3:media3-session:1.3.1")
+    implementation("androidx.media3:media3-extractor:1.3.1")
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

@@ -80,6 +80,14 @@ fun StatsScreen(
 
     val state by viewModel.stats.collectAsState()
 
+    var statsCategory by remember { mutableIntStateOf(0) } // 0: 📚 小说阅读, 1: 🎬 番剧观看
+    val animeDao = db.animeDao()
+    val allAnimes by animeDao.getAllAnimes().collectAsState(emptyList())
+    val totalAnimeCount = allAnimes.size
+    val finishedAnimeCount = allAnimes.count { it.isFinished }
+    val watchingAnimeCount = allAnimes.count { !it.isFinished && it.lastWatchTimeMs > 0 }
+    val totalAnimeMinutes = (allAnimes.sumOf { it.totalWatchDurationSeconds } / 60).toInt()
+
     // Smooth count-up & entrance animation driver triggered whenever user enters the Stats tab
     val animTrigger = remember { Animatable(0f) }
     LaunchedEffect(isVisible) {
@@ -98,6 +106,9 @@ fun StatsScreen(
     val animTotalBooks = (state.totalBooks * animFactor).roundToInt()
     val animTotalSeries = (state.totalSeries * animFactor).roundToInt()
 
+    val animAnimeCount = (totalAnimeCount * animFactor).roundToInt()
+    val animAnimeMinutes = (totalAnimeMinutes * animFactor).roundToInt()
+
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -112,90 +123,194 @@ fun StatsScreen(
             // Header Title
             Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                 Text(
-                    text = "阅读统计",
+                    text = "数据统计",
                     fontSize = 30.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = primaryTextColor
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "记录每一次指尖沉浸的阅读时光",
+                    text = if (statsCategory == 0) "记录每一次指尖沉浸的阅读时光" else "追踪每一部触动心弦的精彩番剧",
                     fontSize = 14.sp,
                     color = secondaryTextColor
                 )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Novel vs Anime Segmented Capsule Switcher
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color.White.copy(alpha = if (isDark) 0.08f else 0.35f))
+                        .border(0.6.dp, Color.White.copy(alpha = if (isDark) 0.20f else 0.50f), RoundedCornerShape(20.dp))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf("📚 小说阅读", "🎬 番剧观看").forEachIndexed { idx, label ->
+                        val isSelected = statsCategory == idx
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(17.dp))
+                                .background(if (isSelected) themeAccent else Color.Transparent)
+                                .clickable { statsCategory = idx }
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 12.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color.White else secondaryTextColor
+                            )
+                        }
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. Reading Time Hero Highlights (2x2 Grid)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                LiquidStatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "累计阅读",
-                    value = "$animTotalMinutes",
-                    unit = "分钟",
-                    subtitle = if (animTotalMinutes >= 60) "${animTotalMinutes / 60}小时${animTotalMinutes % 60}分" else "累计阅读时长",
-                    icon = Icons.Filled.Timer,
-                    iconColor = themeAccent,
-                    backdrop = globalBackdrop,
-                    primaryTextColor = primaryTextColor,
-                    secondaryTextColor = secondaryTextColor,
-                    isDark = isDark
-                )
-                LiquidStatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "今日专注",
-                    value = "$animTodayMinutes",
-                    unit = "分钟",
-                    subtitle = if (animTodayMinutes > 0) "保持好习惯" else "待开始阅读",
-                    icon = Icons.Filled.LocalFireDepartment,
-                    iconColor = Color(0xFFFF5722),
-                    backdrop = globalBackdrop,
-                    primaryTextColor = primaryTextColor,
-                    secondaryTextColor = secondaryTextColor,
-                    isDark = isDark
-                )
-            }
+            if (statsCategory == 0) {
+                // --- NOVEL STATS ---
+                // 1. Reading Time Hero Highlights (2x2 Grid)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    LiquidStatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "累计阅读",
+                        value = "$animTotalMinutes",
+                        unit = "分钟",
+                        subtitle = if (animTotalMinutes >= 60) "${animTotalMinutes / 60}小时${animTotalMinutes % 60}分" else "累计阅读时长",
+                        icon = Icons.Filled.Timer,
+                        iconColor = themeAccent,
+                        backdrop = globalBackdrop,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        isDark = isDark
+                    )
+                    LiquidStatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "今日专注",
+                        value = "$animTodayMinutes",
+                        unit = "分钟",
+                        subtitle = if (animTodayMinutes > 0) "保持好习惯" else "待开始阅读",
+                        icon = Icons.Filled.LocalFireDepartment,
+                        iconColor = Color(0xFFFF5722),
+                        backdrop = globalBackdrop,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        isDark = isDark
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                LiquidStatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "藏书总数",
-                    value = "$animTotalBooks",
-                    unit = "本",
-                    subtitle = "本地及云端",
-                    icon = Icons.AutoMirrored.Filled.MenuBook,
-                    iconColor = Color(0xFF3B82F6),
-                    backdrop = globalBackdrop,
-                    primaryTextColor = primaryTextColor,
-                    secondaryTextColor = secondaryTextColor,
-                    isDark = isDark
-                )
-                LiquidStatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "系列丛书",
-                    value = "$animTotalSeries",
-                    unit = "部",
-                    subtitle = "收录系列",
-                    icon = Icons.AutoMirrored.Filled.LibraryBooks,
-                    iconColor = Color(0xFF8B5CF6),
-                    backdrop = globalBackdrop,
-                    primaryTextColor = primaryTextColor,
-                    secondaryTextColor = secondaryTextColor,
-                    isDark = isDark
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    LiquidStatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "藏书总数",
+                        value = "$animTotalBooks",
+                        unit = "本",
+                        subtitle = "本地及云端",
+                        icon = Icons.AutoMirrored.Filled.MenuBook,
+                        iconColor = Color(0xFF3B82F6),
+                        backdrop = globalBackdrop,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        isDark = isDark
+                    )
+                    LiquidStatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "系列丛书",
+                        value = "$animTotalSeries",
+                        unit = "部",
+                        subtitle = "收录系列",
+                        icon = Icons.AutoMirrored.Filled.LibraryBooks,
+                        iconColor = Color(0xFF8B5CF6),
+                        backdrop = globalBackdrop,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        isDark = isDark
+                    )
+                }
+            } else {
+                // --- ANIME STATS ---
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    LiquidStatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "追番总数",
+                        value = "$animAnimeCount",
+                        unit = "部",
+                        subtitle = "收录番剧",
+                        icon = Icons.Filled.Tv,
+                        iconColor = themeAccent,
+                        backdrop = globalBackdrop,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        isDark = isDark
+                    )
+                    LiquidStatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "累计时长",
+                        value = "$animAnimeMinutes",
+                        unit = "分钟",
+                        subtitle = if (animAnimeMinutes >= 60) "${animAnimeMinutes / 60}小时${animAnimeMinutes % 60}分" else "累计看番时长",
+                        icon = Icons.Filled.AccessTime,
+                        iconColor = Color(0xFFFF9500),
+                        backdrop = globalBackdrop,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        isDark = isDark
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    LiquidStatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "正在追番",
+                        value = "$watchingAnimeCount",
+                        unit = "部",
+                        subtitle = "进行中",
+                        icon = Icons.Filled.PlayCircleFilled,
+                        iconColor = Color(0xFF3B82F6),
+                        backdrop = globalBackdrop,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        isDark = isDark
+                    )
+                    LiquidStatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "已完结",
+                        value = "$finishedAnimeCount",
+                        unit = "部",
+                        subtitle = "已全集看完",
+                        icon = Icons.Filled.CheckCircle,
+                        iconColor = Color(0xFF10B981),
+                        backdrop = globalBackdrop,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        isDark = isDark
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(20.dp))

@@ -16,7 +16,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Sync
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Tv
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
@@ -532,6 +535,146 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = themeAccent
                             )
+                        }
+                    }
+                }
+
+                // 3. Anime WebDAV Media Library Card
+                val animeUseCustomWebDav by viewModel.animeUseCustomWebDav.collectAsState()
+                val animeWebDavUrl by viewModel.animeWebDavUrl.collectAsState()
+                val animeWebDavUser by viewModel.animeWebDavUser.collectAsState()
+                val animeWebDavPass by viewModel.animeWebDavPass.collectAsState()
+                val animeWebDavRootPath by viewModel.animeWebDavRootPath.collectAsState()
+
+                var inputAnimeUrl by remember(animeWebDavUrl) { mutableStateOf(animeWebDavUrl) }
+                var inputAnimeUser by remember(animeWebDavUser) { mutableStateOf(animeWebDavUser) }
+                var inputAnimePass by remember(animeWebDavPass) { mutableStateOf(animeWebDavPass) }
+                var inputAnimeRoot by remember(animeWebDavRootPath) { mutableStateOf(animeWebDavRootPath) }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .drawBackdrop(
+                            backdrop = backgroundBackdrop,
+                            shape = { RoundedCornerShape(22.dp) },
+                            effects = {
+                                vibrancy()
+                                blur(3f.dp.toPx())
+                                lens(8f.dp.toPx(), 16f.dp.toPx(), chromaticAberration = true)
+                            },
+                            highlight = { Highlight.Plain },
+                            onDrawSurface = {
+                                drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
+                            }
+                        )
+                        .border(
+                            width = 0.6.dp,
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = if (isDark) 0.35f else 0.70f),
+                                    Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
+                                )
+                            ),
+                            shape = RoundedCornerShape(22.dp)
+                        )
+                        .padding(16.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(themeAccent.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Filled.Tv, contentDescription = null, tint = themeAccent, modifier = Modifier.size(20.dp))
+                                }
+                                Column {
+                                    Text("番剧 WebDAV 媒体库", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
+                                    Text("配置云端番剧目录，自动刮削与播放", fontSize = 11.5.sp, color = secondaryTextColor)
+                                }
+                            }
+
+                            Switch(
+                                checked = animeUseCustomWebDav,
+                                onCheckedChange = { viewModel.setAnimeUseCustomWebDav(it) },
+                                colors = SwitchDefaults.colors(checkedThumbColor = themeAccent, checkedTrackColor = themeAccent.copy(alpha = 0.35f))
+                            )
+                        }
+
+                        if (!animeUseCustomWebDav) {
+                            Text("当前模式：复用小说 WebDAV 服务器", fontSize = 12.sp, color = secondaryTextColor)
+                        }
+
+                        if (animeUseCustomWebDav) {
+                            OutlinedTextField(
+                                value = inputAnimeUrl,
+                                onValueChange = { inputAnimeUrl = it },
+                                label = { Text("WebDAV 服务器地址") },
+                                placeholder = { Text("https://pan.example.com/dav") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = inputAnimeUser,
+                                    onValueChange = { inputAnimeUser = it },
+                                    label = { Text("用户名") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedTextField(
+                                    value = inputAnimePass,
+                                    onValueChange = { inputAnimePass = it },
+                                    label = { Text("密码") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = inputAnimeRoot,
+                            onValueChange = { inputAnimeRoot = it },
+                            label = { Text("番剧根目录路径") },
+                            placeholder = { Text("/4K fan") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            LiquidButton(
+                                onClick = {
+                                    viewModel.saveAnimeWebDavConfig(
+                                        url = inputAnimeUrl,
+                                        user = inputAnimeUser,
+                                        pass = inputAnimePass,
+                                        rootPath = inputAnimeRoot
+                                    )
+                                    com.example.epubreader.ui.components.toast.GlobalToastManager.show("✨ 番剧 WebDAV 配置已保存", com.example.epubreader.ui.components.toast.ToastType.Success)
+                                },
+                                backdrop = backgroundBackdrop,
+                                surfaceColor = themeAccent.copy(alpha = if (isDark) 0.30f else 0.18f),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.height(38.dp)
+                            ) {
+                                Text("保存配置", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = themeAccent, modifier = Modifier.padding(horizontal = 8.dp))
+                            }
                         }
                     }
                 }

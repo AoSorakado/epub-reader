@@ -67,8 +67,14 @@ import com.example.epubreader.ui.theme.getThemeAccentColor
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
+import androidx.compose.material.icons.filled.Tv
+import com.example.epubreader.ui.anime.AnimeScreen
+import com.example.epubreader.ui.anime.AnimeViewModel
+import com.example.epubreader.ui.player.AnimePlayerScreen
+
 sealed class Screen(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     object Bookshelf : Screen("bookshelf", "书架", Icons.Filled.Book)
+    object Anime : Screen("anime", "番剧", Icons.Filled.Tv)
     object Stats : Screen("stats", "统计", Icons.Filled.BarChart)
     object Settings : Screen("settings", "配置", Icons.Filled.Settings)
 }
@@ -77,6 +83,7 @@ val LocalContentBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 val bottomNavItems = listOf(
     Screen.Bookshelf,
+    Screen.Anime,
     Screen.Stats,
     Screen.Settings
 )
@@ -87,6 +94,8 @@ fun MainScaffold(navController: NavHostController) {
     val currentRoute = navBackStackEntry?.destination?.route
     
     val settingsViewModel: SettingsViewModel = viewModel()
+    val animeViewModel: AnimeViewModel = viewModel()
+
     val appTheme by settingsViewModel.appTheme.collectAsState()
     val isCustomThemeThreeColors by settingsViewModel.isCustomThemeThreeColors.collectAsState()
     val customColors by settingsViewModel.customColors.collectAsState()
@@ -101,23 +110,28 @@ fun MainScaffold(navController: NavHostController) {
         customColors = currentCustomColors
     )
 
+    val isDark = appTheme == com.example.epubreader.ui.theme.AppTheme.MIDNIGHT_GLASS
+    val primaryTextColor = if (isDark) Color(0xFFF1F5F9) else Color(0xFF2B173A)
+    val secondaryTextColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
     // Layer 1 backdrop (background gradient for pages inside NavHost)
     val backgroundBackdrop = rememberLayerBackdrop()
 
-    // Layer 2 backdrop: OPAQUE backdrop capturing background + NavHost content (books, text, covers)
+    // Layer 2 backdrop: OPAQUE backdrop capturing background + NavHost content
     val contentBackdrop = rememberLayerBackdrop {
         drawRect(brush = themeGradient)
         drawContent()
     }
 
     var isReaderActive by remember { mutableStateOf(false) }
+    var activePlayingPair by remember { mutableStateOf<Pair<com.example.epubreader.data.model.AnimeEntity, com.example.epubreader.data.model.AnimeEpisodeEntity>?>(null) }
 
     LaunchedEffect(Unit) {
         settingsViewModel.checkDailyStatus()
     }
 
     val isReaderRoute = currentRoute?.startsWith("reader") == true
-    val showBottomBar = !isReaderActive && !isReaderRoute
+    val showBottomBar = !isReaderActive && !isReaderRoute && activePlayingPair == null
 
     var selectedTabIndex by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
 
@@ -130,7 +144,7 @@ fun MainScaffold(navController: NavHostController) {
                 .layerBackdrop(backgroundBackdrop)
         )
 
-        // Layer 2: Preloaded 3 Main Screens (Instantly loaded from app start)
+        // Layer 2: Preloaded 4 Main Screens (Instantly loaded from app start)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -158,8 +172,37 @@ fun MainScaffold(navController: NavHostController) {
                 )
             }
 
-            // Tab 1: Stats (Preloaded)
-            val isStatsVisible = selectedTabIndex == 1 && !isReaderRoute
+            // Tab 1: Anime (Preloaded)
+            val animeAlpha by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (selectedTabIndex == 1 && !isReaderRoute) 1f else 0f,
+                animationSpec = androidx.compose.animation.core.tween(150),
+                label = "animeAlpha"
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        alpha = animeAlpha
+                        translationX = if (selectedTabIndex == 1 && !isReaderRoute) 0f else -10000f
+                    }
+            ) {
+                val animeWebDavConfig = settingsViewModel.getEffectiveAnimeWebDavClient()
+                AnimeScreen(
+                    viewModel = animeViewModel,
+                    backdrop = backgroundBackdrop,
+                    isDark = isDark,
+                    themeAccent = themeAccent,
+                    primaryTextColor = primaryTextColor,
+                    secondaryTextColor = secondaryTextColor,
+                    webDavConfig = animeWebDavConfig,
+                    onPlayEpisode = { anime, ep ->
+                        activePlayingPair = Pair(anime, ep)
+                    }
+                )
+            }
+
+            // Tab 2: Stats (Preloaded)
+            val isStatsVisible = selectedTabIndex == 2 && !isReaderRoute
             val statsAlpha by androidx.compose.animation.core.animateFloatAsState(
                 targetValue = if (isStatsVisible) 1f else 0f,
                 animationSpec = androidx.compose.animation.core.tween(150),
@@ -181,9 +224,9 @@ fun MainScaffold(navController: NavHostController) {
                 )
             }
 
-            // Tab 2: Settings (Preloaded)
+            // Tab 3: Settings (Preloaded)
             val settingsAlpha by androidx.compose.animation.core.animateFloatAsState(
-                targetValue = if (selectedTabIndex == 2 && !isReaderRoute) 1f else 0f,
+                targetValue = if (selectedTabIndex == 3 && !isReaderRoute) 1f else 0f,
                 animationSpec = androidx.compose.animation.core.tween(150),
                 label = "settingsAlpha"
             )
@@ -192,7 +235,7 @@ fun MainScaffold(navController: NavHostController) {
                     .fillMaxSize()
                     .graphicsLayer {
                         alpha = settingsAlpha
-                        translationX = if (selectedTabIndex == 2 && !isReaderRoute) 0f else -10000f
+                        translationX = if (selectedTabIndex == 3 && !isReaderRoute) 0f else -10000f
                     }
             ) {
                 SettingsScreen(
@@ -213,7 +256,7 @@ fun MainScaffold(navController: NavHostController) {
                 popExitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)) }
             ) {
                 composable("main_root") {
-                    // Empty placeholder since the 3 main tabs are permanently pre-composed underneath!
+                    // Pre-composed screens live underneath
                 }
                 composable(
                     route = "reader/{bookId}",
@@ -240,6 +283,35 @@ fun MainScaffold(navController: NavHostController) {
                     )
                 }
             }
+        }
+
+        // Active Full-Screen Anime Player Overlay
+        activePlayingPair?.let { (anime, episode) ->
+            val allEpisodes by animeViewModel.animes.collectAsState()
+            var currentEpList by remember(anime.id) { mutableStateOf<List<com.example.epubreader.data.model.AnimeEpisodeEntity>>(emptyList()) }
+            LaunchedEffect(anime.id) {
+                currentEpList = animeViewModel.getAnimeWithEpisodes(anime.id)?.episodes ?: listOf(episode)
+            }
+
+            val webDavUser = if (settingsViewModel.animeUseCustomWebDav.value) settingsViewModel.animeWebDavUser.value else settingsViewModel.getSavedWebDavUser()
+            val webDavPass = if (settingsViewModel.animeUseCustomWebDav.value) settingsViewModel.animeWebDavPass.value else settingsViewModel.getSavedWebDavPass()
+
+            AnimePlayerScreen(
+                anime = anime,
+                episode = episode,
+                allEpisodes = currentEpList,
+                backdrop = backgroundBackdrop,
+                themeAccent = themeAccent,
+                webDavAuth = if (webDavUser.isNotBlank()) Pair(webDavUser, webDavPass) else null,
+                onExit = { pos, dur ->
+                    animeViewModel.updateWatchProgress(anime.id, episode.id, episode.title, pos, dur)
+                    activePlayingPair = null
+                },
+                onNextEpisode = { nextEp ->
+                    animeViewModel.updateWatchProgress(anime.id, episode.id, episode.title, episode.durationMs, episode.durationMs)
+                    activePlayingPair = Pair(anime, nextEp)
+                }
+            )
         }
 
         // Layer 3: Unified Glass Bottom bar - draws contentBackdrop (refracting book covers, text & background)
