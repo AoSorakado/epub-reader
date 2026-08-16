@@ -56,8 +56,18 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
+import androidx.compose.ui.platform.LocalContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.rounded.Close
@@ -675,6 +685,7 @@ fun ReaderScreen(
                 val calculatedProgress = continuousProgress
                 val progressPercentText = String.format(java.util.Locale.US, "%.1f", (calculatedProgress * 100f).coerceIn(0f, 100f))
                 val estimatedTimeText = viewModel.getEstimatedRemainingTimeText(currentChapterIndex)
+                val batteryAndTime = rememberBatteryAndTime()
 
             // Continuous Reading Health / Eye Rest Reminder (60 min, 90 min, 120 min)
             LaunchedEffect(Unit) {
@@ -781,22 +792,82 @@ fun ReaderScreen(
                             label = "capsuleAnimatedContent"
                         ) { expanded ->
                             if (expanded) {
-                                Text(
-                                    text = "$estimatedTimeText · $progressPercentText%",
-                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = textColor,
-                                    maxLines = 1
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = "$estimatedTimeText · $progressPercentText%",
+                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = textColor,
+                                        maxLines = 1
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "·",
+                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                        fontSize = 13.sp,
+                                        color = textColor.copy(alpha = 0.45f)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = batteryAndTime.time,
+                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor.copy(alpha = 0.9f)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    MiniBatteryIndicator(
+                                        level = batteryAndTime.level,
+                                        isCharging = batteryAndTime.isCharging,
+                                        tintColor = textColor
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "${batteryAndTime.level}%",
+                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor.copy(alpha = 0.75f)
+                                    )
+                                }
                             } else {
-                                Text(
-                                    text = "$progressPercentText%",
-                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = textColor
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = "$progressPercentText%",
+                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "·",
+                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                        fontSize = 13.sp,
+                                        color = textColor.copy(alpha = 0.45f)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = batteryAndTime.time,
+                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor.copy(alpha = 0.9f)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    MiniBatteryIndicator(
+                                        level = batteryAndTime.level,
+                                        isCharging = batteryAndTime.isCharging,
+                                        tintColor = textColor
+                                    )
+                                }
                             }
                         }
                     }
@@ -1830,6 +1901,126 @@ fun ReaderScreen(
                 }
             }
         }
+
+data class BatteryAndTimeState(
+    val level: Int,
+    val isCharging: Boolean,
+    val time: String
+)
+
+@Composable
+fun rememberBatteryAndTime(): BatteryAndTimeState {
+    val context = LocalContext.current
+    var level by remember { mutableIntStateOf(100) }
+    var isCharging by remember { mutableStateOf(false) }
+    var time by remember {
+        mutableStateOf(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()))
+    }
+
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_BATTERY_CHANGED -> {
+                        val rawLevel = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                        val rawScale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                        if (rawLevel >= 0 && rawScale > 0) {
+                            level = (rawLevel * 100 / rawScale.toFloat()).toInt()
+                        }
+                        val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                        isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                                     status == BatteryManager.BATTERY_STATUS_FULL
+                    }
+                    Intent.ACTION_TIME_TICK, Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED -> {
+                        time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                    }
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(Intent.ACTION_TIME_TICK)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+        }
+        context.registerReceiver(receiver, filter)
+
+        onDispose {
+            try {
+                context.unregisterReceiver(receiver)
+            } catch (e: Exception) {}
+        }
+    }
+
+    return BatteryAndTimeState(level, isCharging, time)
+}
+
+@Composable
+fun MiniBatteryIndicator(
+    level: Int,
+    isCharging: Boolean,
+    tintColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = modifier
+    ) {
+        if (isCharging) {
+            Icon(
+                imageVector = Icons.Filled.Bolt,
+                contentDescription = "Charging",
+                tint = Color(0xFFFFB800),
+                modifier = Modifier.size(13.dp)
+            )
+        }
+        androidx.compose.foundation.Canvas(modifier = Modifier.size(width = 19.dp, height = 10.dp)) {
+            val strokeWidth = 1.15.dp.toPx()
+            val cornerRadius = 2.dp.toPx()
+            val capWidth = 1.5.dp.toPx()
+            val capHeight = 4.dp.toPx()
+            val mainBodyWidth = size.width - capWidth - 1.2.dp.toPx()
+            val mainBodyHeight = size.height
+
+            // Outer rounded rectangle
+            drawRoundRect(
+                color = tintColor.copy(alpha = 0.55f),
+                size = androidx.compose.ui.geometry.Size(mainBodyWidth, mainBodyHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius, cornerRadius),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth)
+            )
+
+            // Right terminal cap
+            drawRoundRect(
+                color = tintColor.copy(alpha = 0.55f),
+                topLeft = androidx.compose.ui.geometry.Offset(mainBodyWidth + 0.8.dp.toPx(), (mainBodyHeight - capHeight) / 2),
+                size = androidx.compose.ui.geometry.Size(capWidth, capHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx(), 1.dp.toPx())
+            )
+
+            // Inner fill
+            val fillPadding = 1.8.dp.toPx()
+            val maxFillWidth = mainBodyWidth - (fillPadding * 2)
+            val fillHeight = mainBodyHeight - (fillPadding * 2)
+            val fillPercent = (level.coerceIn(0, 100) / 100f)
+            val fillWidth = (maxFillWidth * fillPercent).coerceAtLeast(1.dp.toPx())
+
+            val fillColor = when {
+                isCharging -> Color(0xFFFFB800)
+                level <= 15 -> Color(0xFFFF4D4F)
+                else -> tintColor.copy(alpha = 0.85f)
+            }
+
+            drawRoundRect(
+                color = fillColor,
+                topLeft = androidx.compose.ui.geometry.Offset(fillPadding, fillPadding),
+                size = androidx.compose.ui.geometry.Size(fillWidth, fillHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx(), 1.dp.toPx())
+            )
+        }
+    }
+}
 
 @Composable
 fun ThemeButton(color: Color, name: String, isSelected: Boolean, textColor: Color, onClick: () -> Unit) {
