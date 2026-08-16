@@ -1050,6 +1050,11 @@ fun AnnualHeatmapCard(
     val totalWidthDp = with(density) { totalWidthPx.toDp() }
     val totalHeightDp = with(density) { (7 * stepPx).toDp() }
 
+    val tooltipWidthDp = 186.dp
+    val tooltipHeightDp = 32.dp
+    val tooltipWidthPx = with(density) { tooltipWidthDp.toPx() }
+    val tooltipHeightPx = with(density) { tooltipHeightDp.toPx() }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1237,50 +1242,94 @@ fun AnnualHeatmapCard(
                         }
                     }
 
-                    // Floating Tooltip Bubble
-                    selectedDayInfo?.let { sel ->
-                        var tooltipWidthPx by remember { mutableIntStateOf(0) }
-                        var tooltipHeightPx by remember { mutableIntStateOf(0) }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isDark) Color(0xFF1E293B).copy(alpha = 0.95f) else Color(0xFF0F172A).copy(alpha = 0.92f),
-                            shadowElevation = 8.dp,
-                            modifier = Modifier
-                                .onSizeChanged {
-                                    tooltipWidthPx = it.width
-                                    tooltipHeightPx = it.height
-                                }
-                                .offset {
-                                    val x = (sel.cellCenterX - tooltipWidthPx / 2f).roundToInt()
-                                        .coerceIn(0, (totalWidthPx.toInt() - tooltipWidthPx).coerceAtLeast(0))
-                                    val y = if (sel.isTopRow) (sel.cellBottomY + 6.dp.toPx()).roundToInt()
-                                    else (sel.cellTopY - tooltipHeightPx - 6.dp.toPx()).roundToInt().coerceAtLeast(0)
-                                    IntOffset(x, y)
-                                }
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    // Floating Frosted Glass Tooltip Bubble with Spring Scale + Fade Animation
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = selectedDayInfo != null,
+                        enter = androidx.compose.animation.fadeIn(animationSpec = tween(180)) +
+                                androidx.compose.animation.scaleIn(
+                                    animationSpec = spring(dampingRatio = 0.72f, stiffness = 380f),
+                                    initialScale = 0.75f,
+                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                                        0.5f,
+                                        if (selectedDayInfo?.isTopRow == true) 0f else 1f
+                                    )
+                                ),
+                        exit = androidx.compose.animation.fadeOut(animationSpec = tween(120)) +
+                               androidx.compose.animation.scaleOut(animationSpec = tween(120), targetScale = 0.8f),
+                        modifier = Modifier.offset {
+                            val sel = selectedDayInfo ?: return@offset IntOffset.Zero
+                            val x = (sel.cellCenterX - tooltipWidthPx / 2f).roundToInt()
+                                .coerceIn(0, (totalWidthPx.toInt() - tooltipWidthPx.toInt()).coerceAtLeast(0))
+                            val y = if (sel.isTopRow) (sel.cellBottomY + 6.dp.toPx()).roundToInt()
+                            else (sel.cellTopY - tooltipHeightPx - 6.dp.toPx()).roundToInt().coerceAtLeast(0)
+                            IntOffset(x, y)
+                        }
+                    ) {
+                        selectedDayInfo?.let { sel ->
+                            Box(
+                                modifier = Modifier
+                                    .width(tooltipWidthDp)
+                                    .height(tooltipHeightDp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        brush = Brush.verticalGradient(
+                                            colors = if (isDark) {
+                                                listOf(
+                                                    Color(0xFF2D3748).copy(alpha = 0.95f),
+                                                    Color(0xFF1A202C).copy(alpha = 0.95f)
+                                                )
+                                            } else {
+                                                listOf(
+                                                    Color.White.copy(alpha = 0.96f),
+                                                    Color(0xFFFFF7F9).copy(alpha = 0.92f)
+                                                )
+                                            }
+                                        )
+                                    )
+                                    .border(
+                                        width = 0.9.dp,
+                                        brush = Brush.linearGradient(
+                                            colors = if (isDark) {
+                                                listOf(
+                                                    Color.White.copy(alpha = 0.35f),
+                                                    themeAccent.copy(alpha = 0.50f)
+                                                )
+                                            } else {
+                                                listOf(
+                                                    themeAccent.copy(alpha = 0.60f),
+                                                    Color.White.copy(alpha = 0.90f),
+                                                    themeAccent.copy(alpha = 0.30f)
+                                                )
+                                            }
+                                        ),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .padding(horizontal = 8.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = "${sel.day.fullDateStr} (${sel.day.dayLabel})",
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = "·",
-                                    fontSize = 11.5.sp,
-                                    color = Color.White.copy(alpha = 0.5f)
-                                )
-                                Text(
-                                    text = if (sel.day.minutes > 0) "${sel.day.minutes}分钟 🔥" else "未阅读 ☕",
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (sel.day.minutes > 0) themeAccent else Color.White.copy(alpha = 0.7f)
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "${sel.day.fullDateStr} (${sel.day.dayLabel})",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = primaryTextColor
+                                    )
+                                    Text(
+                                        text = "·",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = secondaryTextColor.copy(alpha = 0.6f)
+                                    )
+                                    Text(
+                                        text = if (sel.day.minutes > 0) "${sel.day.minutes}分钟 🔥" else "未阅读 ☕",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (sel.day.minutes > 0) themeAccent else secondaryTextColor
+                                    )
+                                }
                             }
                         }
                     }
