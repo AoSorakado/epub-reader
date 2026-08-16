@@ -31,10 +31,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -998,6 +1000,14 @@ fun RecentBookLiquidCard(
     }
 }
 
+data class SelectedHeatmapDayInfo(
+    val day: HeatmapDay,
+    val cellCenterX: Float,
+    val cellTopY: Float,
+    val cellBottomY: Float,
+    val isTopRow: Boolean
+)
+
 @Composable
 fun AnnualHeatmapCard(
     heatmapWeeks: List<List<HeatmapDay>>,
@@ -1012,7 +1022,7 @@ fun AnnualHeatmapCard(
     isVisible: Boolean = true,
     animProgress: Float = 1f
 ) {
-    var selectedDay by remember { mutableStateOf<HeatmapDay?>(null) }
+    var selectedDayInfo by remember { mutableStateOf<SelectedHeatmapDayInfo?>(null) }
     val horizontalScrollState = rememberScrollState()
 
     // Auto-scroll to latest week on tab enter
@@ -1022,13 +1032,22 @@ fun AnnualHeatmapCard(
         }
     }
 
+    // Auto-dismiss tooltip bubble after 4s
+    LaunchedEffect(selectedDayInfo) {
+        if (selectedDayInfo != null) {
+            kotlinx.coroutines.delay(4000L)
+            selectedDayInfo = null
+        }
+    }
+
     val density = LocalDensity.current
     val cellSizeDp = 11.dp
     val cellGapDp = 3.5.dp
     val cellSizePx = with(density) { cellSizeDp.toPx() }
     val cellGapPx = with(density) { cellGapDp.toPx() }
     val stepPx = cellSizePx + cellGapPx
-    val totalWidthDp = with(density) { (heatmapWeeks.size * stepPx).toDp() }
+    val totalWidthPx = heatmapWeeks.size * stepPx
+    val totalWidthDp = with(density) { totalWidthPx.toDp() }
     val totalHeightDp = with(density) { (7 * stepPx).toDp() }
 
     Box(
@@ -1145,83 +1164,122 @@ fun AnnualHeatmapCard(
                 }
             }
 
-            // Interactive Tooltip Banner
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = if (isDark) 0.06f else 0.25f))
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                if (selectedDay != null) {
-                    val day = selectedDay!!
-                    Text(
-                        text = "📅 ${day.fullDateStr} (${day.dayLabel}) · 专注阅读 ${day.minutes} 分钟 ${if (day.minutes > 0) "🔥" else "💤"}",
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = themeAccent
-                    )
-                } else {
-                    Text(
-                        text = "💡 点击下方任意格子可查看当日详细阅读时长",
-                        fontSize = 11.5.sp,
-                        color = secondaryTextColor
-                    )
-                }
-            }
-
-            // 52-Week Grid (120 FPS High-Performance Batch Canvas)
+            // 52-Week Grid (120 FPS High-Performance Batch Canvas + Floating Popover Tooltip Bubble)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(horizontalScrollState)
             ) {
-                Canvas(
-                    modifier = Modifier
-                        .size(totalWidthDp, totalHeightDp)
-                        .pointerInput(heatmapWeeks) {
-                            detectTapGestures { offset ->
-                                val weekIdx = (offset.x / stepPx).toInt().coerceIn(0, (heatmapWeeks.size - 1).coerceAtLeast(0))
-                                val dayIdx = (offset.y / stepPx).toInt().coerceIn(0, 6)
-                                val week = heatmapWeeks.getOrNull(weekIdx)
-                                val day = week?.getOrNull(dayIdx)
-                                if (day != null) {
-                                    selectedDay = if (selectedDay?.dateTimestamp == day.dateTimestamp) null else day
+                Box(
+                    modifier = Modifier.size(totalWidthDp, totalHeightDp)
+                ) {
+                    Canvas(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .pointerInput(heatmapWeeks) {
+                                detectTapGestures { offset ->
+                                    val weekIdx = (offset.x / stepPx).toInt().coerceIn(0, (heatmapWeeks.size - 1).coerceAtLeast(0))
+                                    val dayIdx = (offset.y / stepPx).toInt().coerceIn(0, 6)
+                                    val week = heatmapWeeks.getOrNull(weekIdx)
+                                    val day = week?.getOrNull(dayIdx)
+                                    if (day != null) {
+                                        if (selectedDayInfo?.day?.dateTimestamp == day.dateTimestamp) {
+                                            selectedDayInfo = null
+                                        } else {
+                                            val cellCenterX = weekIdx * stepPx + (cellSizePx / 2f)
+                                            val cellTopY = dayIdx * stepPx
+                                            val cellBottomY = cellTopY + cellSizePx
+                                            selectedDayInfo = SelectedHeatmapDayInfo(
+                                                day = day,
+                                                cellCenterX = cellCenterX,
+                                                cellTopY = cellTopY,
+                                                cellBottomY = cellBottomY,
+                                                isTopRow = dayIdx <= 1
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                    ) {
+                        val cornerRadius = CornerRadius(2.5.dp.toPx(), 2.5.dp.toPx())
+                        val selectedTimestamp = selectedDayInfo?.day?.dateTimestamp
+
+                        heatmapWeeks.forEachIndexed { weekIdx, weekDays ->
+                            val x = weekIdx * stepPx
+                            weekDays.forEachIndexed { dayIdx, day ->
+                                val y = dayIdx * stepPx
+                                val isSelected = selectedTimestamp == day.dateTimestamp
+                                val cellColor = when (day.level) {
+                                    0 -> if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+                                    1 -> themeAccent.copy(alpha = 0.35f)
+                                    2 -> themeAccent.copy(alpha = 0.60f)
+                                    3 -> themeAccent.copy(alpha = 0.85f)
+                                    else -> themeAccent
+                                }
+
+                                drawRoundRect(
+                                    color = cellColor,
+                                    topLeft = Offset(x, y),
+                                    size = Size(cellSizePx, cellSizePx),
+                                    cornerRadius = cornerRadius
+                                )
+
+                                if (isSelected) {
+                                    drawRoundRect(
+                                        color = Color.White,
+                                        topLeft = Offset(x - 0.5f, y - 0.5f),
+                                        size = Size(cellSizePx + 1f, cellSizePx + 1f),
+                                        cornerRadius = cornerRadius,
+                                        style = Stroke(width = 1.5.dp.toPx())
+                                    )
                                 }
                             }
                         }
-                ) {
-                    val cornerRadius = CornerRadius(2.5.dp.toPx(), 2.5.dp.toPx())
-                    val selectedTimestamp = selectedDay?.dateTimestamp
+                    }
 
-                    heatmapWeeks.forEachIndexed { weekIdx, weekDays ->
-                        val x = weekIdx * stepPx
-                        weekDays.forEachIndexed { dayIdx, day ->
-                            val y = dayIdx * stepPx
-                            val isSelected = selectedTimestamp == day.dateTimestamp
-                            val cellColor = when (day.level) {
-                                0 -> if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
-                                1 -> themeAccent.copy(alpha = 0.35f)
-                                2 -> themeAccent.copy(alpha = 0.60f)
-                                3 -> themeAccent.copy(alpha = 0.85f)
-                                else -> themeAccent
-                            }
+                    // Floating Tooltip Bubble
+                    selectedDayInfo?.let { sel ->
+                        var tooltipWidthPx by remember { mutableIntStateOf(0) }
+                        var tooltipHeightPx by remember { mutableIntStateOf(0) }
 
-                            drawRoundRect(
-                                color = cellColor,
-                                topLeft = Offset(x, y),
-                                size = Size(cellSizePx, cellSizePx),
-                                cornerRadius = cornerRadius
-                            )
-
-                            if (isSelected) {
-                                drawRoundRect(
-                                    color = Color.White,
-                                    topLeft = Offset(x - 0.5f, y - 0.5f),
-                                    size = Size(cellSizePx + 1f, cellSizePx + 1f),
-                                    cornerRadius = cornerRadius,
-                                    style = Stroke(width = 1.5.dp.toPx())
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isDark) Color(0xFF1E293B).copy(alpha = 0.95f) else Color(0xFF0F172A).copy(alpha = 0.92f),
+                            shadowElevation = 8.dp,
+                            modifier = Modifier
+                                .onSizeChanged {
+                                    tooltipWidthPx = it.width
+                                    tooltipHeightPx = it.height
+                                }
+                                .offset {
+                                    val x = (sel.cellCenterX - tooltipWidthPx / 2f).roundToInt()
+                                        .coerceIn(0, (totalWidthPx.toInt() - tooltipWidthPx).coerceAtLeast(0))
+                                    val y = if (sel.isTopRow) (sel.cellBottomY + 6.dp.toPx()).roundToInt()
+                                    else (sel.cellTopY - tooltipHeightPx - 6.dp.toPx()).roundToInt().coerceAtLeast(0)
+                                    IntOffset(x, y)
+                                }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "${sel.day.fullDateStr} (${sel.day.dayLabel})",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "·",
+                                    fontSize = 11.5.sp,
+                                    color = Color.White.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    text = if (sel.day.minutes > 0) "${sel.day.minutes}分钟 🔥" else "未阅读 ☕",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (sel.day.minutes > 0) themeAccent else Color.White.copy(alpha = 0.7f)
                                 )
                             }
                         }
