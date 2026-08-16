@@ -159,8 +159,9 @@ fun MainScaffold(navController: NavHostController) {
             }
 
             // Tab 1: Stats (Preloaded)
+            val isStatsVisible = selectedTabIndex == 1 && !isReaderRoute
             val statsAlpha by androidx.compose.animation.core.animateFloatAsState(
-                targetValue = if (selectedTabIndex == 1 && !isReaderRoute) 1f else 0f,
+                targetValue = if (isStatsVisible) 1f else 0f,
                 animationSpec = androidx.compose.animation.core.tween(150),
                 label = "statsAlpha"
             )
@@ -169,13 +170,14 @@ fun MainScaffold(navController: NavHostController) {
                     .fillMaxSize()
                     .graphicsLayer {
                         alpha = statsAlpha
-                        translationX = if (selectedTabIndex == 1 && !isReaderRoute) 0f else -10000f
+                        translationX = if (isStatsVisible) 0f else -10000f
                     }
             ) {
                 StatsScreen(
                     navController = navController,
                     settingsViewModel = settingsViewModel,
-                    globalBackdrop = backgroundBackdrop
+                    globalBackdrop = backgroundBackdrop,
+                    isVisible = isStatsVisible
                 )
             }
 

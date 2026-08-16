@@ -58,7 +58,8 @@ import kotlin.math.roundToInt
 fun StatsScreen(
     navController: NavController,
     settingsViewModel: com.example.epubreader.ui.settings.SettingsViewModel,
-    globalBackdrop: com.kyant.backdrop.Backdrop
+    globalBackdrop: com.kyant.backdrop.Backdrop,
+    isVisible: Boolean = true
 ) {
     val context = LocalContext.current
     val db = AppDatabase.getDatabase(context)
@@ -76,6 +77,24 @@ fun StatsScreen(
     val themeAccent = getThemeAccentColor(appTheme, if (isCustomThemeThreeColors) customColors else customColors.take(2))
 
     val state by viewModel.stats.collectAsState()
+
+    // Smooth count-up & entrance animation driver triggered whenever user enters the Stats tab
+    val animTrigger = remember { Animatable(0f) }
+    LaunchedEffect(isVisible) {
+        if (isVisible) {
+            animTrigger.snapTo(0f)
+            animTrigger.animateTo(
+                1f,
+                animationSpec = spring(dampingRatio = 0.82f, stiffness = 160f)
+            )
+        }
+    }
+
+    val animFactor = animTrigger.value
+    val animTotalMinutes = (state.totalReadingMinutes * animFactor).roundToInt()
+    val animTodayMinutes = (state.todayReadingMinutes * animFactor).roundToInt()
+    val animTotalBooks = (state.totalBooks * animFactor).roundToInt()
+    val animTotalSeries = (state.totalSeries * animFactor).roundToInt()
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -116,9 +135,9 @@ fun StatsScreen(
                 LiquidStatCard(
                     modifier = Modifier.weight(1f),
                     title = "累计阅读",
-                    value = "${state.totalReadingMinutes}",
+                    value = "$animTotalMinutes",
                     unit = "分钟",
-                    subtitle = if (state.totalReadingMinutes >= 60) "${state.totalReadingMinutes / 60}小时${state.totalReadingMinutes % 60}分" else "累计阅读时长",
+                    subtitle = if (animTotalMinutes >= 60) "${animTotalMinutes / 60}小时${animTotalMinutes % 60}分" else "累计阅读时长",
                     icon = Icons.Filled.Timer,
                     iconColor = themeAccent,
                     backdrop = globalBackdrop,
@@ -129,9 +148,9 @@ fun StatsScreen(
                 LiquidStatCard(
                     modifier = Modifier.weight(1f),
                     title = "今日专注",
-                    value = "${state.todayReadingMinutes}",
+                    value = "$animTodayMinutes",
                     unit = "分钟",
-                    subtitle = if (state.todayReadingMinutes > 0) "保持好习惯" else "待开始阅读",
+                    subtitle = if (animTodayMinutes > 0) "保持好习惯" else "待开始阅读",
                     icon = Icons.Filled.LocalFireDepartment,
                     iconColor = Color(0xFFFF5722),
                     backdrop = globalBackdrop,
@@ -152,7 +171,7 @@ fun StatsScreen(
                 LiquidStatCard(
                     modifier = Modifier.weight(1f),
                     title = "藏书总数",
-                    value = "${state.totalBooks}",
+                    value = "$animTotalBooks",
                     unit = "本",
                     subtitle = "本地及云端",
                     icon = Icons.AutoMirrored.Filled.MenuBook,
@@ -165,7 +184,7 @@ fun StatsScreen(
                 LiquidStatCard(
                     modifier = Modifier.weight(1f),
                     title = "系列丛书",
-                    value = "${state.totalSeries}",
+                    value = "$animTotalSeries",
                     unit = "部",
                     subtitle = "收录系列",
                     icon = Icons.AutoMirrored.Filled.LibraryBooks,
@@ -189,7 +208,9 @@ fun StatsScreen(
                 themeAccent = themeAccent,
                 primaryTextColor = primaryTextColor,
                 secondaryTextColor = secondaryTextColor,
-                isDark = isDark
+                isDark = isDark,
+                isVisible = isVisible,
+                animProgress = animFactor
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -201,7 +222,9 @@ fun StatsScreen(
                 themeAccent = themeAccent,
                 primaryTextColor = primaryTextColor,
                 secondaryTextColor = secondaryTextColor,
-                isDark = isDark
+                isDark = isDark,
+                isVisible = isVisible,
+                animProgress = animFactor
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -215,7 +238,9 @@ fun StatsScreen(
                 themeAccent = themeAccent,
                 primaryTextColor = primaryTextColor,
                 secondaryTextColor = secondaryTextColor,
-                isDark = isDark
+                isDark = isDark,
+                isVisible = isVisible,
+                animProgress = animFactor
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -412,7 +437,9 @@ fun WeeklyTrendChartCard(
     themeAccent: Color,
     primaryTextColor: Color,
     secondaryTextColor: Color,
-    isDark: Boolean
+    isDark: Boolean,
+    isVisible: Boolean = true,
+    animProgress: Float = 1f
 ) {
     val maxMinutes = remember(weeklyTrend) {
         (weeklyTrend.maxOfOrNull { it.minutes } ?: 0).coerceAtLeast(30)
@@ -420,12 +447,14 @@ fun WeeklyTrendChartCard(
     val weekTotal = remember(weeklyTrend) { weeklyTrend.sumOf { it.minutes } }
     
     val animatedProgress = remember { Animatable(0f) }
-    LaunchedEffect(weeklyTrend) {
-        animatedProgress.snapTo(0f)
-        animatedProgress.animateTo(
-            1f,
-            animationSpec = spring(dampingRatio = 0.85f, stiffness = 180f)
-        )
+    LaunchedEffect(isVisible, weeklyTrend) {
+        if (isVisible) {
+            animatedProgress.snapTo(0f)
+            animatedProgress.animateTo(
+                1f,
+                animationSpec = spring(dampingRatio = 0.82f, stiffness = 180f)
+            )
+        }
     }
 
     Box(
@@ -508,7 +537,7 @@ fun WeeklyTrendChartCard(
                 }
 
                 Text(
-                    text = "近7天合计 ${weekTotal} 分钟",
+                    text = "近7天合计 ${(weekTotal * animatedProgress.value).roundToInt()} 分钟",
                     fontSize = 12.sp,
                     color = secondaryTextColor
                 )
@@ -639,16 +668,23 @@ fun ProgressRingCard(
     themeAccent: Color,
     primaryTextColor: Color,
     secondaryTextColor: Color,
-    isDark: Boolean
+    isDark: Boolean,
+    isVisible: Boolean = true,
+    animProgress: Float = 1f
 ) {
     val unread = (total - finished - reading).coerceAtLeast(0)
     val progressRate = if (total > 0) finished.toFloat() / total.toFloat() else 0f
 
-    val animatedProgress by animateFloatAsState(
-        targetValue = progressRate,
-        animationSpec = spring(dampingRatio = 0.85f, stiffness = 160f),
-        label = "progressRate"
-    )
+    val ringProgress = remember { Animatable(0f) }
+    LaunchedEffect(isVisible, progressRate) {
+        if (isVisible) {
+            ringProgress.snapTo(0f)
+            ringProgress.animateTo(
+                progressRate,
+                animationSpec = spring(dampingRatio = 0.82f, stiffness = 160f)
+            )
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -727,13 +763,13 @@ fun ProgressRingCard(
                     )
 
                     // Active progress sweep
-                    if (animatedProgress > 0.001f) {
+                    if (ringProgress.value > 0.001f) {
                         drawArc(
                             brush = Brush.sweepGradient(
                                 colors = listOf(themeAccent, Color(0xFF10B981), themeAccent)
                             ),
                             startAngle = -90f,
-                            sweepAngle = animatedProgress * 360f,
+                            sweepAngle = ringProgress.value * 360f,
                             useCenter = false,
                             style = Stroke(width = 10.dp.toPx(), cap = StrokeCap.Round)
                         )
@@ -742,7 +778,7 @@ fun ProgressRingCard(
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "${(animatedProgress * 100).roundToInt()}%",
+                        text = "${(ringProgress.value * 100).roundToInt()}%",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Black,
                         color = primaryTextColor
@@ -972,14 +1008,16 @@ fun AnnualHeatmapCard(
     themeAccent: Color,
     primaryTextColor: Color,
     secondaryTextColor: Color,
-    isDark: Boolean
+    isDark: Boolean,
+    isVisible: Boolean = true,
+    animProgress: Float = 1f
 ) {
     var selectedDay by remember { mutableStateOf<HeatmapDay?>(null) }
     val horizontalScrollState = rememberScrollState()
 
-    // Auto-scroll to latest week on initial load
-    LaunchedEffect(heatmapWeeks.size) {
-        if (heatmapWeeks.isNotEmpty()) {
+    // Auto-scroll to latest week on tab enter
+    LaunchedEffect(isVisible, heatmapWeeks.size) {
+        if (isVisible && heatmapWeeks.isNotEmpty()) {
             horizontalScrollState.scrollTo(horizontalScrollState.maxValue)
         }
     }
@@ -1083,7 +1121,7 @@ fun AnnualHeatmapCard(
                             .padding(horizontal = 7.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = "活跃 $activeDaysCount 天",
+                            text = "活跃 ${(activeDaysCount * animProgress).roundToInt()} 天",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = themeAccent
@@ -1097,7 +1135,7 @@ fun AnnualHeatmapCard(
                                 .padding(horizontal = 7.dp, vertical = 3.dp)
                         ) {
                             Text(
-                                text = "连续 $currentStreakDays 天",
+                                text = "连续 ${(currentStreakDays * animProgress).roundToInt()} 天",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFFFF9800)
