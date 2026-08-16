@@ -758,107 +758,93 @@ fun ReaderScreen(
                         isCapsuleExpanded = !isCapsuleExpanded
                     },
                     backdrop = readerBackdrop,
-                    shape = CircleShape,
-                    modifier = Modifier
-                        .height(44.dp)
-                        .animateContentSize(
-                            animationSpec = spring(
-                                dampingRatio = 0.78f,
-                                stiffness = 340f
-                            ),
-                            alignment = Alignment.Center
-                        )
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.height(44.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier.padding(horizontal = 11.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.AutoStories,
-                            contentDescription = null,
-                            tint = textColor.copy(alpha = 0.85f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        AnimatedContent(
-                            targetState = isCapsuleExpanded,
-                            contentAlignment = Alignment.Center,
-                            transitionSpec = {
-                                (fadeIn(animationSpec = spring(dampingRatio = 0.80f, stiffness = 360f)) + scaleIn(initialScale = 0.90f, transformOrigin = TransformOrigin.Center)) togetherWith
-                                (fadeOut(animationSpec = spring(dampingRatio = 0.80f, stiffness = 360f)) + scaleOut(targetScale = 0.90f, transformOrigin = TransformOrigin.Center))
-                            },
-                            label = "capsuleAnimatedContent"
-                        ) { expanded ->
-                            if (expanded) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Text(
-                                        text = "$estimatedTimeText · $progressPercentText%",
-                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = textColor,
-                                        maxLines = 1
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = "·",
-                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 12.5.sp,
-                                        color = textColor.copy(alpha = 0.45f)
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = batteryAndTime.time,
-                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = textColor.copy(alpha = 0.9f)
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    MiniBatteryIndicator(
-                                        level = batteryAndTime.level,
-                                        isCharging = batteryAndTime.isCharging,
-                                        tintColor = textColor
-                                    )
-                                }
-                            } else {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Text(
-                                        text = "$progressPercentText%",
-                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = textColor
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = "·",
-                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 12.5.sp,
-                                        color = textColor.copy(alpha = 0.45f)
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = batteryAndTime.time,
-                                        fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = textColor.copy(alpha = 0.9f)
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    MiniBatteryIndicator(
-                                        level = batteryAndTime.level,
-                                        isCharging = batteryAndTime.isCharging,
-                                        tintColor = textColor
-                                    )
-                                }
+                    Icon(
+                        imageVector = Icons.Filled.AutoStories,
+                        contentDescription = null,
+                        tint = textColor.copy(alpha = 0.85f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    AnimatedContent(
+                        targetState = isCapsuleExpanded,
+                        contentAlignment = Alignment.Center,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = spring(dampingRatio = 0.80f, stiffness = 360f)) + scaleIn(initialScale = 0.90f, transformOrigin = TransformOrigin.Center)) togetherWith
+                            (fadeOut(animationSpec = spring(dampingRatio = 0.80f, stiffness = 360f)) + scaleOut(targetScale = 0.90f, transformOrigin = TransformOrigin.Center))
+                        },
+                        label = "capsuleAnimatedContent"
+                    ) { expanded ->
+                        if (expanded) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "$estimatedTimeText · $progressPercentText%",
+                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = textColor,
+                                    maxLines = 1
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "·",
+                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                    fontSize = 12.5.sp,
+                                    color = textColor.copy(alpha = 0.45f)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = batteryAndTime.time,
+                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor.copy(alpha = 0.9f)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                MiniBatteryIndicator(
+                                    level = batteryAndTime.level,
+                                    isCharging = batteryAndTime.isCharging,
+                                    tintColor = textColor
+                                )
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "$progressPercentText%",
+                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "·",
+                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                    fontSize = 12.5.sp,
+                                    color = textColor.copy(alpha = 0.45f)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = batteryAndTime.time,
+                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor.copy(alpha = 0.9f)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                MiniBatteryIndicator(
+                                    level = batteryAndTime.level,
+                                    isCharging = batteryAndTime.isCharging,
+                                    tintColor = textColor
+                                )
                             }
                         }
                     }
