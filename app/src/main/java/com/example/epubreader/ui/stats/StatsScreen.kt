@@ -449,15 +449,18 @@ fun WeeklyTrendChartCard(
     val weekTotal = remember(weeklyTrend) { weeklyTrend.sumOf { it.minutes } }
     
     val animatedProgress = remember { Animatable(0f) }
-    LaunchedEffect(isVisible, weeklyTrend) {
+    LaunchedEffect(isVisible) {
         if (isVisible) {
             animatedProgress.snapTo(0f)
             animatedProgress.animateTo(
                 1f,
-                animationSpec = spring(dampingRatio = 0.82f, stiffness = 180f)
+                animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing)
             )
         }
     }
+
+    val path = remember { Path() }
+    val fillPath = remember { Path() }
 
     Box(
         modifier = Modifier
@@ -539,7 +542,7 @@ fun WeeklyTrendChartCard(
                 }
 
                 Text(
-                    text = "近7天合计 ${(weekTotal * animatedProgress.value).roundToInt()} 分钟",
+                    text = "近7天合计 ${weekTotal} 分钟",
                     fontSize = 12.sp,
                     color = secondaryTextColor
                 )
@@ -547,7 +550,7 @@ fun WeeklyTrendChartCard(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Chart Canvas - Ultra-smooth rendering
+            // Chart Canvas - Ultra-smooth 120 FPS rendering
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -556,38 +559,37 @@ fun WeeklyTrendChartCard(
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     if (weeklyTrend.isEmpty()) return@Canvas
 
+                    val anim = animatedProgress.value
                     val width = size.width
                     val height = size.height
                     val stepX = width / (weeklyTrend.size - 1).coerceAtLeast(1)
 
                     val points = weeklyTrend.mapIndexed { index, stat ->
                         val ratio = (stat.minutes.toFloat() / maxMinutes.toFloat()).coerceIn(0f, 1f)
-                        val animatedRatio = ratio * animatedProgress.value
+                        val animatedRatio = ratio * anim
                         val x = index * stepX
                         val y = height - (animatedRatio * (height - 24.dp.toPx())) - 12.dp.toPx()
                         Offset(x, y)
                     }
 
                     // Build smooth cubic bezier path
-                    val path = Path().apply {
-                        if (points.isNotEmpty()) {
-                            moveTo(points.first().x, points.first().y)
-                            for (i in 0 until points.size - 1) {
-                                val p0 = points[i]
-                                val p1 = points[i + 1]
-                                val cx = (p0.x + p1.x) / 2f
-                                cubicTo(cx, p0.y, cx, p1.y, p1.x, p1.y)
-                            }
+                    path.reset()
+                    if (points.isNotEmpty()) {
+                        path.moveTo(points.first().x, points.first().y)
+                        for (i in 0 until points.size - 1) {
+                            val p0 = points[i]
+                            val p1 = points[i + 1]
+                            val cx = (p0.x + p1.x) / 2f
+                            path.cubicTo(cx, p0.y, cx, p1.y, p1.x, p1.y)
                         }
                     }
 
                     // Build area fill path
-                    val fillPath = Path().apply {
-                        addPath(path)
-                        lineTo(points.last().x, height)
-                        lineTo(points.first().x, height)
-                        close()
-                    }
+                    fillPath.reset()
+                    fillPath.addPath(path)
+                    fillPath.lineTo(points.last().x, height)
+                    fillPath.lineTo(points.first().x, height)
+                    fillPath.close()
 
                     // 1. Draw gradient fill
                     drawPath(
@@ -1273,61 +1275,47 @@ fun AnnualHeatmapCard(
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(
                                         brush = Brush.verticalGradient(
-                                            colors = if (isDark) {
-                                                listOf(
-                                                    Color(0xFF2D3748).copy(alpha = 0.95f),
-                                                    Color(0xFF1A202C).copy(alpha = 0.95f)
-                                                )
-                                            } else {
-                                                listOf(
-                                                    Color.White.copy(alpha = 0.96f),
-                                                    Color(0xFFFFF7F9).copy(alpha = 0.92f)
-                                                )
-                                            }
+                                            colors = listOf(
+                                                Color(0xFF23202E).copy(alpha = 0.88f),
+                                                Color(0xFF16131F).copy(alpha = 0.92f)
+                                            )
                                         )
                                     )
                                     .border(
                                         width = 0.9.dp,
                                         brush = Brush.linearGradient(
-                                            colors = if (isDark) {
-                                                listOf(
-                                                    Color.White.copy(alpha = 0.35f),
-                                                    themeAccent.copy(alpha = 0.50f)
-                                                )
-                                            } else {
-                                                listOf(
-                                                    themeAccent.copy(alpha = 0.60f),
-                                                    Color.White.copy(alpha = 0.90f),
-                                                    themeAccent.copy(alpha = 0.30f)
-                                                )
-                                            }
+                                            colors = listOf(
+                                                Color.White.copy(alpha = 0.55f),
+                                                themeAccent.copy(alpha = 0.70f),
+                                                Color.White.copy(alpha = 0.20f)
+                                            )
                                         ),
                                         shape = RoundedCornerShape(10.dp)
                                     )
-                                    .padding(horizontal = 8.dp),
+                                    .padding(horizontal = 10.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                                 ) {
                                     Text(
                                         text = "${sel.day.fullDateStr} (${sel.day.dayLabel})",
-                                        fontSize = 11.sp,
+                                        fontSize = 11.5.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = primaryTextColor
+                                        color = Color.White.copy(alpha = 0.95f)
                                     )
                                     Text(
                                         text = "·",
-                                        fontSize = 11.sp,
+                                        fontSize = 11.5.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = secondaryTextColor.copy(alpha = 0.6f)
+                                        color = Color.White.copy(alpha = 0.40f)
                                     )
                                     Text(
                                         text = if (sel.day.minutes > 0) "${sel.day.minutes}分钟 🔥" else "未阅读 ☕",
-                                        fontSize = 11.sp,
+                                        fontSize = 11.5.sp,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = if (sel.day.minutes > 0) themeAccent else secondaryTextColor
+                                        color = if (sel.day.minutes > 0) themeAccent else Color.White.copy(alpha = 0.65f)
                                     )
                                 }
                             }
