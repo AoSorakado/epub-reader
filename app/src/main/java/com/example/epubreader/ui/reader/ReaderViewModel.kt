@@ -140,12 +140,12 @@ class ReaderViewModel(
         val remainingMinutes = kotlin.math.ceil(remainingChars.toFloat() / cpm).toInt()
 
         return when {
-            remainingChars <= 50 || remainingMinutes <= 0 -> "余 1分内"
+            remainingChars <= 50 || remainingMinutes <= 0 -> "余 1 分内"
             remainingMinutes < 60 -> "余 $remainingMinutes 分"
             else -> {
                 val hours = remainingMinutes / 60
                 val mins = remainingMinutes % 60
-                if (mins > 0) "余 ${hours}时${mins}分" else "余 ${hours}小时"
+                if (mins > 0) "余 $hours 时 $mins 分" else "余 $hours 小时"
             }
         }
     }

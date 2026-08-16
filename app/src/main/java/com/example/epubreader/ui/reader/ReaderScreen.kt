@@ -761,7 +761,6 @@ fun ReaderScreen(
                     shape = CircleShape,
                     modifier = Modifier
                         .height(44.dp)
-                        .clip(CircleShape)
                         .animateContentSize(
                             animationSpec = spring(
                                 dampingRatio = 0.78f,
@@ -948,10 +947,13 @@ fun ReaderScreen(
                     }
                 }
 
-                // Right: Current Chapter Name Glass Pill (Display only, non-clickable)
+                // Right: Current Chapter Name Glass Pill (Clickable & Draggable)
                 LiquidButton(
-                    onClick = {},
-                    isInteractive = false,
+                    onClick = {
+                        showSettings = false
+                        showTocSheet = true
+                    },
+                    isInteractive = true,
                     backdrop = readerBackdrop,
                     shape = RoundedCornerShape(22.dp),
                     modifier = Modifier.height(44.dp)
