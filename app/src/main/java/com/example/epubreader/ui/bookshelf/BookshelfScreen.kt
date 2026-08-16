@@ -738,6 +738,7 @@ fun BookshelfScreen(
                             books = seriesBooks,
                             isListLayout = layoutMethod == 1,
                             isDark = isDark,
+                            themeAccent = themeAccent,
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor
                         )
@@ -923,6 +924,7 @@ fun BookshelfScreen(
                                     book = book,
                                     isListLayout = openingBookIsListLayout,
                                     isDark = isDark,
+                                    themeAccent = themeAccent,
                                     primaryTextColor = primaryTextColor,
                                     secondaryTextColor = secondaryTextColor
                                 )
@@ -1822,6 +1824,7 @@ fun BookshelfScreen(
                                 book = book,
                                 isListLayout = layoutMethod == 1,
                                 isDark = isDark,
+                                themeAccent = themeAccent,
                                 primaryTextColor = primaryTextColor,
                                 secondaryTextColor = secondaryTextColor
                             )
@@ -1969,6 +1972,7 @@ fun SeriesItem(
             books = books,
             isListLayout = isListLayout,
             isDark = isDark,
+            themeAccent = themeAccent,
             primaryTextColor = primaryTextColor,
             secondaryTextColor = secondaryTextColor
         )
@@ -1981,6 +1985,7 @@ fun SeriesItemContent(
     books: List<BookEntity>,
     isListLayout: Boolean = false,
     isDark: Boolean = false,
+    themeAccent: Color = Color(0xFF007AFF),
     primaryTextColor: Color = Color(0xFF1E1E24),
     secondaryTextColor: Color = Color(0xFF543866)
 ) {
@@ -2061,10 +2066,10 @@ fun SeriesItemContent(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background((if (isDark) Color(0xFF8B5CF6) else Color(0xFF7C3AED)).copy(alpha = if (isDark) 0.16f else 0.10f))
+                            .background(themeAccent.copy(alpha = if (isDark) 0.16f else 0.12f))
                             .border(
                                 0.5.dp,
-                                (if (isDark) Color(0xFF8B5CF6) else Color(0xFF7C3AED)).copy(alpha = if (isDark) 0.30f else 0.20f),
+                                themeAccent.copy(alpha = if (isDark) 0.35f else 0.25f),
                                 RoundedCornerShape(6.dp)
                             )
                             .padding(horizontal = 6.5.dp, vertical = 2.dp)
@@ -2073,7 +2078,7 @@ fun SeriesItemContent(
                             text = "${books.size} 册全套",
                             fontSize = 11.5.sp,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                            color = if (isDark) Color(0xFFC084FC) else Color(0xFF7C3AED)
+                            color = themeAccent
                         )
                     }
                 }
@@ -2221,6 +2226,7 @@ fun BookItemContent(
     book: BookEntity,
     isListLayout: Boolean = false,
     isDark: Boolean = false,
+    themeAccent: Color = Color(0xFF007AFF),
     primaryTextColor: Color = Color(0xFF1E1E24),
     secondaryTextColor: Color = Color(0xFF543866)
 ) {
@@ -2324,13 +2330,14 @@ fun BookItemContent(
                     val statusText = if (isFinished) "已读完" else if (isUnread) "未读" else "进度 $progressFormatted%"
 
                     // 1. Source Tag Pill
+                    val sourceColor = if (book.isWebDav) themeAccent else secondaryTextColor
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background((if (book.isWebDav) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else (if (isDark) Color.White else Color.Black)).copy(alpha = if (isDark) 0.12f else 0.08f))
+                            .background(sourceColor.copy(alpha = if (isDark) 0.14f else 0.10f))
                             .border(
                                 0.5.dp,
-                                (if (book.isWebDav) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else (if (isDark) Color.White else Color.Black)).copy(alpha = if (isDark) 0.25f else 0.15f),
+                                sourceColor.copy(alpha = if (isDark) 0.30f else 0.20f),
                                 RoundedCornerShape(6.dp)
                             )
                             .padding(horizontal = 6.5.dp, vertical = 2.dp)
@@ -2339,12 +2346,12 @@ fun BookItemContent(
                             text = if (book.isWebDav) "云端同步" else "本地导入",
                             fontSize = 11.5.sp,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                            color = if (book.isWebDav) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else secondaryTextColor
+                            color = sourceColor
                         )
                     }
 
                     // 2. Reading Status Pill
-                    val statusBgColor = if (isFinished) Color(0xFF10B981) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else Color.Gray)
+                    val statusBgColor = if (isFinished) Color(0xFF10B981) else if (isUnread) secondaryTextColor.copy(alpha = 0.6f) else themeAccent
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
@@ -2360,7 +2367,7 @@ fun BookItemContent(
                             text = statusText,
                             fontSize = 11.5.sp,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                            color = if (isFinished) Color(0xFF10B981) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else secondaryTextColor)
+                            color = statusBgColor
                         )
                     }
                 }
@@ -2452,7 +2459,7 @@ fun BookItemContent(
                 ) {
                     Text(
                         text = progressText,
-                        color = if (isCoverFinished) Color(0xFF10B981) else Color(0xFFF1F5F9),
+                        color = if (isCoverFinished) Color(0xFF10B981) else if (isCoverUnread) Color(0xFFF1F5F9) else themeAccent,
                         fontSize = 10.sp,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                         letterSpacing = 0.2.sp
@@ -2475,8 +2482,8 @@ fun BookItemContent(
                                 .background(
                                     brush = Brush.horizontalGradient(
                                         colors = listOf(
-                                            if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF),
-                                            if (isDark) Color(0xFF818CF8) else Color(0xFF6366F1)
+                                            themeAccent,
+                                            themeAccent.copy(alpha = 0.70f)
                                         )
                                     )
                                 )
@@ -2614,6 +2621,7 @@ fun BookItem(
             book = book,
             isListLayout = isListLayout,
             isDark = isDark,
+            themeAccent = themeAccent,
             primaryTextColor = primaryTextColor,
             secondaryTextColor = secondaryTextColor
         )
@@ -2645,7 +2653,7 @@ fun SeriesInnerBookContent(
         modifier = modifier.padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val volumeColor = if (isDark) Color(0xFF38BDF8) else themeAccent
+        val volumeColor = themeAccent
         val titleColor = if (isDark) Color(0xFFF8FAFC) else primaryTextColor
         val subtitleColor = if (isDark) Color(0xFF94A3B8) else secondaryTextColor
 
@@ -2744,8 +2752,8 @@ fun SeriesInnerBookContent(
                             .background(
                                 brush = Brush.horizontalGradient(
                                     colors = listOf(
-                                        if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF),
-                                        if (isDark) Color(0xFF818CF8) else Color(0xFF5856D6)
+                                        themeAccent,
+                                        themeAccent.copy(alpha = 0.70f)
                                     )
                                 )
                             )
@@ -2783,7 +2791,7 @@ fun SeriesInnerBookContent(
                 Text(
                     text = if (book.isWebDav) "云端分卷" else "本地已导入",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)
+                    color = if (book.isWebDav) themeAccent else subtitleColor
                 )
                 Box(
                     modifier = Modifier
@@ -2795,7 +2803,7 @@ fun SeriesInnerBookContent(
                     text = statusText,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    color = if (isFinished) Color(0xFF10B981) else (if (!isUnread) (if (isDark) Color(0xFF38BDF8) else Color(0xFF007AFF)) else subtitleColor)
+                    color = if (isFinished) Color(0xFF10B981) else (if (!isUnread) themeAccent else subtitleColor)
                 )
             }
         }

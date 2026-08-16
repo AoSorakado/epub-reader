@@ -136,7 +136,9 @@ fun LiquidButton(
                 effects = {
                     vibrancy()
                     blur(blurRadius.dp.toPx())
+                    lens(refractionHeight.dp.toPx(), refractionAmount.dp.toPx(), depthEffect = false, chromaticAberration = true)
                 },
+                highlight = { Highlight.Plain },
                 onDrawSurface = {
                     if (tint.isSpecified) {
                         drawRect(tint, blendMode = BlendMode.Hue)
@@ -144,7 +146,7 @@ fun LiquidButton(
                     } else if (surfaceColor.isSpecified) {
                         drawRect(surfaceColor)
                     } else {
-                        drawRect(Color.White.copy(alpha = 0.14f))
+                        drawRect(Color.White.copy(alpha = 0.12f))
                     }
                 }
             )
