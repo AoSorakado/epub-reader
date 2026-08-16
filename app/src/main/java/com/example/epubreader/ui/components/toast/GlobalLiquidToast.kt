@@ -93,18 +93,6 @@ fun GlobalLiquidToast(
                         effects = {
                             vibrancy()
                             blur(6f.dp.toPx())
-                            lens(
-                                refractionHeight = 16f.dp.toPx(),
-                                refractionAmount = 32f.dp.toPx(),
-                                chromaticAberration = true
-                            )
-                        },
-                        highlight = { Highlight.Plain },
-                        shadow = {
-                            Shadow(
-                                radius = 18.dp,
-                                color = Color.Black.copy(alpha = if (isDark) 0.28f else 0.12f)
-                            )
                         },
                         onDrawSurface = {
                             drawRect(Color.White.copy(alpha = if (isDark) 0.14f else 0.24f))
@@ -127,10 +115,7 @@ fun GlobalLiquidToast(
                     ) {
                         GlobalToastManager.dismiss()
                     }
-                    .animateContentSize(
-                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)
-                    )
-                    .defaultMinSize(minWidth = 230.dp, minHeight = 52.dp)
+                    .widthIn(min = 230.dp, max = 320.dp)
                     .padding(horizontal = 22.dp, vertical = 12.dp),
                 contentAlignment = Alignment.Center
             ) {

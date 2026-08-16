@@ -2,6 +2,7 @@ package com.example.epubreader.ui.components.liquid
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +17,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -134,9 +136,7 @@ fun LiquidButton(
                 effects = {
                     vibrancy()
                     blur(blurRadius.dp.toPx())
-                    lens(refractionHeight.dp.toPx(), refractionAmount.dp.toPx(), depthEffect = false, chromaticAberration = true)
                 },
-                highlight = { Highlight.Plain },
                 onDrawSurface = {
                     if (tint.isSpecified) {
                         drawRect(tint, blendMode = BlendMode.Hue)
@@ -144,9 +144,19 @@ fun LiquidButton(
                     } else if (surfaceColor.isSpecified) {
                         drawRect(surfaceColor)
                     } else {
-                        drawRect(Color.White.copy(alpha = 0.10f))
+                        drawRect(Color.White.copy(alpha = 0.14f))
                     }
                 }
+            )
+            .border(
+                width = 0.8.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.55f),
+                        Color.White.copy(alpha = 0.20f)
+                    )
+                ),
+                shape = shape
             )
             .then(gestureModifier)
             .defaultMinSize(minHeight = 42.dp)
