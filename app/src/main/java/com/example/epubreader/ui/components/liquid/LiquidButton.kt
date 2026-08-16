@@ -134,7 +134,7 @@ fun LiquidButton(
                 effects = {
                     vibrancy()
                     blur(blurRadius.dp.toPx())
-                    lens(refractionHeight.dp.toPx(), refractionAmount.dp.toPx(), depthEffect = true, chromaticAberration = true)
+                    lens(refractionHeight.dp.toPx(), refractionAmount.dp.toPx(), depthEffect = false, chromaticAberration = true)
                 },
                 highlight = { Highlight.Plain },
                 onDrawSurface = {

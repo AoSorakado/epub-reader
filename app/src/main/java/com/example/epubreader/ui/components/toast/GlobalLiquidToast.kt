@@ -1,13 +1,8 @@
 package com.example.epubreader.ui.components.toast
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,6 +31,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
@@ -86,21 +82,14 @@ fun GlobalLiquidToast(
             .padding(top = effectiveTopPadding, start = 20.dp, end = 20.dp)
             .wrapContentWidth(Alignment.CenterHorizontally)
     ) {
-        activeToast?.let { toast ->
+        activeToast?.let { _ ->
             val textColor = if (isDark) Color(0xFFF8FAFC) else Color(0xFF1E1E24)
-            val iconTint = when (toast.type) {
-                is ToastType.Success -> Color(0xFF34C759)
-                is ToastType.Error -> Color(0xFFFF3B30)
-                is ToastType.Syncing -> themeAccent
-                is ToastType.Health -> Color(0xFFFF9500)
-                is ToastType.Info -> themeAccent
-            }
 
             Box(
                 modifier = Modifier
                     .drawBackdrop(
                         backdrop = backdrop,
-                        shape = { RoundedCornerShape(50) },
+                        shape = { RoundedCornerShape(26.dp) },
                         effects = {
                             vibrancy()
                             blur(6f.dp.toPx())
@@ -118,83 +107,117 @@ fun GlobalLiquidToast(
                             )
                         },
                         onDrawSurface = {
-                            drawRect(Color.White.copy(alpha = if (isDark) 0.12f else 0.22f))
+                            drawRect(Color.White.copy(alpha = if (isDark) 0.14f else 0.24f))
                         }
                     )
                     .border(
-                        width = 0.8.dp,
+                        width = 0.9.dp,
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = if (isDark) 0.45f else 0.80f),
+                                Color.White.copy(alpha = if (isDark) 0.45f else 0.85f),
                                 Color.White.copy(alpha = if (isDark) 0.15f else 0.40f)
                             )
                         ),
-                        shape = RoundedCornerShape(50)
+                        shape = RoundedCornerShape(26.dp)
                     )
-                    .clip(RoundedCornerShape(50))
+                    .clip(RoundedCornerShape(26.dp))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) {
                         GlobalToastManager.dismiss()
                     }
-                    .padding(horizontal = 18.dp, vertical = 10.dp)
+                    .animateContentSize(
+                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)
+                    )
+                    .defaultMinSize(minWidth = 230.dp, minHeight = 52.dp)
+                    .padding(horizontal = 22.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    when (toast.type) {
-                        is ToastType.Syncing -> {
-                            CircularProgressIndicator(
-                                strokeWidth = 2.2.dp,
-                                color = iconTint,
-                                modifier = Modifier.size(16.dp)
+                AnimatedContent(
+                    targetState = activeToast,
+                    transitionSpec = {
+                        (slideInVertically(
+                            initialOffsetY = { it / 2 },
+                            animationSpec = spring(dampingRatio = 0.78f, stiffness = 380f)
+                        ) + fadeIn(animationSpec = tween(180)))
+                            .togetherWith(
+                                slideOutVertically(
+                                    targetOffsetY = { -it / 2 },
+                                    animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f)
+                                ) + fadeOut(animationSpec = tween(140))
                             )
+                    },
+                    label = "toastContentTransition"
+                ) { targetToast ->
+                    if (targetToast != null) {
+                        val iconTint = when (targetToast.type) {
+                            is ToastType.Success -> Color(0xFF34C759)
+                            is ToastType.Error -> Color(0xFFFF3B30)
+                            is ToastType.Syncing -> themeAccent
+                            is ToastType.Health -> Color(0xFFFF9500)
+                            is ToastType.Info -> themeAccent
                         }
-                        is ToastType.Success -> {
-                            Icon(
-                                imageVector = Icons.Filled.CheckCircle,
-                                contentDescription = null,
-                                tint = iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        is ToastType.Error -> {
-                            Icon(
-                                imageVector = Icons.Filled.ErrorOutline,
-                                contentDescription = null,
-                                tint = iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        is ToastType.Health -> {
-                            Icon(
-                                imageVector = Icons.Filled.LocalCafe,
-                                contentDescription = null,
-                                tint = iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        is ToastType.Info -> {
-                            Icon(
-                                imageVector = Icons.Filled.Info,
-                                contentDescription = null,
-                                tint = iconTint,
-                                modifier = Modifier.size(18.dp)
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            when (targetToast.type) {
+                                is ToastType.Syncing -> {
+                                    CircularProgressIndicator(
+                                        strokeWidth = 2.2.dp,
+                                        color = iconTint,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                                is ToastType.Success -> {
+                                    Icon(
+                                        imageVector = Icons.Filled.CheckCircle,
+                                        contentDescription = null,
+                                        tint = iconTint,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                                is ToastType.Error -> {
+                                    Icon(
+                                        imageVector = Icons.Filled.ErrorOutline,
+                                        contentDescription = null,
+                                        tint = iconTint,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                                is ToastType.Health -> {
+                                    Icon(
+                                        imageVector = Icons.Filled.LocalCafe,
+                                        contentDescription = null,
+                                        tint = iconTint,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                                is ToastType.Info -> {
+                                    Icon(
+                                        imageVector = Icons.Filled.Info,
+                                        contentDescription = null,
+                                        tint = iconTint,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(9.dp))
+
+                            Text(
+                                text = targetToast.text,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = textColor,
+                                maxLines = 2,
+                                lineHeight = 19.sp,
+                                textAlign = TextAlign.Center
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Text(
-                        text = toast.text,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = textColor,
-                        maxLines = 2
-                    )
                 }
             }
         }
