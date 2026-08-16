@@ -811,6 +811,14 @@ fun ReaderScreen(
                                     isCharging = batteryAndTime.isCharging,
                                     tintColor = textColor
                                 )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "${batteryAndTime.level}%",
+                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor.copy(alpha = 0.85f)
+                                )
                             }
                         } else {
                             Row(
@@ -844,6 +852,14 @@ fun ReaderScreen(
                                     level = batteryAndTime.level,
                                     isCharging = batteryAndTime.isCharging,
                                     tintColor = textColor
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "${batteryAndTime.level}%",
+                                    fontFamily = com.example.epubreader.ui.theme.ClaudeUIFontFamily,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor.copy(alpha = 0.85f)
                                 )
                             }
                         }
