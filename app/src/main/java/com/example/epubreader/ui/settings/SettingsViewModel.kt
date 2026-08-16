@@ -542,9 +542,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     // --- Anime WebDAV Settings ---
-    private val _animeUseCustomWebDav = MutableStateFlow(prefs.getBoolean("anime_use_custom_webdav", false))
-    val animeUseCustomWebDav: StateFlow<Boolean> = _animeUseCustomWebDav.asStateFlow()
-
     private val _animeWebDavUrl = MutableStateFlow(prefs.getString("anime_webdav_url", "") ?: "")
     val animeWebDavUrl: StateFlow<String> = _animeWebDavUrl.asStateFlow()
 
@@ -554,43 +551,23 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _animeWebDavPass = MutableStateFlow(prefs.getString("anime_webdav_pass", "") ?: "")
     val animeWebDavPass: StateFlow<String> = _animeWebDavPass.asStateFlow()
 
-    private val _animeWebDavRootPath = MutableStateFlow(prefs.getString("anime_webdav_root_path", "/4K fan") ?: "/4K fan")
-    val animeWebDavRootPath: StateFlow<String> = _animeWebDavRootPath.asStateFlow()
-
-    fun setAnimeUseCustomWebDav(enabled: Boolean) {
-        _animeUseCustomWebDav.value = enabled
-        prefs.edit().putBoolean("anime_use_custom_webdav", enabled).apply()
-    }
-
-    fun saveAnimeWebDavConfig(url: String, user: String, pass: String, rootPath: String) {
-        _animeWebDavUrl.value = url
-        _animeWebDavUser.value = user
+    fun saveAnimeWebDavConfig(url: String, user: String, pass: String) {
+        _animeWebDavUrl.value = url.trim()
+        _animeWebDavUser.value = user.trim()
         _animeWebDavPass.value = pass
-        _animeWebDavRootPath.value = rootPath
         prefs.edit()
-            .putString("anime_webdav_url", url)
-            .putString("anime_webdav_user", user)
+            .putString("anime_webdav_url", url.trim())
+            .putString("anime_webdav_user", user.trim())
             .putString("anime_webdav_pass", pass)
-            .putString("anime_webdav_root_path", rootPath)
             .apply()
     }
 
-    fun getEffectiveAnimeWebDavClient(): Pair<WebDavClient?, String> {
-        val rootPath = _animeWebDavRootPath.value.ifBlank { "/4K fan" }
-        return if (_animeUseCustomWebDav.value) {
-            val url = _animeWebDavUrl.value
-            val user = _animeWebDavUser.value
-            val pass = _animeWebDavPass.value
-            if (url.isNotBlank()) {
-                Pair(WebDavClient(url, user, pass), rootPath)
-            } else Pair(null, rootPath)
-        } else {
-            val url = getSavedWebDavUrl()
-            val user = getSavedWebDavUser()
-            val pass = getSavedWebDavPass()
-            if (url.isNotBlank()) {
-                Pair(WebDavClient(url, user, pass), rootPath)
-            } else Pair(null, rootPath)
-        }
+    fun getEffectiveAnimeWebDavClient(): WebDavClient? {
+        val url = _animeWebDavUrl.value.ifBlank { getSavedWebDavUrl() }
+        val user = _animeWebDavUser.value.ifBlank { getSavedWebDavUser() }
+        val pass = if (_animeWebDavPass.value.isNotBlank()) _animeWebDavPass.value else getSavedWebDavPass()
+        return if (url.isNotBlank()) {
+            WebDavClient(url, user, pass)
+        } else null
     }
 }

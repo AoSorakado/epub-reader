@@ -186,7 +186,7 @@ fun MainScaffold(navController: NavHostController) {
                         translationX = if (selectedTabIndex == 1 && !isReaderRoute) 0f else -10000f
                     }
             ) {
-                val animeWebDavConfig = settingsViewModel.getEffectiveAnimeWebDavClient()
+                val animeWebDavClient = settingsViewModel.getEffectiveAnimeWebDavClient()
                 AnimeScreen(
                     viewModel = animeViewModel,
                     backdrop = backgroundBackdrop,
@@ -194,7 +194,7 @@ fun MainScaffold(navController: NavHostController) {
                     themeAccent = themeAccent,
                     primaryTextColor = primaryTextColor,
                     secondaryTextColor = secondaryTextColor,
-                    webDavConfig = animeWebDavConfig,
+                    webDavClient = animeWebDavClient,
                     onPlayEpisode = { anime, ep ->
                         activePlayingPair = Pair(anime, ep)
                     }
@@ -293,8 +293,8 @@ fun MainScaffold(navController: NavHostController) {
                 currentEpList = animeViewModel.getAnimeWithEpisodes(anime.id)?.episodes ?: listOf(episode)
             }
 
-            val webDavUser = if (settingsViewModel.animeUseCustomWebDav.value) settingsViewModel.animeWebDavUser.value else settingsViewModel.getSavedWebDavUser()
-            val webDavPass = if (settingsViewModel.animeUseCustomWebDav.value) settingsViewModel.animeWebDavPass.value else settingsViewModel.getSavedWebDavPass()
+            val webDavUser = settingsViewModel.animeWebDavUser.value.ifBlank { settingsViewModel.getSavedWebDavUser() }
+            val webDavPass = if (settingsViewModel.animeWebDavPass.value.isNotBlank()) settingsViewModel.animeWebDavPass.value else settingsViewModel.getSavedWebDavPass()
 
             AnimePlayerScreen(
                 anime = anime,

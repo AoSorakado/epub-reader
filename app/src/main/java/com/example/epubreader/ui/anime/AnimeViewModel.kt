@@ -87,30 +87,30 @@ class AnimeViewModel(application: Application) : AndroidViewModel(application) {
         _sortType.value = sort
     }
 
-    fun scanWebDav(
-        webDavClient: WebDavClient,
-        animeRootPath: String
-    ) {
+    fun scanWebDav(webDavClient: WebDavClient) {
         if (_isScanning.value) return
         _isScanning.value = true
-        _scanProgress.value = "正在连接 WebDAV 番剧库..."
-        GlobalToastManager.show("🚀 正在扫描 WebDAV 番剧库...", ToastType.Info)
+        _scanProgress.value = "正在连接 WebDAV 媒体库..."
+        GlobalToastManager.show("🚀 正在扫描 WebDAV 媒体库...", ToastType.Info)
 
         viewModelScope.launch {
             try {
                 val count = AnimeWebDavScanner.scanAnimeDirectory(
                     webDavClient = webDavClient,
-                    animeRootPath = animeRootPath,
                     animeDao = animeDao,
                     context = getApplication(),
                     onProgress = { current, total, name ->
-                        _scanProgress.value = "正在刮削 [$current/$total] $name"
+                        _scanProgress.value = "正在解析 [$current/$total] $name"
                     }
                 )
-                GlobalToastManager.show("✨ 扫描完成，已同步 $count 部番剧", ToastType.Success)
+                if (count > 0) {
+                    GlobalToastManager.show("✨ 扫描完成，已收录 $count 部番剧", ToastType.Success)
+                } else {
+                    GlobalToastManager.show("未在指定的 WebDAV 目录中找到视频文件，请检查链接配置", ToastType.Info)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
-                GlobalToastManager.show("❌ 扫描失败: ${e.localizedMessage}", ToastType.Error)
+                GlobalToastManager.show("❌ 扫描失败: ${e.localizedMessage ?: "请检查 WebDAV 链接与账号密码"}", ToastType.Error)
             } finally {
                 _isScanning.value = false
                 _scanProgress.value = ""

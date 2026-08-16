@@ -54,7 +54,7 @@ fun AnimeScreen(
     themeAccent: Color,
     primaryTextColor: Color,
     secondaryTextColor: Color,
-    webDavConfig: Pair<WebDavClient?, String>, // Client and rootPath
+    webDavClient: WebDavClient?,
     onPlayEpisode: (anime: AnimeEntity, episode: AnimeEpisodeEntity) -> Unit
 ) {
     val animes by viewModel.filteredAnimes.collectAsState()
@@ -96,13 +96,13 @@ fun AnimeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Sync Button
+                    // Refresh / Scan Button
                     IconButton(
                         onClick = {
-                            val client = webDavConfig.first
-                            val root = webDavConfig.second
-                            if (client != null && root.isNotBlank()) {
-                                viewModel.scanWebDav(client, root)
+                            if (webDavClient != null) {
+                                viewModel.scanWebDav(webDavClient)
+                            } else {
+                                com.example.epubreader.ui.components.toast.GlobalToastManager.show("请先在「配置」中填写番剧 WebDAV 链接", com.example.epubreader.ui.components.toast.ToastType.Info)
                             }
                         },
                         enabled = !isScanning,
@@ -116,8 +116,8 @@ fun AnimeScreen(
                             )
                         } else {
                             Icon(
-                                Icons.Filled.Sync,
-                                contentDescription = "Scan WebDAV",
+                                Icons.Filled.Refresh,
+                                contentDescription = "Refresh Library",
                                 tint = primaryTextColor,
                                 modifier = Modifier.size(22.dp)
                             )

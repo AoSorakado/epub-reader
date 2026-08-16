@@ -46,30 +46,72 @@ class WebDavClient(
         }
         .build()
 
+    private fun encodeUrlForHttp(rawUrl: String): String {
+        return try {
+            val uri = java.net.URI(rawUrl)
+            uri.toASCIIString()
+        } catch (e: Exception) {
+            val schemeEnd = rawUrl.indexOf("://")
+            if (schemeEnd != -1) {
+                val scheme = rawUrl.substring(0, schemeEnd + 3)
+                val rest = rawUrl.substring(schemeEnd + 3)
+                val hostSlash = rest.indexOf('/')
+                if (hostSlash != -1) {
+                    val host = rest.substring(0, hostSlash)
+                    val path = rest.substring(hostSlash)
+                    val encodedPath = path.split("/").joinToString("/") { segment ->
+                        android.net.Uri.encode(segment)
+                    }
+                    "$scheme$host$encodedPath"
+                } else {
+                    rawUrl
+                }
+            } else {
+                rawUrl
+            }
+        }
+    }
+
     suspend fun listFiles(path: String = ""): List<WebDavResource> = withContext(Dispatchers.IO) {
-        val url = if (path.isEmpty()) {
+        val targetUrl = if (path.isEmpty()) {
             if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
-        } else if (path.startsWith("http")) {
+        } else if (path.startsWith("http://") || path.startsWith("https://")) {
             path
         } else {
-            val startIndex = baseUrl.indexOf("://") + 3
-            val slashIndex = baseUrl.indexOf("/", startIndex)
-            val serverHost = if (slashIndex != -1) baseUrl.substring(0, slashIndex) else baseUrl
-            if (path.startsWith("/")) serverHost + path else "$baseUrl/$path"
+            resolveUrl(path)
         }
-        
+
+        val httpUrl = encodeUrlForHttp(targetUrl)
+
         val request = Request.Builder()
-            .url(url)
+            .url(httpUrl)
             .method("PROPFIND", "".toRequestBody())
             .header("Depth", "1")
             .build()
 
         val xmlResponse = client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw Exception("PROPFIND failed: ${response.code}")
+            if (!response.isSuccessful) throw Exception("PROPFIND failed (${response.code} ${response.message})")
             response.body?.string() ?: ""
         }
         
-        parsePropfindXml(xmlResponse)
+        val allResources = parsePropfindXml(xmlResponse)
+
+        // Filter out the requested directory itself
+        val cleanTargetUrl = targetUrl.trimEnd('/')
+        val targetPathOnly = try { java.net.URI(cleanTargetUrl).path?.trimEnd('/') ?: cleanTargetUrl } catch (e: Exception) { cleanTargetUrl }
+
+        allResources.filter { res ->
+            val resPath = res.path.trimEnd('/')
+            val decodedResPath = try { java.net.URI(resPath).path?.trimEnd('/') ?: resPath } catch (e: Exception) { resPath }
+            val decodedTargetPath = try { android.net.Uri.decode(targetPathOnly) } catch (e: Exception) { targetPathOnly }
+            
+            resPath != targetPathOnly && 
+            decodedResPath != decodedTargetPath && 
+            res.name.isNotBlank() &&
+            res.name != "." &&
+            res.name != ".." &&
+            !res.name.startsWith("._")
+        }
     }
 
     private fun parsePropfindXml(xmlData: String): List<WebDavResource> {
@@ -125,16 +167,15 @@ class WebDavClient(
                                 displayName = android.net.Uri.decode(parts.last())
                             }
                         }
-                        resources.add(WebDavResource(name = displayName, isDirectory = isDirectory, path = href, size = contentLength))
+                        val fullUrl = resolveUrl(href)
+                        resources.add(WebDavResource(name = displayName, isDirectory = isDirectory, path = fullUrl, size = contentLength))
                     }
                     currentTag = ""
                 }
             }
             eventType = parser.next()
         }
-        
-        // Remove the parent directory itself from the list (usually the first item or matches path)
-        return resources.drop(1)
+        return resources
     }
 
     suspend fun downloadFile(path: String, destination: File, onProgress: (Float) -> Unit = {}): Boolean = withContext(Dispatchers.IO) {
