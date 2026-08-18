@@ -1,6 +1,6 @@
 package com.example.epubreader.ui.anime
 
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -51,10 +52,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
+import kotlin.math.roundToInt
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.epubreader.data.db.AnimeWithEpisodes
@@ -92,14 +95,21 @@ fun AnimeScreen(
     primaryTextColor: Color,
     secondaryTextColor: Color,
     webDavClient: WebDavClient?,
+    hanimeViewModel: com.example.epubreader.ui.hanime.HanimeViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     onPlayEpisode: (anime: AnimeEntity, episode: AnimeEpisodeEntity) -> Unit
 ) {
+    val context = LocalContext.current
     val animes by viewModel.filteredAnimes.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val filterStatus by viewModel.filterStatus.collectAsState()
     val sortMethod by viewModel.sortMethod.collectAsState()
     val sortAscending by viewModel.sortAscending.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
+
+    var isHanimeActive by rememberSaveable { mutableStateOf(false) }
+    var titleClickCount by remember { mutableIntStateOf(0) }
+    var lastTitleClickTime by remember { mutableLongStateOf(0L) }
+    var isOnlineSearchActive by rememberSaveable { mutableStateOf(false) }
 
     var isGridView by remember { mutableStateOf(true) }
     var selectedAnimeForAction by remember { mutableStateOf<AnimeEntity?>(null) }
@@ -146,18 +156,14 @@ fun AnimeScreen(
     // Anime Expansion Morph Animation (Ultra-smooth 120fps spec)
     val seriesTransition = updateTransition(targetState = isAnimeExpanded, label = "AnimeSeriesMorphTransition")
     val seriesExpandProgress by seriesTransition.animateFloat(
-        transitionSpec = {
-            if (targetState) {
-                spring(dampingRatio = 0.86f, stiffness = 380f)
-            } else {
-                spring(dampingRatio = 0.90f, stiffness = 420f)
-            }
-        },
+        transitionSpec = { spring(dampingRatio = 0.82f, stiffness = 160f) },
         label = "seriesMorphProgress"
     ) { if (it) 1f else 0f }
 
-    LaunchedEffect(seriesExpandProgress, isAnimeExpanded) {
-        if (!isAnimeExpanded && seriesExpandProgress <= 0.001f && displayAnime != null) {
+    val isAnimeTransitioning = seriesTransition.currentState != seriesTransition.targetState || seriesTransition.currentState
+
+    LaunchedEffect(isAnimeTransitioning, isAnimeExpanded) {
+        if (!isAnimeExpanded && !isAnimeTransitioning && displayAnime != null) {
             displayAnime = null
             selectedAnime = null
         }
@@ -177,8 +183,6 @@ fun AnimeScreen(
             isAnimeExpanded = false
         }
     }
-
-    val backgroundBlurRadius = lerp(0f, 16f, seriesExpandProgress).dp
 
     // Auto trigger background enrichment
     LaunchedEffect(animes.size) {
@@ -213,18 +217,19 @@ fun AnimeScreen(
         )
 
         // Layer 1: Full-Screen Scrolling Anime Grid / List (Captured by animeBackdrop so top bar & dialogs can refract posters)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .layerBackdrop(animeBackdrop)
-        ) {
-            if (animes.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = topHeaderHeightDp, bottom = 80.dp),
-                    contentAlignment = Alignment.Center
-                ) {
+        if (!isHanimeActive) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(animeBackdrop)
+            ) {
+                if (animes.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(top = topHeaderHeightDp, bottom = 80.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -262,7 +267,7 @@ fun AnimeScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(animes, key = { it.id }) { anime ->
-                        val isHidden = (displayAnime?.anime?.id == anime.id && seriesExpandProgress > 0.001f)
+                        val isHidden = (displayAnime?.anime?.id == anime.id && isAnimeTransitioning)
                         AnimeGridCard(
                             anime = anime,
                             backdrop = backdrop,
@@ -307,7 +312,7 @@ fun AnimeScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(animes, key = { it.id }) { anime ->
-                        val isHidden = (displayAnime?.anime?.id == anime.id && seriesExpandProgress > 0.001f)
+                        val isHidden = (displayAnime?.anime?.id == anime.id && isAnimeTransitioning)
                         AnimeListCard(
                             anime = anime,
                             backdrop = backdrop,
@@ -342,16 +347,42 @@ fun AnimeScreen(
                 }
             }
         }
+    } else {
+        if (isOnlineSearchActive) {
+            com.example.epubreader.ui.hanime.HanimeSearchScreen(
+                viewModel = hanimeViewModel,
+                onBack = { isOnlineSearchActive = false },
+                onVideoClick = { video ->
+                    hanimeViewModel.openVideoDetail(video.videoCode)
+                },
+                backdrop = backdrop,
+                isDark = isDark,
+                themeAccent = themeAccent
+            )
+        } else {
+            com.example.epubreader.ui.hanime.HanimeHomeScreen(
+                viewModel = hanimeViewModel,
+                onSearchClick = { isOnlineSearchActive = true },
+                onVideoClick = { video ->
+                    hanimeViewModel.openVideoDetail(video.videoCode)
+                },
+                onCategoryMoreClick = { category ->
+                    hanimeViewModel.performSearch(genre = category, isLoadMore = false)
+                    isOnlineSearchActive = true
+                },
+                onExit = {
+                    isHanimeActive = false
+                },
+                backdrop = backdrop,
+                isDark = isDark,
+                themeAccent = themeAccent
+            )
+        }
+    }
 
         var isSearchExpanded by remember { mutableStateOf(false) }
         val focusRequester = remember { FocusRequester() }
         val keyboardController = LocalSoftwareKeyboardController.current
-
-        val searchCapsuleWidthDp by animateDpAsState(
-            targetValue = if (isSearchExpanded) 210.dp else 44.dp,
-            animationSpec = spring(dampingRatio = 0.82f, stiffness = 450f),
-            label = "searchCapsuleWidth"
-        )
 
         LaunchedEffect(isSearchExpanded) {
             if (isSearchExpanded) {
@@ -363,55 +394,73 @@ fun AnimeScreen(
             }
         }
 
-        // Layer 2: Floating Transparent Top Frosted Glass Header (Sibling of Layer 1, draws animeBackdrop with 100% LiquidBottomTabs fidelity!)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .onGloballyPositioned { coords ->
-                    topHeaderHeightDp = with(density) { coords.size.height.toDp() }
-                }
-                .padding(bottom = 8.dp)
-        ) {
-            Column(
+        // Layer 2: Floating Transparent Top Frosted Glass Header (Only shown for normal Anime library)
+        if (!isHanimeActive) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 14.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .align(Alignment.TopCenter)
+                    .onGloballyPositioned { coords ->
+                        topHeaderHeightDp = with(density) { coords.size.height.toDp() }
+                    }
+                    .padding(bottom = 8.dp)
             ) {
-                // Top Bar Title & Actions Row (Matching Reading Interface with real animeBackdrop refraction)
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .statusBarsPadding()
+                        .padding(horizontal = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Title "番剧" (smoothly shrinks & fades out when search expands)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .graphicsLayer {
-                                val progress = ((searchCapsuleWidthDp - 44.dp) / (210.dp - 44.dp)).coerceIn(0f, 1f)
-                                alpha = (1f - progress * 1.6f).coerceIn(0f, 1f)
-                                scaleX = lerp(1f, 0.85f, progress)
-                                scaleY = lerp(1f, 0.85f, progress)
-                            }
-                    ) {
-                        Text(
-                            "番剧",
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 24.sp,
-                            color = primaryTextColor
-                        )
-                    }
-
+                    // Top Bar Title & Actions Row (Matching Reading Interface with real animeBackdrop refraction)
                     Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 1. Search Expandable Capsule Button (放刷新按钮左边，点击向左伸开，跟阅读界面进度胶囊同逻辑)
+                        // Left: Title "番剧" (5-click secret entrance to Hanime, fades out when search expands)
+                        AnimatedVisibility(
+                            visible = !isSearchExpanded,
+                            enter = fadeIn() + expandHorizontally(),
+                            exit = fadeOut() + shrinkHorizontally()
+                        ) {
+                            Text(
+                                text = "番剧",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 22.sp
+                                ),
+                                color = primaryTextColor,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastTitleClickTime < 1500L) {
+                                            titleClickCount++
+                                            if (titleClickCount >= 5) {
+                                                titleClickCount = 0
+                                                isHanimeActive = true
+                                                android.widget.Toast.makeText(context, "已开启 Hanime 在线模式", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else {
+                                            titleClickCount = 1
+                                        }
+                                        lastTitleClickTime = now
+                                    }
+                                    .padding(vertical = 4.dp, horizontal = 2.dp)
+                            )
+                        }
+
+                        if (!isSearchExpanded) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+
+                        // 1. Search Expandable Capsule Button (Takes remaining left space when expanded)
                         LiquidButton(
                             onClick = {
                                 if (!isSearchExpanded) {
@@ -420,9 +469,13 @@ fun AnimeScreen(
                             },
                             backdrop = animeBackdrop,
                             shape = RoundedCornerShape(22.dp),
-                            modifier = Modifier
-                                .height(44.dp)
-                                .width(searchCapsuleWidthDp)
+                            modifier = if (isSearchExpanded) {
+                                Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                            } else {
+                                Modifier.size(44.dp)
+                            }
                         ) {
                             Row(
                                 modifier = Modifier
@@ -517,7 +570,7 @@ fun AnimeScreen(
                             }
                         }
 
-                        // 3. Layout Switch Button (Circular reading-style LiquidButton with animeBackdrop)
+                        // 3. Grid / List View Toggle Button
                         LiquidButton(
                             onClick = { isGridView = !isGridView },
                             backdrop = animeBackdrop,
@@ -526,7 +579,7 @@ fun AnimeScreen(
                         ) {
                             Icon(
                                 imageVector = if (isGridView) Icons.Filled.ViewList else Icons.Filled.GridView,
-                                contentDescription = "切换布局",
+                                contentDescription = if (isGridView) "切换为列表视图" else "切换为网格视图",
                                 tint = primaryTextColor,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -556,7 +609,6 @@ fun AnimeScreen(
                             )
                         }
                     }
-                }
 
                 // Sub-header Row: Horizontal Category Selector [全部 | 在看 | 已看完]
                 Row(
@@ -844,6 +896,7 @@ fun AnimeScreen(
                 }
             }
         }
+    }
 
         if (showDeleteAllConfirmDialog) {
             AlertDialog(
@@ -871,7 +924,7 @@ fun AnimeScreen(
         }
 
         // --- 2. Anime Series Detail Dialog Expansion (100% Bookshelf Series Exact Match) ---
-        if (seriesExpandProgress > 0.001f && displayAnime != null) {
+        if (displayAnime != null && sourceBounds != Rect.Zero) {
             val allWithEpisodes by viewModel.animesWithEpisodes.collectAsState()
             val withEps = allWithEpisodes.firstOrNull { it.anime.id == displayAnime?.anime?.id } ?: displayAnime!!
             val anime = withEps.anime
@@ -898,23 +951,27 @@ fun AnimeScreen(
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val screenWidthPx = constraints.maxWidth.toFloat()
                 val screenHeightPx = constraints.maxHeight.toFloat()
+                val progress = seriesExpandProgress.coerceIn(0f, 1f)
+                val liftOffsetPx = kotlin.math.sin(progress * Math.PI.toFloat()) * with(density) { 36.dp.toPx() }
+                val popScale = 1f + kotlin.math.sin(progress * Math.PI.toFloat()) * 0.035f
 
                 val expandedWidthPx = minOf(screenWidthPx * 0.90f, with(density) { 460.dp.toPx() })
                 val expandedHeightPx = minOf(screenHeightPx * 0.76f, with(density) { 580.dp.toPx() })
                 val targetLeft = (screenWidthPx - expandedWidthPx) / 2f
                 val targetTop = (screenHeightPx - expandedHeightPx) / 2f
 
-                val currentLeft = lerp(sourceBounds.left, targetLeft, seriesExpandProgress)
-                val currentTop = lerp(sourceBounds.top, targetTop, seriesExpandProgress)
-                val currentWidth = lerp(sourceBounds.width, expandedWidthPx, seriesExpandProgress).coerceAtLeast(1f)
-                val currentHeight = lerp(sourceBounds.height, expandedHeightPx, seriesExpandProgress).coerceAtLeast(1f)
-                val currentRadius = lerp(if (isGridView) 18f else 16f, 28f, seriesExpandProgress).coerceAtLeast(0f)
+                val currentLeft = lerp(sourceBounds.left, targetLeft, progress)
+                val currentTop = lerp(sourceBounds.top, targetTop, progress) - liftOffsetPx
+                val currentWidth = lerp(sourceBounds.width, expandedWidthPx, progress).coerceAtLeast(1f)
+                val currentHeight = lerp(sourceBounds.height, expandedHeightPx, progress).coerceAtLeast(1f)
 
                 // Scrim
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = (0.28f * seriesExpandProgress).coerceIn(0f, 1f)))
+                        .offset { if (isAnimeTransitioning) IntOffset.Zero else IntOffset(100000, 0) }
+                        .graphicsLayer { alpha = (0.28f * progress).coerceIn(0f, 1f) }
+                        .background(Color.Black.copy(alpha = 0.30f))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -923,92 +980,105 @@ fun AnimeScreen(
                         }
                 )
 
-                // Morphing Glass Container (Exact Bookshelf Styling)
+                // Morphing Glass Container (Exact Settings Styling)
                 Box(
                     modifier = Modifier
-                        .layout { measurable, _ ->
-                            val placeable = measurable.measure(
-                                Constraints.fixed(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt())
-                            )
-                            layout(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt()) {
-                                placeable.place(currentLeft.fastRoundToInt(), currentTop.fastRoundToInt())
-                            }
-                        }
-                        .drawBackdrop(
-                            backdrop = animeBackdrop,
-                            shape = { RoundedCornerShape(with(density) { currentRadius.coerceAtLeast(0f).dp }) },
-                            effects = {
-                                vibrancy()
-                                blur(8.dp.toPx())
-                                lens(
-                                    refractionHeight = 16.dp.toPx(),
-                                    refractionAmount = 32.dp.toPx(),
-                                    depthEffect = false,
-                                    chromaticAberration = true
-                                )
-                            },
-                            highlight = { Highlight.Plain },
-                            shadow = {
-                                Shadow(
-                                    radius = 20.dp,
-                                    color = Color.Black.copy(alpha = if (isDark) 0.35f else 0.15f)
-                                )
-                            },
-                            onDrawSurface = {
-                                drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
-                            }
-                        )
-                        .border(
-                            width = 0.8.dp,
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
-                                    Color.White.copy(alpha = if (isDark) 0.08f else 0.20f)
-                                )
-                            ),
-                            shape = RoundedCornerShape(with(density) { currentRadius.coerceAtLeast(0f).dp })
-                        )
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { }
+                        .fillMaxSize()
+                        .offset { if (isAnimeTransitioning) IntOffset.Zero else IntOffset(100000, 0) }
+                        .graphicsLayer { alpha = if (isAnimeTransitioning) 1f else 0f }
                 ) {
-                            // Collapsed Card fading out (Zero padding to match sourceBounds exactly)
-                            if (seriesExpandProgress < 0.35f) {
-                                val collapsedAlpha = (1f - (seriesExpandProgress / 0.28f)).coerceIn(0f, 1f)
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer { alpha = collapsedAlpha },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    AnimeCardContent(
-                                        anime = anime,
-                                        isGridView = isGridView,
-                                        isDark = isDark,
-                                        themeAccent = themeAccent,
-                                        primaryTextColor = primaryTextColor,
-                                        secondaryTextColor = secondaryTextColor
+                    Box(
+                        modifier = Modifier
+                            .requiredSize(
+                                width = with(density) { currentWidth.toDp() },
+                                height = with(density) { currentHeight.toDp() }
+                            )
+                            .offset {
+                                IntOffset(currentLeft.roundToInt(), currentTop.roundToInt())
+                            }
+                            .graphicsLayer {
+                                scaleX = popScale
+                                scaleY = popScale
+                                cameraDistance = 18f * density.density
+                                val normalizedSourceY = ((sourceBounds.top - screenHeightPx / 2f) / screenHeightPx).coerceIn(-1f, 1f)
+                                rotationX = normalizedSourceY * (1f - progress) * 4f
+                            }
+                            .drawBackdrop(
+                                backdrop = animeBackdrop,
+                                shape = { RoundedCornerShape(with(density) { lerp(if (isGridView) 18.dp.toPx() else 16.dp.toPx(), 28.dp.toPx(), progress).toDp() }) },
+                                effects = {
+                                    vibrancy()
+                                    blur(androidx.compose.ui.util.lerp(4f, 12f, progress).dp.toPx())
+                                    lens(
+                                        refractionHeight = androidx.compose.ui.util.lerp(16f, 32f, progress).dp.toPx(),
+                                        refractionAmount = androidx.compose.ui.util.lerp(32f, 64f, progress).dp.toPx(),
+                                        chromaticAberration = true
                                     )
+                                },
+                                highlight = { Highlight.Plain },
+                                shadow = {
+                                    Shadow(
+                                        radius = lerp(12f, 36f, progress).dp,
+                                        color = Color.Black.copy(alpha = if (isDark) lerp(0.25f, 0.45f, progress) else lerp(0.10f, 0.25f, progress))
+                                    )
+                                },
+                                onDrawSurface = {
+                                    drawRect(Color.White.copy(alpha = if (isDark) lerp(0.07f, 0.08f, progress) else lerp(0.35f, 0.12f, progress)))
                                 }
+                            )
+                            .border(
+                                width = lerp(0.6f, 0.8f, progress).dp,
+                                brush = Brush.linearGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = if (isDark) lerp(0.25f, 0.40f, progress) else lerp(0.60f, 0.75f, progress)),
+                                        Color.White.copy(alpha = if (isDark) lerp(0.05f, 0.08f, progress) else lerp(0.15f, 0.20f, progress))
+                                    )
+                                ),
+                                shape = RoundedCornerShape(with(density) { lerp(if (isGridView) 18.dp.toPx() else 16.dp.toPx(), 28.dp.toPx(), progress).toDp() })
+                            )
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { },
+                        contentAlignment = Alignment.TopStart
+                    ) {
+                            // Collapsed Card fading out (Zero padding to match sourceBounds exactly)
+                            Box(
+                                modifier = Modifier
+                                    .requiredSize(with(density) { sourceBounds.width.toDp() }, with(density) { sourceBounds.height.toDp() })
+                                    .graphicsLayer {
+                                        alpha = (1f - progress * 2.8f).coerceIn(0f, 1f)
+                                    },
+                                contentAlignment = Alignment.TopStart
+                            ) {
+                                AnimeCardContent(
+                                    anime = anime,
+                                    isGridView = isGridView,
+                                    isDark = isDark,
+                                    themeAccent = themeAccent,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor
+                                )
                             }
 
-                            // Expanded Dialog fading in (Matching user wireframe)
+                            // Expanded Dialog fading in (Matching user wireframe with upward drift)
                             if (seriesExpandProgress > 0.15f) {
-                                val contentAlpha = ((seriesExpandProgress - 0.20f) / 0.80f).coerceIn(0f, 1f)
-                                val contentScale = lerp(0.92f, 1f, contentAlpha)
+                                val contentAlpha = ((progress - 0.18f) / 0.82f).coerceIn(0f, 1f)
+                                val contentScale = lerp(0.94f, 1f, contentAlpha)
+                                val contentSlideY = lerp(16f, 0f, contentAlpha)
                                 val childBackdrop = backdrop
                                 var isSummaryExpanded by remember { mutableStateOf(false) }
 
                                 Column(
                                     modifier = Modifier
-                                        .fillMaxSize()
+                                        .requiredSize(with(density) { expandedWidthPx.toDp() }, with(density) { expandedHeightPx.toDp() })
                                         .graphicsLayer {
                                             alpha = contentAlpha
                                             scaleX = contentScale
                                             scaleY = contentScale
+                                            translationY = contentSlideY * density.density
                                         }
-                                        .padding(horizontal = 18.dp, vertical = 18.dp)
+                                        .padding(18.dp)
                                 ) {
                                     // 1. Top Section: Poster (Left) + Title & Summary (Right)
                                     Row(
@@ -1452,6 +1522,7 @@ fun AnimeScreen(
                     }
                 }
             }
+        }
 
         // --- 3. Long-Press Frosted Glass Context Modal ---
         selectedAnimeForAction?.let { anime ->
@@ -1714,6 +1785,48 @@ fun AnimeScreen(
                 fullUrl = fullUrl,
                 themeAccent = themeAccent,
                 onDismiss = { inspectingEpisode = null }
+            )
+        }
+
+        // --- 6. Hanime Online Video Detail Sheet ---
+        com.example.epubreader.ui.hanime.HanimeDetailSheet(
+            viewModel = hanimeViewModel,
+            onPlayClick = { video, res ->
+                hanimeViewModel.startPlaying(video, res)
+            },
+            onTagClick = { tag ->
+                hanimeViewModel.performSearch(tags = setOf(tag), isLoadMore = false)
+                isOnlineSearchActive = true
+                hanimeViewModel.closeVideoDetail()
+            },
+            onEpisodeClick = { vCode, idx ->
+                hanimeViewModel.playPlaylistEpisode(vCode, idx)
+            },
+            onDismiss = {
+                hanimeViewModel.closeVideoDetail()
+            },
+            backdrop = backdrop,
+            isDark = isDark,
+            themeAccent = themeAccent
+        )
+
+        // --- 7. Hanime Fullscreen Online Video Player Overlay ---
+        hanimeViewModel.activePlayingVideo?.let { playingVideo ->
+            com.example.epubreader.ui.hanime.HanimeOnlinePlayerOverlay(
+                video = playingVideo,
+                initialResolution = hanimeViewModel.activePlayingResolution,
+                currentEpIndex = hanimeViewModel.currentEpisodeIndex,
+                onExit = {
+                    hanimeViewModel.exitPlaying()
+                },
+                onNextEpisode = {
+                    hanimeViewModel.playNextEpisode()
+                },
+                onSelectEpisode = { vCode, idx ->
+                    hanimeViewModel.playPlaylistEpisode(vCode, idx)
+                },
+                backdrop = backdrop,
+                themeAccent = themeAccent
             )
         }
     }

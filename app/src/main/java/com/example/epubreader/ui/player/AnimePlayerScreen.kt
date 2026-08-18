@@ -7,6 +7,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
+import android.provider.Settings
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
@@ -179,7 +180,8 @@ fun AnimePlayerScreen(
     themeAccentGradient: Brush = Brush.horizontalGradient(listOf(themeAccent, themeAccent)),
     webDavAuth: Pair<String, String>?, // username, password
     onExit: (positionMs: Long, durationMs: Long) -> Unit,
-    onNextEpisode: (nextEp: AnimeEpisodeEntity) -> Unit
+    onNextEpisode: (nextEp: AnimeEpisodeEntity) -> Unit,
+    onProgressUpdate: ((positionMs: Long, durationMs: Long) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -214,11 +216,12 @@ fun AnimePlayerScreen(
                     insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
                     currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    val lp = window.attributes
+                    lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                        val lp = window.attributes
                         lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
-                        window.attributes = lp
                     }
+                    window.attributes = lp
                 } catch (e: Throwable) {
                     android.util.Log.e("AnimePlayer", "Orientation restore error: ${e.message}")
                 }
@@ -241,6 +244,12 @@ fun AnimePlayerScreen(
     var resizeMode by remember { mutableStateOf(MpvPlayerManager.ResizeMode.FIT) }
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
     var isSpeedBoosting by remember { mutableStateOf(false) }
+
+    // Screen Brightness State (Defaults to 100% full brightness)
+    var playerBrightness by remember {
+        val cur = activity?.window?.attributes?.screenBrightness ?: -1f
+        mutableFloatStateOf(if (cur in 0.05f..1.0f) cur else 1.0f)
+    }
 
     // Gesture HUD States
     var gestureHudText by remember { mutableStateOf<String?>(null) }
@@ -445,11 +454,10 @@ fun AnimePlayerScreen(
         val headers = if (webDavAuth != null && webDavAuth.first.isNotBlank()) {
             mapOf("Authorization" to Credentials.basic(webDavAuth.first, webDavAuth.second))
         } else null
-        player.loadFile(safeVideoUrl, headers)
-        val resumePos = if (episode.lastPlayedPositionMs > 1000L) episode.lastPlayedPositionMs else 0L
-        if (resumePos > 0L) {
-            player.seekTo(resumePos)
-        }
+        val resumePos = if (episode.lastPlayedPositionMs > 1000L && (episode.durationMs <= 0L || episode.lastPlayedPositionMs < (episode.durationMs * 0.95f))) {
+            episode.lastPlayedPositionMs
+        } else 0L
+        player.loadFile(safeVideoUrl, headers, resumePos)
         player.play()
         player
     }
@@ -460,9 +468,31 @@ fun AnimePlayerScreen(
     DisposableEffect(episode.id) {
         onDispose {
             try {
+                val currentPos = mpvPlayer.positionMs.value
+                val currentDur = mpvPlayer.durationMs.value
+                if (currentPos > 0L) {
+                    onProgressUpdate?.invoke(currentPos, currentDur)
+                }
+                // Restore window brightness override to system default
+                activity?.window?.let { win ->
+                    val lp = win.attributes
+                    lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                    win.attributes = lp
+                }
                 mpvPlayer.destroy()
             } catch (e: Throwable) {
                 // Ignore
+            }
+        }
+    }
+
+    // Auto-persist when pausing
+    LaunchedEffect(isPlaying) {
+        if (!isPlaying) {
+            val pos = mpvPlayer.positionMs.value
+            val dur = mpvPlayer.durationMs.value
+            if (pos > 0L) {
+                onProgressUpdate?.invoke(pos, dur)
             }
         }
     }
@@ -837,6 +867,11 @@ fun AnimePlayerScreen(
         val currentPos = mpvPlayer.positionMs.value
         val currentDur = mpvPlayer.durationMs.value
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        activity?.window?.let { win ->
+            val lp = win.attributes
+            lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            win.attributes = lp
+        }
         onExit(currentPos, currentDur)
     }
 
@@ -860,41 +895,27 @@ fun AnimePlayerScreen(
         end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
     )
 
+    val needsBackdrop = isControlsVisible || hasOpenSheet || isScrubbing || isLocked
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 1. Video Surface, Subtitles & Danmaku layer - captured by playerBackdrop for real-time liquid glass refraction
+        // 1. Video Surface, Subtitles & Danmaku layer - captured by playerBackdrop only when controls/sheets need refraction
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .layerBackdrop(playerBackdrop)
-        ) {
-            // 1.1 Video Surface View (mpv renders video and libass subtitles directly on surface)
-            Box(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                AndroidView(
-                    factory = { ctx ->
-                        MpvVideoView(ctx).apply {
-                            setPlayer(mpvPlayer)
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
+                .then(
+                    if (needsBackdrop) Modifier.layerBackdrop(playerBackdrop) else Modifier
                 )
-            }
-
-            // 1.2 Danmaku Canvas Overlay
-            DanmakuCanvas(
+        ) {
+            VideoAndDanmakuLayer(
+                mpvPlayer = mpvPlayer,
                 danmakuList = danmakuList,
-                currentPositionMs = currentPositionMs,
+                positionMsProvider = { currentPositionMs },
                 isPlaying = isPlaying,
-                config = danmakuConfig,
+                danmakuConfig = danmakuConfig,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -996,16 +1017,19 @@ fun AnimePlayerScreen(
                                     }
                                     2 -> {
                                         // Brightness Control (Left side vertical drag)
-                                        val delta = -dragAmount.y / size.height
+                                        val delta = -dragAmount.y / (size.height * 0.80f)
                                         val win = activity?.window
                                         if (win != null) {
-                                            val currentBrightness = win.attributes.screenBrightness.let { if (it < 0) 0.5f else it }
-                                            val targetBrightness = (currentBrightness + delta).coerceIn(0.01f, 1.0f)
+                                            playerBrightness = (playerBrightness + delta).coerceIn(0.01f, 1.0f)
                                             val lp = win.attributes
-                                            lp.screenBrightness = targetBrightness
+                                            lp.screenBrightness = if (playerBrightness >= 0.99f) {
+                                                WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                                            } else {
+                                                playerBrightness
+                                            }
                                             win.attributes = lp
-                                            gestureHudText = "亮度: ${(targetBrightness * 100).toInt()}%"
-                                            gestureHudIcon = Icons.Filled.BrightnessMedium
+                                            gestureHudText = "亮度: ${(playerBrightness * 100).toInt()}%"
+                                            gestureHudIcon = if (playerBrightness > 0.6f) Icons.Filled.BrightnessHigh else if (playerBrightness > 0.3f) Icons.Filled.BrightnessMedium else Icons.Filled.BrightnessLow
                                             showGestureHud = true
                                         }
                                     }
@@ -2829,4 +2853,38 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is android.content.ContextWrapper -> baseContext.findActivity()
     else -> null
 }
+
+@Composable
+private fun VideoAndDanmakuLayer(
+    mpvPlayer: MpvPlayerManager,
+    danmakuList: List<DanmakuItem>,
+    positionMsProvider: () -> Long,
+    isPlaying: Boolean,
+    danmakuConfig: DanmakuConfig,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        AndroidView(
+            factory = { ctx ->
+                MpvVideoView(ctx).apply {
+                    setPlayer(mpvPlayer)
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        DanmakuCanvas(
+            danmakuList = danmakuList,
+            currentPositionMs = positionMsProvider(),
+            isPlaying = isPlaying,
+            config = danmakuConfig,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
 

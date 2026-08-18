@@ -56,6 +56,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _immersiveStatusBar = MutableStateFlow(prefs.getBoolean("immersiveStatusBar", false))
     val immersiveStatusBar: StateFlow<Boolean> = _immersiveStatusBar.asStateFlow()
 
+    private val _isPerfMonitorEnabled = MutableStateFlow(prefs.getBoolean("perf_monitor_enabled", false))
+    val isPerfMonitorEnabled: StateFlow<Boolean> = _isPerfMonitorEnabled.asStateFlow()
+
+    fun setPerfMonitorEnabled(enabled: Boolean) {
+        _isPerfMonitorEnabled.value = enabled
+        prefs.edit().putBoolean("perf_monitor_enabled", enabled).apply()
+    }
+
     private val readerPrefs = application.getSharedPreferences("reader_settings", Context.MODE_PRIVATE)
 
     private val _pageTurnMode = MutableStateFlow(readerPrefs.getInt("pageTurnMode", 0)) // 0: 滚动, 1: 翻页

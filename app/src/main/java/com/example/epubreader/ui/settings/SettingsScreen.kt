@@ -260,6 +260,27 @@ fun SettingsScreen(
                             accentColor = themeAccent
                         )
                     }
+
+                    // Real-time Performance HUD Toggle
+                    val isPerfMonitorEnabled by viewModel.isPerfMonitorEnabled.collectAsState()
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("实时性能监控浮窗 (HUD)", fontSize = 16.sp, color = primaryTextColor)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("在各界面悬浮显示实时刷新率 (FPS)、CPU 占用、内存消耗与电池温度", fontSize = 12.sp, color = secondaryTextColor)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        LiquidToggle(
+                            selected = { isPerfMonitorEnabled },
+                            onSelect = { viewModel.setPerfMonitorEnabled(it) },
+                            backdrop = backgroundBackdrop,
+                            accentColor = themeAccent
+                        )
+                    }
                 }
 
                 // READER SETTINGS SECTION

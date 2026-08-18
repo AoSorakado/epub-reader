@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -399,13 +400,7 @@ fun BookshelfScreen(
     val isOpeningBookActive = openingBook != null
     val bookOpenTransition = updateTransition(targetState = isOpeningBookExpanded, label = "BookOpenTransition")
     val bookOpenProgress by bookOpenTransition.animateFloat(
-        transitionSpec = {
-            if (targetState) {
-                spring(dampingRatio = 0.82f, stiffness = 220f)
-            } else {
-                spring(dampingRatio = 0.88f, stiffness = 260f)
-            }
-        },
+        transitionSpec = { spring(dampingRatio = 0.82f, stiffness = 160f) },
         label = "bookOpenProgress"
     ) { if (it) 1f else 0f }
 
@@ -477,18 +472,14 @@ fun BookshelfScreen(
 
     val seriesTransition = updateTransition(targetState = isSeriesExpanded, label = "SeriesMorphTransition")
     val seriesExpandProgress by seriesTransition.animateFloat(
-        transitionSpec = {
-            if (targetState) {
-                spring(dampingRatio = 0.82f, stiffness = 220f)
-            } else {
-                spring(dampingRatio = 0.86f, stiffness = 260f)
-            }
-        },
+        transitionSpec = { spring(dampingRatio = 0.76f, stiffness = 150f) },
         label = "seriesMorphProgress"
     ) { if (it) 1f else 0f }
 
-    LaunchedEffect(seriesExpandProgress, isSeriesExpanded) {
-        if (!isSeriesExpanded && seriesExpandProgress <= 0.001f && displaySeries != null) {
+    val isSeriesTransitioning = seriesTransition.currentState != seriesTransition.targetState || seriesTransition.currentState
+
+    LaunchedEffect(isSeriesTransitioning, isSeriesExpanded) {
+        if (!isSeriesExpanded && !isSeriesTransitioning && displaySeries != null) {
             displaySeries = null
             selectedSeries = null
         }
@@ -509,13 +500,6 @@ fun BookshelfScreen(
         }
     }
 
-    val backgroundBlurRadius = maxOf(
-        lerp(0f, 16f, seriesExpandProgress),
-        lerp(0f, 16f, editExpandProgress),
-        lerp(0f, 16f, bookOpenProgress),
-        if (contextMenuTarget != null) 16f else 0f
-    ).dp
-
     val layoutMethod by viewModel.layoutMethod.collectAsState()
 
     Box(modifier = Modifier
@@ -526,7 +510,6 @@ fun BookshelfScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(bookshelfGradient)
-                .blur(backgroundBlurRadius)
                 .layerBackdrop(bookshelfBackdrop)
         ) {
             Scaffold(
@@ -660,7 +643,7 @@ fun BookshelfScreen(
                                     val seriesTitle = item.first as String
                                     @Suppress("UNCHECKED_CAST")
                                     val seriesBooks = item.second as List<BookEntity>
-                                    val isSeriesExpandedThis = (displaySeries?.first == seriesTitle && seriesExpandProgress > 0.001f)
+                                    val isSeriesExpandedThis = (displaySeries?.first == seriesTitle && isSeriesTransitioning)
                                     val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
                                     val isSeriesContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Series && currentContextMenu.series.first == seriesTitle)
                                     val isSeriesHidden = isSeriesExpandedThis || isSeriesContextMenuActive
@@ -705,23 +688,28 @@ fun BookshelfScreen(
             }
         }
 
-        if (seriesExpandProgress > 0.001f && displaySeries != null) {
+        if (displaySeries != null && sourceBounds != Rect.Zero) {
             val (seriesTitle, seriesBooks) = displaySeries!!
             val expandedWidthPx = minOf(screenWidthPx * 0.92f, with(density) { 480.dp.toPx() })
             val expandedHeightPx = minOf(screenHeightPx * 0.78f, with(density) { 620.dp.toPx() })
             val targetLeft = (screenWidthPx - expandedWidthPx) / 2f
             val targetTop = (screenHeightPx - expandedHeightPx) / 2f
 
-            val currentLeft = lerp(sourceBounds.left, targetLeft, seriesExpandProgress)
-            val currentTop = lerp(sourceBounds.top, targetTop, seriesExpandProgress)
-            val currentWidth = lerp(sourceBounds.width, expandedWidthPx, seriesExpandProgress).coerceAtLeast(1f)
-            val currentHeight = lerp(sourceBounds.height, expandedHeightPx, seriesExpandProgress).coerceAtLeast(1f)
-            val currentRadius = lerp(20f, 28f, seriesExpandProgress).coerceAtLeast(0f)
+            val progress = seriesExpandProgress.coerceIn(0f, 1f)
+            val liftOffsetPx = kotlin.math.sin(progress * Math.PI.toFloat()) * with(density) { 36.dp.toPx() }
+            val popScale = 1f + kotlin.math.sin(progress * Math.PI.toFloat()) * 0.035f
+
+            val currentLeft = lerp(sourceBounds.left, targetLeft, progress)
+            val currentTop = lerp(sourceBounds.top, targetTop, progress) - liftOffsetPx
+            val currentWidth = lerp(sourceBounds.width, expandedWidthPx, progress).coerceAtLeast(1f)
+            val currentHeight = lerp(sourceBounds.height, expandedHeightPx, progress).coerceAtLeast(1f)
 
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = (0.10f * seriesExpandProgress).coerceIn(0f, 1f)))
+                    .offset { if (isSeriesTransitioning) IntOffset.Zero else IntOffset(100000, 0) }
+                    .graphicsLayer { alpha = (0.22f * progress).coerceIn(0f, 1f) }
+                    .background(Color.Black.copy(alpha = 0.30f))
                     .clickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                         indication = null
@@ -732,51 +720,98 @@ fun BookshelfScreen(
 
             Box(
                 modifier = Modifier
-                    .layout { measurable, _ ->
-                        val placeable = measurable.measure(
-                            Constraints.fixed(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt())
-                        )
-                        layout(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt()) {
-                            placeable.place(currentLeft.fastRoundToInt(), currentTop.fastRoundToInt())
-                        }
-                    }
-                    .drawBackdrop(
-                        backdrop = bookshelfBackdrop,
-                        shape = { RoundedCornerShape(with(density) { currentRadius.coerceAtLeast(0f).dp }) },
-                        effects = {
-                            vibrancy()
-                            blur(6f.dp.toPx())
-                            lens(
-                                refractionHeight = 16f.dp.toPx(),
-                                refractionAmount = 32f.dp.toPx(),
-                                chromaticAberration = true
-                            )
-                        },
-                        highlight = { Highlight.Plain },
-                        shadow = {
-                            Shadow(
-                                radius = 20.dp,
-                                color = Color.Black.copy(alpha = if (isDark) 0.35f else 0.15f)
-                            )
-                        },
-                        onDrawSurface = {
-                            drawRect(Color.White.copy(alpha = if (isDark) 0.08f else 0.12f))
-                        }
-                    )
-                    .clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null
-                    ) { }
+                    .fillMaxSize()
+                    .offset { if (isSeriesTransitioning) IntOffset.Zero else IntOffset(100000, 0) }
+                    .graphicsLayer { alpha = if (isSeriesTransitioning) 1f else 0f }
             ) {
-                if (seriesExpandProgress < 0.40f) {
-                    val collapsedAlpha = (1f - (seriesExpandProgress / 0.35f)).coerceIn(0f, 1f)
+                Box(
+                    modifier = Modifier
+                        .requiredSize(
+                            width = with(density) { currentWidth.toDp() },
+                            height = with(density) { currentHeight.toDp() }
+                        )
+                        .offset {
+                            IntOffset(currentLeft.roundToInt(), currentTop.roundToInt())
+                        }
+                        .graphicsLayer {
+                            scaleX = popScale
+                            scaleY = popScale
+                            cameraDistance = 18f * density.density
+                            val normalizedSourceY = ((sourceBounds.top - screenHeightPx / 2f) / screenHeightPx).coerceIn(-1f, 1f)
+                            rotationX = normalizedSourceY * (1f - progress) * 4f
+                        }
+                        .drawBackdrop(
+                            backdrop = bookshelfBackdrop,
+                            shape = { RoundedCornerShape(with(density) { lerp(22.dp.toPx(), 28.dp.toPx(), progress).toDp() }) },
+                            effects = {
+                                vibrancy()
+                                blur(androidx.compose.ui.util.lerp(4f, 12f, progress).dp.toPx())
+                                lens(
+                                    refractionHeight = androidx.compose.ui.util.lerp(16f, 32f, progress).dp.toPx(),
+                                    refractionAmount = androidx.compose.ui.util.lerp(32f, 64f, progress).dp.toPx(),
+                                    chromaticAberration = true
+                                )
+                            },
+                            highlight = { Highlight.Plain },
+                            shadow = {
+                                Shadow(
+                                    radius = lerp(12f, 36f, progress).dp,
+                                    color = Color.Black.copy(alpha = if (isDark) lerp(0.25f, 0.45f, progress) else lerp(0.10f, 0.25f, progress))
+                                )
+                            },
+                            onDrawSurface = {
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.White.copy(alpha = if (isDark) lerp(0.14f, 0.10f, progress) else lerp(0.24f, 0.16f, progress)),
+                                            Color.White.copy(alpha = if (isDark) lerp(0.04f, 0.06f, progress) else lerp(0.10f, 0.12f, progress))
+                                        )
+                                    )
+                                )
+                                drawRect(
+                                    brush = Brush.radialGradient(
+                                        colors = listOf(
+                                            themeAccent.copy(alpha = if (isDark) 0.16f else 0.22f),
+                                            themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                            Color.Transparent
+                                        ),
+                                        center = Offset(size.width * 0.15f, 0f),
+                                        radius = size.width * 0.95f
+                                    )
+                                )
+                            }
+                        )
+                        .border(
+                            width = 0.8.dp,
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    themeAccent.copy(alpha = if (isDark) 0.50f else 0.70f),
+                                    Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                                    Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+                                    themeAccent.copy(alpha = if (isDark) 0.25f else 0.35f)
+                                ),
+                                start = Offset(0f, 0f),
+                                end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                            ),
+                            shape = RoundedCornerShape(with(density) { lerp(22.dp.toPx(), 28.dp.toPx(), progress).toDp() })
+                        )
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) { },
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Collapsed Series Card (Fades out)
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(10.dp)
+                            .requiredSize(
+                                width = with(density) { sourceBounds.width.toDp() },
+                                height = with(density) { sourceBounds.height.toDp() }
+                            )
                             .graphicsLayer {
-                                alpha = collapsedAlpha
-                            },
+                                alpha = (1f - progress * 2.8f).coerceIn(0f, 1f)
+                            }
+                            .padding(10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         SeriesItemContent(
@@ -789,22 +824,24 @@ fun BookshelfScreen(
                             secondaryTextColor = secondaryTextColor
                         )
                     }
-                }
 
-                if (seriesExpandProgress > 0.15f) {
-                    val contentAlpha = ((seriesExpandProgress - 0.20f) / 0.80f).coerceIn(0f, 1f)
-                    val contentScale = lerp(0.92f, 1f, contentAlpha)
+                    // Expanded Series Content (Fades in inside the morphing glass container with upward drift)
+                    if (seriesExpandProgress > 0.15f) {
+                        val contentAlpha = ((progress - 0.18f) / 0.82f).coerceIn(0f, 1f)
+                        val contentScale = lerp(0.94f, 1f, contentAlpha)
+                        val contentSlideY = lerp(16f, 0f, contentAlpha)
 
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                alpha = contentAlpha
-                                scaleX = contentScale
-                                scaleY = contentScale
-                            }
-                            .padding(horizontal = 20.dp, vertical = 20.dp)
-                    ) {
+                        Column(
+                            modifier = Modifier
+                                .requiredSize(with(density) { expandedWidthPx.toDp() }, with(density) { expandedHeightPx.toDp() })
+                                .graphicsLayer {
+                                    alpha = contentAlpha
+                                    scaleX = contentScale
+                                    scaleY = contentScale
+                                    translationY = contentSlideY * density.density
+                                }
+                                .padding(horizontal = 20.dp, vertical = 20.dp)
+                        ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -889,6 +926,7 @@ fun BookshelfScreen(
                 }
             }
         }
+    }
 
         if (bookOpenProgress > 0.001f && openingBook != null) {
             val book = openingBook!!
@@ -913,7 +951,12 @@ fun BookshelfScreen(
                 modifier = Modifier
                     .layout { measurable, _ ->
                         val placeable = measurable.measure(
-                            Constraints.fixed(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt())
+                            Constraints(
+                                minWidth = currentWidth.fastRoundToInt(),
+                                maxWidth = currentWidth.fastRoundToInt(),
+                                minHeight = currentHeight.fastRoundToInt(),
+                                maxHeight = currentHeight.fastRoundToInt()
+                            )
                         )
                         layout(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt()) {
                             placeable.place(currentLeft.fastRoundToInt(), currentTop.fastRoundToInt())
@@ -923,13 +966,17 @@ fun BookshelfScreen(
                         backdrop = globalBackdrop,
                         shape = { RoundedCornerShape(with(density) { currentRadius.coerceAtLeast(0f).dp }) },
                         effects = {
+                            val p = bookOpenProgress.coerceIn(0f, 1f)
                             vibrancy()
-                            blur(lerp(3f, 16f, bookOpenProgress).coerceAtLeast(0.1f).dp.toPx())
-                            lens(
-                                refractionHeight = lerp(16f, 32f, bookOpenProgress).coerceAtLeast(0.1f).dp.toPx(),
-                                refractionAmount = lerp(32f, 56f, bookOpenProgress).coerceAtLeast(0.1f).dp.toPx(),
-                                chromaticAberration = true
-                            )
+                            blur(lerp(3f, 14f, p).coerceAtLeast(0.1f).dp.toPx())
+                            if (p > 0.4f) {
+                                val lensP = ((p - 0.4f) / 0.6f).coerceIn(0f, 1f)
+                                lens(
+                                    refractionHeight = lerp(8f, 32f, lensP).dp.toPx(),
+                                    refractionAmount = lerp(16f, 56f, lensP).dp.toPx(),
+                                    chromaticAberration = true
+                                )
+                            }
                         },
                         highlight = { Highlight.Plain },
                         onDrawSurface = {
@@ -943,7 +990,7 @@ fun BookshelfScreen(
                     val collapsedAlpha = (1f - (bookOpenProgress / 0.35f)).coerceIn(0f, 1f)
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .requiredSize(with(density) { openingBookBounds.width.toDp() }, with(density) { openingBookBounds.height.toDp() })
                             .graphicsLayer {
                                 alpha = collapsedAlpha
                             },
@@ -1524,23 +1571,26 @@ fun BookshelfScreen(
                 val menuHeightPx = with(density) { 272.dp.toPx() }
                 val dialogLeft = (btnBounds.right - menuWidthPx).coerceAtLeast(with(density) { 16.dp.toPx() })
                 val dialogTop = btnBounds.bottom + with(density) { 6.dp.toPx() }
-                val dialogBounds = Rect(dialogLeft, dialogTop, dialogLeft + menuWidthPx, dialogTop + menuHeightPx)
 
-                val currentLeft = androidx.compose.ui.util.lerp(btnBounds.left, dialogBounds.left, morphProgress)
-                val currentTop = androidx.compose.ui.util.lerp(btnBounds.top, dialogBounds.top, morphProgress)
-                val currentWidth = androidx.compose.ui.util.lerp(btnBounds.width, menuWidthPx, morphProgress).coerceAtLeast(1f)
-                val currentHeight = androidx.compose.ui.util.lerp(btnBounds.height, menuHeightPx, morphProgress).coerceAtLeast(1f)
+                val sourceCenterX = btnBounds.left + btnBounds.width / 2f
+                val sourceCenterY = btnBounds.top + btnBounds.height / 2f
+                val targetCenterX = dialogLeft + menuWidthPx / 2f
+                val targetCenterY = dialogTop + menuHeightPx / 2f
+
                 val currentCornerRadius = androidx.compose.ui.util.lerp(btnBounds.height / 2f, with(density) { 24.dp.toPx() }, morphProgress).coerceAtLeast(0f)
 
                 Box(
                     modifier = Modifier
-                        .layout { measurable, _ ->
-                            val placeable = measurable.measure(
-                                Constraints.fixed(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt())
-                            )
-                            layout(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt()) {
-                                placeable.place(currentLeft.fastRoundToInt(), currentTop.fastRoundToInt())
-                            }
+                        .offset { IntOffset(dialogLeft.fastRoundToInt(), dialogTop.fastRoundToInt()) }
+                        .size(156.dp, 272.dp)
+                        .graphicsLayer {
+                            val p = morphProgress.coerceIn(0f, 1f)
+                            val initialScaleX = if (menuWidthPx > 0) btnBounds.width / menuWidthPx else 1f
+                            val initialScaleY = if (menuHeightPx > 0) btnBounds.height / menuHeightPx else 1f
+                            scaleX = androidx.compose.ui.util.lerp(initialScaleX, 1.0f, p)
+                            scaleY = androidx.compose.ui.util.lerp(initialScaleY, 1.0f, p)
+                            translationX = androidx.compose.ui.util.lerp(sourceCenterX - targetCenterX, 0f, p)
+                            translationY = androidx.compose.ui.util.lerp(sourceCenterY - targetCenterY, 0f, p)
                         }
                         .drawBackdrop(
                             backdrop = bookshelfBackdrop,
@@ -1812,10 +1862,11 @@ fun BookshelfScreen(
                 Rect(targetLeft, targetTop, targetLeft + expandedWidthPx, targetTop + expandedHeightPx)
             }
 
-            val currentLeft = lerp(initialBounds.left, targetLeft, editExpandProgress)
-            val currentTop = lerp(initialBounds.top, targetTop, editExpandProgress)
-            val currentWidth = lerp(initialBounds.width, expandedWidthPx, editExpandProgress).coerceAtLeast(1f)
-            val currentHeight = lerp(initialBounds.height, expandedHeightPx, editExpandProgress).coerceAtLeast(1f)
+            val sourceCenterX = initialBounds.left + initialBounds.width / 2f
+            val sourceCenterY = initialBounds.top + initialBounds.height / 2f
+            val targetCenterX = targetLeft + expandedWidthPx / 2f
+            val targetCenterY = targetTop + expandedHeightPx / 2f
+
             val currentRadius = lerp(20f, 24f, editExpandProgress).coerceAtLeast(0f)
 
             // Scrim
@@ -1834,13 +1885,16 @@ fun BookshelfScreen(
             // Morphing Modal Box
             Box(
                 modifier = Modifier
-                    .layout { measurable, _ ->
-                        val placeable = measurable.measure(
-                            Constraints.fixed(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt())
-                        )
-                        layout(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt()) {
-                            placeable.place(currentLeft.fastRoundToInt(), currentTop.fastRoundToInt())
-                        }
+                    .offset { IntOffset(targetLeft.fastRoundToInt(), targetTop.fastRoundToInt()) }
+                    .size(with(density) { expandedWidthPx.toDp() }, with(density) { expandedHeightPx.toDp() })
+                    .graphicsLayer {
+                        val p = editExpandProgress.coerceIn(0f, 1f)
+                        val initialScaleX = if (expandedWidthPx > 0) initialBounds.width / expandedWidthPx else 1f
+                        val initialScaleY = if (expandedHeightPx > 0) initialBounds.height / expandedHeightPx else 1f
+                        scaleX = lerp(initialScaleX, 1.0f, p)
+                        scaleY = lerp(initialScaleY, 1.0f, p)
+                        translationX = lerp(sourceCenterX - targetCenterX, 0f, p)
+                        translationY = lerp(sourceCenterY - targetCenterY, 0f, p)
                     }
                     .drawBackdrop(
                         backdrop = bookshelfBackdrop,

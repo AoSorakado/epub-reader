@@ -85,12 +85,17 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.setOptionString("gpu-shader-cache-dir", cacheDir.absolutePath)
             mpv.setOptionString("icc-cache-dir", cacheDir.absolutePath)
 
-            // Video output & hardware decoding
+            // Video output & hardware decoding (Clean native SDR/HDR pipeline)
             mpv.setOptionString("vo", "gpu")
             mpv.setOptionString("gpu-context", "android")
-            mpv.setOptionString("hwdec", "auto")
+            mpv.setOptionString("hwdec", "mediacodec")
+            mpv.setOptionString("hwdec-codecs", "all")
             mpv.setOptionString("force-window", "no")
             mpv.setOptionString("video-sync", "audio")
+            mpv.setOptionString("framedrop", "vo")
+            mpv.setOptionString("hr-seek", "yes")
+            mpv.setOptionString("hr-seek-framedrop", "yes")
+            mpv.setOptionString("vd-lavc-threads", "4")
 
             // Subtitle & ASS rendering settings (Matches desktop mpv-lazy-2026 standard)
             mpv.setOptionString("sub-auto", "fuzzy")
@@ -109,44 +114,36 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.setOptionString("subs-fallback", "yes")
             mpv.setOptionString("blend-subtitles", "yes")
 
-            // Streaming Cache
+            // Streaming Cache & IO Buffer
             mpv.setOptionString("cache", "yes")
+            mpv.setOptionString("demuxer-lavf-buffersize", "2097152")
             mpv.setOptionString("demuxer-max-bytes", "150MiB")
+            mpv.setOptionString("demuxer-max-back-bytes", "50MiB")
             mpv.setOptionString("demuxer-readahead-secs", "60")
 
             // Disable default mpv key/gesture handlers
             mpv.setOptionString("input-default-bindings", "no")
             mpv.setOptionString("input-vo-keyboard", "no")
 
-            // Enable verbose logging
-            mpv.setOptionString("msg-level", "all=v")
+            // Logging config - Production grade warning/error logging only to eliminate JNI CPU/GC overhead
+            mpv.setOptionString("msg-level", "all=warn")
 
             // 5. Initialize MPV engine
             mpv.init()
             mpv.addObserver(this)
             mpv.addLogObserver(this)
 
-            // 6. Observe properties
+            // 6. Observe essential dynamic properties during playback
             mpv.observeProperty("time-pos", MPV.mpvFormat.MPV_FORMAT_DOUBLE)
             mpv.observeProperty("duration", MPV.mpvFormat.MPV_FORMAT_DOUBLE)
             mpv.observeProperty("pause", MPV.mpvFormat.MPV_FORMAT_FLAG)
             mpv.observeProperty("eof-reached", MPV.mpvFormat.MPV_FORMAT_FLAG)
             mpv.observeProperty("demuxer-cache-duration", MPV.mpvFormat.MPV_FORMAT_DOUBLE)
-            mpv.observeProperty("video-params/w", MPV.mpvFormat.MPV_FORMAT_INT64)
-            mpv.observeProperty("video-params/h", MPV.mpvFormat.MPV_FORMAT_INT64)
             mpv.observeProperty("track-list/count", MPV.mpvFormat.MPV_FORMAT_INT64)
             mpv.observeProperty("sid", MPV.mpvFormat.MPV_FORMAT_STRING)
             mpv.observeProperty("aid", MPV.mpvFormat.MPV_FORMAT_STRING)
             mpv.observeProperty("sub-visibility", MPV.mpvFormat.MPV_FORMAT_FLAG)
             mpv.observeProperty("paused-for-cache", MPV.mpvFormat.MPV_FORMAT_FLAG)
-            mpv.observeProperty("video-params/pixelformat", MPV.mpvFormat.MPV_FORMAT_STRING)
-            mpv.observeProperty("video-params/colormatrix", MPV.mpvFormat.MPV_FORMAT_STRING)
-            mpv.observeProperty("video-params/primaries", MPV.mpvFormat.MPV_FORMAT_STRING)
-            mpv.observeProperty("video-params/gamma", MPV.mpvFormat.MPV_FORMAT_STRING)
-            mpv.observeProperty("container-fps", MPV.mpvFormat.MPV_FORMAT_DOUBLE)
-            mpv.observeProperty("hwdec-current", MPV.mpvFormat.MPV_FORMAT_STRING)
-            mpv.observeProperty("audio-params/channels", MPV.mpvFormat.MPV_FORMAT_STRING)
-            mpv.observeProperty("audio-params/samplerate", MPV.mpvFormat.MPV_FORMAT_INT64)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize MPV", e)
         }
@@ -258,14 +255,42 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
         }
     }
 
-    fun loadFile(url: String, headers: Map<String, String>? = null) {
+    private var pendingSeekPositionMs = 0L
+
+    fun loadFile(url: String, headers: Map<String, String>? = null, startPositionMs: Long = 0L) {
         if (isDestroyed) return
         try {
+            pendingSeekPositionMs = if (startPositionMs > 1000L) startPositionMs else 0L
             if (headers != null && headers.isNotEmpty()) {
-                val headerFields = headers.entries.joinToString(separator = ",") { entry -> "${entry.key}: ${entry.value}" }
-                mpv.setPropertyString("http-header-fields", headerFields)
+                val extraHeaders = mutableListOf<String>()
+                headers.forEach { (key, value) ->
+                    when (key.lowercase()) {
+                        "user-agent" -> {
+                            try {
+                                mpv.setPropertyString("user-agent", value)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to set user-agent property", e)
+                            }
+                        }
+                        "referer", "referrer" -> {
+                            try {
+                                mpv.setPropertyString("referrer", value)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to set referrer property", e)
+                            }
+                        }
+                        else -> extraHeaders.add("$key: $value")
+                    }
+                }
+                if (extraHeaders.isNotEmpty()) {
+                    try {
+                        mpv.setPropertyString("http-header-fields", extraHeaders.joinToString(","))
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to set http-header-fields property", e)
+                    }
+                }
             }
-            Log.d(TAG, "Loading media file: $url")
+            Log.d(TAG, "Loading media file (pendingSeek=${pendingSeekPositionMs}ms): $url")
             mpv.command("loadfile", url)
             mpv.setPropertyBoolean("sub-visibility", true)
         } catch (e: Exception) {
@@ -506,17 +531,16 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
     }
 
     override fun logMessage(prefix: String, level: Int, text: String) {
-        Log.d("MpvLog", "[$prefix] ($level) $text")
+        if (level <= 20) { // Only log warnings (20) and errors (10)
+            Log.w("MpvLog", "[$prefix] ($level) $text")
+        }
     }
 
     override fun eventProperty(property: String) {}
 
     override fun eventProperty(property: String, value: Long) {
         when (property) {
-            "video-params/w" -> videoWidth.value = value.toInt()
-            "video-params/h" -> videoHeight.value = value.toInt()
             "track-list/count" -> updateTracks()
-            "audio-params/samplerate" -> audioSampleRate.value = value.toInt()
         }
     }
 
@@ -535,23 +559,30 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
 
     override fun eventProperty(property: String, value: Double) {
         when (property) {
-            "time-pos" -> positionMs.value = (value * 1000).toLong()
-            "duration" -> durationMs.value = (value * 1000).toLong()
-            "demuxer-cache-duration" -> bufferedDurationMs.value = (value * 1000).toLong()
-            "container-fps" -> if (value > 0) videoFps.value = value
-            "video-params/aspect" -> if (value > 0) aspectRatio.value = value
+            "time-pos" -> {
+                val newPos = (value * 1000).toLong()
+                if (positionMs.value != newPos) {
+                    positionMs.value = newPos
+                }
+            }
+            "duration" -> {
+                val newDur = (value * 1000).toLong()
+                if (durationMs.value != newDur) {
+                    durationMs.value = newDur
+                }
+            }
+            "demuxer-cache-duration" -> {
+                val newBuf = (value * 1000).toLong()
+                if (bufferedDurationMs.value != newBuf) {
+                    bufferedDurationMs.value = newBuf
+                }
+            }
         }
     }
 
     override fun eventProperty(property: String, value: String) {
         when (property) {
             "sid", "aid" -> updateTracks()
-            "video-params/pixelformat" -> pixelFormat.value = value
-            "video-params/colormatrix" -> colorMatrix.value = value
-            "video-params/primaries" -> colorPrimaries.value = value
-            "video-params/gamma" -> colorGamma.value = value
-            "hwdec-current" -> hwdecActive.value = value
-            "audio-params/channels" -> audioChannels.value = value
         }
     }
 
@@ -562,6 +593,11 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             MPV.mpvEvent.MPV_EVENT_FILE_LOADED -> {
                 eofReached.value = false
                 mpv.setPropertyBoolean("sub-visibility", true)
+                if (pendingSeekPositionMs > 0L) {
+                    val target = pendingSeekPositionMs
+                    pendingSeekPositionMs = 0L
+                    seekTo(target)
+                }
                 updateTracks()
                 updateMediaParams()
             }

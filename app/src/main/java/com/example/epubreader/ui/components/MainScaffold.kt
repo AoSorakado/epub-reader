@@ -96,6 +96,7 @@ fun MainScaffold(navController: NavHostController) {
     
     val settingsViewModel: SettingsViewModel = viewModel()
     val animeViewModel: AnimeViewModel = viewModel()
+    val hanimeViewModel: com.example.epubreader.ui.hanime.HanimeViewModel = viewModel()
 
     val appTheme by settingsViewModel.appTheme.collectAsState()
     val isCustomThemeThreeColors by settingsViewModel.isCustomThemeThreeColors.collectAsState()
@@ -126,13 +127,14 @@ fun MainScaffold(navController: NavHostController) {
 
     var isReaderActive by remember { mutableStateOf(false) }
     val activePlayingPair = animeViewModel.activePlayingPair
+    val isHanimePlaying = hanimeViewModel.activePlayingVideo != null
 
     LaunchedEffect(Unit) {
         settingsViewModel.checkDailyStatus()
     }
 
     val isReaderRoute = currentRoute?.startsWith("reader") == true
-    val showBottomBar = !isReaderActive && !isReaderRoute && activePlayingPair == null
+    val showBottomBar = !isReaderActive && !isReaderRoute && activePlayingPair == null && !isHanimePlaying
 
     var selectedTabIndex by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
 
@@ -190,6 +192,7 @@ fun MainScaffold(navController: NavHostController) {
                 val animeWebDavClient = settingsViewModel.getEffectiveAnimeWebDavClient()
                 AnimeScreen(
                     viewModel = animeViewModel,
+                    hanimeViewModel = hanimeViewModel,
                     backdrop = backgroundBackdrop,
                     themeGradient = themeGradient,
                     isDark = isDark,
@@ -314,6 +317,9 @@ fun MainScaffold(navController: NavHostController) {
                 themeGradient = themeGradient,
                 themeAccentGradient = themeAccentGradient,
                 webDavAuth = if (webDavUser.isNotBlank()) Pair(webDavUser, webDavPass) else null,
+                onProgressUpdate = { pos, dur ->
+                    animeViewModel.updateWatchProgress(anime.id, episode.id, episode.title, pos, dur)
+                },
                 onExit = { pos, dur ->
                     animeViewModel.updateWatchProgress(anime.id, episode.id, episode.title, pos, dur)
                     animeViewModel.activePlayingPair = null
@@ -379,6 +385,15 @@ fun MainScaffold(navController: NavHostController) {
             isDark = isDark,
             themeAccent = themeAccent,
             modifier = Modifier.align(Alignment.TopCenter)
+        )
+
+        // Layer 5: Global Real-Time Performance & Diagnostics HUD
+        val isPerfMonitorEnabled by settingsViewModel.isPerfMonitorEnabled.collectAsState()
+        com.example.epubreader.ui.components.perf.GlobalPerformanceMonitorHud(
+            isEnabled = isPerfMonitorEnabled,
+            backdrop = contentBackdrop,
+            isDark = isDark,
+            themeAccent = themeAccent
         )
     }
 }
