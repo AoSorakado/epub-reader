@@ -472,7 +472,7 @@ fun BookshelfScreen(
 
     val seriesTransition = updateTransition(targetState = isSeriesExpanded, label = "SeriesMorphTransition")
     val seriesExpandProgress by seriesTransition.animateFloat(
-        transitionSpec = { spring(dampingRatio = 0.76f, stiffness = 150f) },
+        transitionSpec = { spring(dampingRatio = 0.58f, stiffness = 115f) },
         label = "seriesMorphProgress"
     ) { if (it) 1f else 0f }
 
@@ -695,9 +695,10 @@ fun BookshelfScreen(
             val targetLeft = (screenWidthPx - expandedWidthPx) / 2f
             val targetTop = (screenHeightPx - expandedHeightPx) / 2f
 
-            val progress = seriesExpandProgress.coerceIn(0f, 1f)
-            val liftOffsetPx = kotlin.math.sin(progress * Math.PI.toFloat()) * with(density) { 36.dp.toPx() }
-            val popScale = 1f + kotlin.math.sin(progress * Math.PI.toFloat()) * 0.035f
+            val progress = seriesExpandProgress
+            val boundedProgress = progress.coerceIn(0f, 1f)
+            val liftOffsetPx = kotlin.math.sin(boundedProgress * Math.PI.toFloat()) * with(density) { 24.dp.toPx() }
+            val popScale = 1f + kotlin.math.sin(boundedProgress * Math.PI.toFloat()) * 0.025f
 
             val currentLeft = lerp(sourceBounds.left, targetLeft, progress)
             val currentTop = lerp(sourceBounds.top, targetTop, progress) - liftOffsetPx
@@ -708,7 +709,7 @@ fun BookshelfScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .offset { if (isSeriesTransitioning) IntOffset.Zero else IntOffset(100000, 0) }
-                    .graphicsLayer { alpha = (0.22f * progress).coerceIn(0f, 1f) }
+                    .graphicsLayer { alpha = (0.22f * boundedProgress).coerceIn(0f, 1f) }
                     .background(Color.Black.copy(alpha = 0.30f))
                     .clickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },

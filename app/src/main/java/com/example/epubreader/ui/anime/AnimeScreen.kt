@@ -153,10 +153,10 @@ fun AnimeScreen(
         label = "sortMenuMorph"
     ) { if (it) 1f else 0f }
 
-    // Anime Expansion Morph Animation (Ultra-smooth 120fps spec)
+    // Anime Expansion Morph Animation (Relaxed Visual Tempo Q-bounce spring)
     val seriesTransition = updateTransition(targetState = isAnimeExpanded, label = "AnimeSeriesMorphTransition")
     val seriesExpandProgress by seriesTransition.animateFloat(
-        transitionSpec = { spring(dampingRatio = 0.82f, stiffness = 160f) },
+        transitionSpec = { spring(dampingRatio = 0.58f, stiffness = 115f) },
         label = "seriesMorphProgress"
     ) { if (it) 1f else 0f }
 
@@ -951,9 +951,10 @@ fun AnimeScreen(
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val screenWidthPx = constraints.maxWidth.toFloat()
                 val screenHeightPx = constraints.maxHeight.toFloat()
-                val progress = seriesExpandProgress.coerceIn(0f, 1f)
-                val liftOffsetPx = kotlin.math.sin(progress * Math.PI.toFloat()) * with(density) { 36.dp.toPx() }
-                val popScale = 1f + kotlin.math.sin(progress * Math.PI.toFloat()) * 0.035f
+                val progress = seriesExpandProgress
+                val boundedProgress = progress.coerceIn(0f, 1f)
+                val liftOffsetPx = kotlin.math.sin(boundedProgress * Math.PI.toFloat()) * with(density) { 24.dp.toPx() }
+                val popScale = 1f + kotlin.math.sin(boundedProgress * Math.PI.toFloat()) * 0.025f
 
                 val expandedWidthPx = minOf(screenWidthPx * 0.90f, with(density) { 460.dp.toPx() })
                 val expandedHeightPx = minOf(screenHeightPx * 0.76f, with(density) { 580.dp.toPx() })
@@ -970,7 +971,7 @@ fun AnimeScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .offset { if (isAnimeTransitioning) IntOffset.Zero else IntOffset(100000, 0) }
-                        .graphicsLayer { alpha = (0.28f * progress).coerceIn(0f, 1f) }
+                        .graphicsLayer { alpha = (0.28f * boundedProgress).coerceIn(0f, 1f) }
                         .background(Color.Black.copy(alpha = 0.30f))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
