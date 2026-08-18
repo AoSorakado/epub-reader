@@ -3,8 +3,11 @@ package com.example.epubreader.ui.stats
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.epubreader.data.db.AnimeDao
+import com.example.epubreader.data.db.AnimeStatDao
 import com.example.epubreader.data.db.BookDao
 import com.example.epubreader.data.db.StatDao
+import com.example.epubreader.data.model.AnimeEntity
 import com.example.epubreader.data.model.BookEntity
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +21,12 @@ import java.util.Locale
 data class DayReadingStat(
     val dayLabel: String,
     val dateTimestamp: Long,
+    val minutes: Int
+)
+
+data class DayWatchingStat(
+    val dayLabel: String,
+    val dateStr: String,
     val minutes: Int
 )
 
@@ -48,9 +57,26 @@ data class StatsState(
     val recentlyRead: BookEntity? = null
 )
 
+data class AnimeStatsState(
+    val totalAnimes: Int = 0,
+    val watchingAnimes: Int = 0,
+    val finishedAnimes: Int = 0,
+    val unwatchedAnimes: Int = 0,
+    val totalEpisodesWatched: Int = 0,
+    val totalEpisodesCount: Int = 0,
+    val totalWatchMinutes: Long = 0,
+    val todayWatchMinutes: Long = 0,
+    val averageScore: Double = 0.0,
+    val weeklyTrend: List<DayWatchingStat> = emptyList(),
+    val recentlyAdded: AnimeEntity? = null,
+    val recentlyWatched: AnimeEntity? = null
+)
+
 class StatsViewModel(
     private val bookDao: BookDao,
-    private val statDao: StatDao
+    private val statDao: StatDao,
+    private val animeDao: AnimeDao,
+    private val animeStatDao: AnimeStatDao
 ) : ViewModel() {
 
     private fun getTodayStartTimestamp(): Long {
@@ -60,6 +86,10 @@ class StatsViewModel(
         cal.set(Calendar.SECOND, 0)
         cal.set(Calendar.MILLISECOND, 0)
         return cal.timeInMillis
+    }
+
+    private fun getTodayDateString(): String {
+        return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
     }
 
     private fun getHeatmapStartTimestamp(): Long {
@@ -74,6 +104,13 @@ class StatsViewModel(
         return cal.timeInMillis
     }
 
+    private fun getSevenDaysAgoDateString(): String {
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.DAY_OF_YEAR, -7)
+        return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(cal.time)
+    }
+
+    // 1. Novel Reading Stats Flow
     val stats: StateFlow<StatsState> = combine(
         bookDao.getAllBooksByTime(),
         statDao.getTotalDurationFlow(),
@@ -186,7 +223,7 @@ class StatsViewModel(
 
         // Calculate current streak backward from today
         val todayStart = getTodayStartTimestamp()
-        var streakCheckCal = Calendar.getInstance()
+        val streakCheckCal = Calendar.getInstance()
         streakCheckCal.timeInMillis = todayStart
         while (true) {
             val ts = streakCheckCal.timeInMillis
@@ -196,7 +233,6 @@ class StatsViewModel(
                 currentStreak++
                 streakCheckCal.add(Calendar.DAY_OF_YEAR, -1)
             } else {
-                // If today is 0 mins, check if yesterday was active
                 if (ts == todayStart) {
                     streakCheckCal.add(Calendar.DAY_OF_YEAR, -1)
                     val yestStat = statMap[streakCheckCal.timeInMillis]
@@ -228,16 +264,86 @@ class StatsViewModel(
             recentlyRead = recentlyRead
         )
     }.stateIn(viewModelScope, SharingStarted.Lazily, StatsState())
+
+    // 2. Anime Stats Flow
+    private val epCountsFlow = combine(
+        animeDao.getCompletedEpisodeCountFlow(),
+        animeDao.getTotalEpisodeCountFlow()
+    ) { completed, total -> Pair(completed, total) }
+
+    val animeStats: StateFlow<AnimeStatsState> = combine(
+        animeDao.getAllAnimes(),
+        animeStatDao.getLifetimeTotalMinutesFlow(),
+        animeStatDao.getTodayTotalMinutesFlow(getTodayDateString()),
+        animeStatDao.getStatsSinceFlow(getSevenDaysAgoDateString()),
+        epCountsFlow
+    ) { animes: List<AnimeEntity>, totalMinutesFromStats: Int?, todayMinutesFromStats: Int?, recentStats, epCounts: Pair<Int, Int> ->
+        val (completedEpisodes, totalEpisodes) = epCounts
+        val total = animes.size
+        val watching = animes.count { !it.isFinished && it.lastWatchTimeMs > 0 }
+        val finished = animes.count { it.isFinished }
+        val unwatched = animes.count { it.lastWatchTimeMs == 0L }
+
+        // Also aggregate watch duration from AnimeEntity totalWatchDurationSeconds if stats table is empty
+        val dbAggregatedMinutes = animes.sumOf { it.totalWatchDurationSeconds / 60 }
+        val totalMinutes = maxOf((totalMinutesFromStats ?: 0).toLong(), dbAggregatedMinutes)
+        val todayMinutes = (todayMinutesFromStats ?: 0).toLong()
+
+        val ratedAnimes = animes.filter { it.score > 0f }
+        val avgScore = if (ratedAnimes.isNotEmpty()) {
+            ratedAnimes.map { it.score.toDouble() }.average()
+        } else 0.0
+
+        val recentlyAdded = animes.maxByOrNull { it.createdAt }
+        val recentlyWatched = animes.filter { it.lastWatchTimeMs > 0 }.maxByOrNull { it.updatedAt }
+
+        // 7-day watch trend
+        val statMapByDate = recentStats.groupBy { it.date }
+            .mapValues { entry -> entry.value.sumOf { it.minutes } }
+
+        val dayOfWeekLabels = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val weeklyTrend = (6 downTo 0).map { dayOffset ->
+            val cal = Calendar.getInstance()
+            cal.add(Calendar.DAY_OF_YEAR, -dayOffset)
+            val dStr = sdf.format(cal.time)
+            val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK) - 1
+            val label = if (dayOffset == 0) "今日" else dayOfWeekLabels.getOrElse(dayOfWeek) { "周" }
+            val minutes = statMapByDate[dStr] ?: 0
+            DayWatchingStat(
+                dayLabel = label,
+                dateStr = dStr,
+                minutes = minutes
+            )
+        }
+
+        AnimeStatsState(
+            totalAnimes = total,
+            watchingAnimes = watching,
+            finishedAnimes = finished,
+            unwatchedAnimes = unwatched,
+            totalEpisodesWatched = completedEpisodes,
+            totalEpisodesCount = totalEpisodes,
+            totalWatchMinutes = totalMinutes,
+            todayWatchMinutes = todayMinutes,
+            averageScore = avgScore,
+            weeklyTrend = weeklyTrend,
+            recentlyAdded = recentlyAdded,
+            recentlyWatched = recentlyWatched
+        )
+    }.stateIn(viewModelScope, SharingStarted.Lazily, AnimeStatsState())
 }
 
 class StatsViewModelFactory(
     private val bookDao: BookDao,
-    private val statDao: StatDao
+    private val statDao: StatDao,
+    private val animeDao: AnimeDao,
+    private val animeStatDao: AnimeStatDao
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(StatsViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return StatsViewModel(bookDao, statDao) as T
+            return StatsViewModel(bookDao, statDao, animeDao, animeStatDao) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

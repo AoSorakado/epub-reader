@@ -14,3 +14,15 @@ local.properties
 *.log
 temp*
 *.apk
+*.mkv
+*.mp4
+*.ass
+*.epub
+*.ttc
+scratch/
+scratch*
+AndroidLiquidGlass-kmp/
+liquid-dom-master/
+temp_backdrop_ext/
+流程.txt
+

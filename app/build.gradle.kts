@@ -89,6 +89,9 @@ dependencies {
     implementation("androidx.media3:media3-session:1.3.1")
     implementation("androidx.media3:media3-extractor:1.3.1")
 
+    // mpv-android (libmpv) for high-fidelity video playback & ASS subtitle rendering
+    implementation("io.github.abdallahmehiz:mpv-android-lib:0.1.12")
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

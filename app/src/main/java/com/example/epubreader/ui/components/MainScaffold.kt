@@ -64,6 +64,7 @@ import com.example.epubreader.ui.settings.SettingsViewModel
 import com.example.epubreader.ui.stats.StatsScreen
 import com.example.epubreader.ui.theme.getThemeGradient
 import com.example.epubreader.ui.theme.getThemeAccentColor
+import com.example.epubreader.ui.theme.getThemeAccentGradient
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
@@ -124,7 +125,7 @@ fun MainScaffold(navController: NavHostController) {
     }
 
     var isReaderActive by remember { mutableStateOf(false) }
-    var activePlayingPair by remember { mutableStateOf<Pair<com.example.epubreader.data.model.AnimeEntity, com.example.epubreader.data.model.AnimeEpisodeEntity>?>(null) }
+    val activePlayingPair = animeViewModel.activePlayingPair
 
     LaunchedEffect(Unit) {
         settingsViewModel.checkDailyStatus()
@@ -190,13 +191,14 @@ fun MainScaffold(navController: NavHostController) {
                 AnimeScreen(
                     viewModel = animeViewModel,
                     backdrop = backgroundBackdrop,
+                    themeGradient = themeGradient,
                     isDark = isDark,
                     themeAccent = themeAccent,
                     primaryTextColor = primaryTextColor,
                     secondaryTextColor = secondaryTextColor,
                     webDavClient = animeWebDavClient,
                     onPlayEpisode = { anime, ep ->
-                        activePlayingPair = Pair(anime, ep)
+                        animeViewModel.activePlayingPair = Pair(anime, ep)
                     }
                 )
             }
@@ -293,8 +295,15 @@ fun MainScaffold(navController: NavHostController) {
                 currentEpList = animeViewModel.getAnimeWithEpisodes(anime.id)?.episodes ?: listOf(episode)
             }
 
-            val webDavUser = settingsViewModel.animeWebDavUser.value.ifBlank { settingsViewModel.getSavedWebDavUser() }
-            val webDavPass = if (settingsViewModel.animeWebDavPass.value.isNotBlank()) settingsViewModel.animeWebDavPass.value else settingsViewModel.getSavedWebDavPass()
+            val animeWebDavUser by settingsViewModel.animeWebDavUser.collectAsState()
+            val animeWebDavPass by settingsViewModel.animeWebDavPass.collectAsState()
+            val webDavUser = animeWebDavUser.ifBlank { settingsViewModel.getSavedWebDavUser() }
+            val webDavPass = if (animeWebDavPass.isNotBlank()) animeWebDavPass else settingsViewModel.getSavedWebDavPass()
+
+            val themeAccentGradient = getThemeAccentGradient(
+                theme = appTheme,
+                customColors = currentCustomColors
+            )
 
             AnimePlayerScreen(
                 anime = anime,
@@ -302,14 +311,16 @@ fun MainScaffold(navController: NavHostController) {
                 allEpisodes = currentEpList,
                 backdrop = backgroundBackdrop,
                 themeAccent = themeAccent,
+                themeGradient = themeGradient,
+                themeAccentGradient = themeAccentGradient,
                 webDavAuth = if (webDavUser.isNotBlank()) Pair(webDavUser, webDavPass) else null,
                 onExit = { pos, dur ->
                     animeViewModel.updateWatchProgress(anime.id, episode.id, episode.title, pos, dur)
-                    activePlayingPair = null
+                    animeViewModel.activePlayingPair = null
                 },
                 onNextEpisode = { nextEp ->
                     animeViewModel.updateWatchProgress(anime.id, episode.id, episode.title, episode.durationMs, episode.durationMs)
-                    activePlayingPair = Pair(anime, nextEp)
+                    animeViewModel.activePlayingPair = Pair(anime, nextEp)
                 }
             )
         }

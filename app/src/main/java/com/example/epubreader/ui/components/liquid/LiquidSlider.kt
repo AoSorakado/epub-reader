@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -42,22 +43,27 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import kotlinx.coroutines.launch
 
+import androidx.compose.ui.draw.shadow
+
 @Composable
 fun LiquidSlider(
     value: () -> Float,
     onValueChange: (Float) -> Unit,
     valueRange: ClosedFloatingPointRange<Float>,
     visibilityThreshold: Float,
-    backdrop: Backdrop,
+    backdrop: Backdrop? = null,
     modifier: Modifier = Modifier,
     accentColor: Color = Color(0xFF007AFF),
-    trackColor: Color = Color.Black.copy(alpha = 0.12f)
+    accentGradient: Brush? = null,
+    trackColor: Color = Color.Black.copy(alpha = 0.12f),
+    onValueChangeFinished: (() -> Unit)? = null
 ) {
     val density = LocalDensity.current
     val thumbWidth = 38.dp
     val thumbHeight = 22.dp
 
     val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
     val currentValue = value()
 
     var isDragging by remember { mutableStateOf(false) }
@@ -118,6 +124,7 @@ fun LiquidSlider(
                                     spring(dampingRatio = 0.55f, stiffness = 380f)
                                 )
                             }
+                            currentOnValueChangeFinished?.invoke()
                         },
                         onDragCancel = {
                             isDragging = false
@@ -127,6 +134,7 @@ fun LiquidSlider(
                                     spring(dampingRatio = 0.55f, stiffness = 380f)
                                 )
                             }
+                            currentOnValueChangeFinished?.invoke()
                         },
                         onDrag = { change, dragAmount ->
                             change.consume()
@@ -143,6 +151,7 @@ fun LiquidSlider(
                         localProgress = if (isLtr) progress else 1f - progress
                         val nextVal = (valueRange.start + (valueRange.endInclusive - valueRange.start) * localProgress).coerceIn(valueRange)
                         currentOnValueChange(nextVal)
+                        currentOnValueChangeFinished?.invoke()
                     }
                 },
             contentAlignment = Alignment.CenterStart
@@ -157,14 +166,17 @@ fun LiquidSlider(
                     .background(trackColor)
             )
 
-            // Active Track (Vibrant Electric Blue Fill)
+            // Active Track (Vibrant Accent / Gradient Fill)
             Box(
                 Modifier
                     .width(activeWidthDp)
                     .height(6.dp)
                     .align(Alignment.CenterStart)
                     .clip(RoundedCornerShape(50))
-                    .background(accentColor)
+                    .then(
+                        if (accentGradient != null) Modifier.background(accentGradient)
+                        else Modifier.background(accentColor)
+                    )
             )
 
             // Transparent Glass Thumb with Physical Lift Animation
@@ -174,7 +186,7 @@ fun LiquidSlider(
             val shadowRadiusDp = lerp(3f, 10f, currentLift).dp
             val shadowAlpha = lerp(0.10f, 0.28f, currentLift)
 
-            Box(
+            val thumbModifier = if (backdrop != null) {
                 Modifier
                     .align(Alignment.CenterStart)
                     .graphicsLayer {
@@ -209,6 +221,34 @@ fun LiquidSlider(
                             drawRect(Color.White.copy(alpha = 0.75f))
                         }
                     )
+            } else {
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .graphicsLayer {
+                        translationX = thumbLeft
+                        translationY = liftOffsetPx
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    .shadow(
+                        elevation = shadowRadiusDp,
+                        shape = RoundedCornerShape(50),
+                        ambientColor = Color.Black.copy(alpha = 0.25f),
+                        spotColor = Color.Black.copy(alpha = 0.35f)
+                    )
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        brush = Brush.verticalGradient(
+                            listOf(
+                                Color.White.copy(alpha = 0.95f),
+                                Color(0xFFE8EDF5).copy(alpha = 0.85f)
+                            )
+                        )
+                    )
+            }
+
+            Box(
+                thumbModifier
                     .size(thumbWidth, thumbHeight)
             )
         }

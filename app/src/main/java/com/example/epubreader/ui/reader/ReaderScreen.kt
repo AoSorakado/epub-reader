@@ -175,8 +175,6 @@ fun ReaderScreen(
             showTocSheet = false
         } else if (showSettings) {
             showSettings = false
-        } else if (showToolbars) {
-            showToolbars = false
         } else {
             handleExit()
         }

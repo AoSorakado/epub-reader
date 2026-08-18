@@ -24,8 +24,20 @@ interface AnimeStatDao {
     @Query("SELECT SUM(minutes) FROM anime_stats")
     suspend fun getLifetimeTotalMinutes(): Int?
 
+    @Query("SELECT SUM(minutes) FROM anime_stats")
+    fun getLifetimeTotalMinutesFlow(): Flow<Int?>
+
+    @Query("SELECT SUM(minutes) FROM anime_stats WHERE date = :date")
+    fun getTodayTotalMinutesFlow(date: String): Flow<Int?>
+
     @Query("SELECT SUM(episodesWatched) FROM anime_stats")
     suspend fun getLifetimeTotalEpisodesWatched(): Int?
+
+    @Query("SELECT SUM(episodesWatched) FROM anime_stats")
+    fun getLifetimeTotalEpisodesWatchedFlow(): Flow<Int?>
+
+    @Query("SELECT * FROM anime_stats WHERE date >= :startDate")
+    fun getStatsSinceFlow(startDate: String): Flow<List<AnimeStatEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(stat: AnimeStatEntity)

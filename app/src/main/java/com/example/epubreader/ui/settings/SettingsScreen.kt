@@ -18,11 +18,13 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -576,7 +578,7 @@ fun SettingsScreen(
                         )
                         .padding(16.dp)
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -592,7 +594,7 @@ fun SettingsScreen(
                             }
                             Column {
                                 Text("番剧 WebDAV 媒体库", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
-                                Text("填入番剧文件夹完整链接、账号与密码", fontSize = 11.5.sp, color = secondaryTextColor)
+                                Text("填入番剧媒体库链接、账号与密码", fontSize = 11.5.sp, color = secondaryTextColor)
                             }
                         }
 

@@ -1,5 +1,6 @@
 package com.example.epubreader.ui.stats
 
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -50,7 +51,9 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import com.example.epubreader.data.db.AppDatabase
+import com.example.epubreader.data.model.AnimeEntity
 import com.example.epubreader.data.model.BookEntity
+import com.example.epubreader.ui.components.liquid.LiquidSegmentedControl
 import com.example.epubreader.ui.theme.getThemeAccentColor
 import java.text.SimpleDateFormat
 import java.util.*
@@ -67,35 +70,32 @@ fun StatsScreen(
     val db = AppDatabase.getDatabase(context)
     val bookDao = db.bookDao()
     val statDao = db.statDao()
-    val viewModel: StatsViewModel = viewModel(factory = StatsViewModelFactory(bookDao, statDao))
-    
+    val animeDao = db.animeDao()
+    val animeStatDao = db.animeStatDao()
+    val viewModel: StatsViewModel = viewModel(factory = StatsViewModelFactory(bookDao, statDao, animeDao, animeStatDao))
+
     val appTheme by settingsViewModel.appTheme.collectAsState()
     val customColors by settingsViewModel.customColors.collectAsState()
     val isCustomThemeThreeColors by settingsViewModel.isCustomThemeThreeColors.collectAsState()
-    
+
     val isDark = appTheme == com.example.epubreader.ui.theme.AppTheme.MIDNIGHT_GLASS
     val primaryTextColor = if (isDark) Color(0xFFF8FAFC) else Color(0xFF1E1E24)
     val secondaryTextColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF543866).copy(alpha = 0.85f)
     val themeAccent = getThemeAccentColor(appTheme, if (isCustomThemeThreeColors) customColors else customColors.take(2))
 
     val state by viewModel.stats.collectAsState()
+    val animeState by viewModel.animeStats.collectAsState()
 
     var statsCategory by remember { mutableIntStateOf(0) } // 0: 📚 小说阅读, 1: 🎬 番剧观看
-    val animeDao = db.animeDao()
-    val allAnimes by animeDao.getAllAnimes().collectAsState(emptyList())
-    val totalAnimeCount = allAnimes.size
-    val finishedAnimeCount = allAnimes.count { it.isFinished }
-    val watchingAnimeCount = allAnimes.count { !it.isFinished && it.lastWatchTimeMs > 0 }
-    val totalAnimeMinutes = (allAnimes.sumOf { it.totalWatchDurationSeconds } / 60).toInt()
 
-    // Smooth count-up & entrance animation driver triggered whenever user enters the Stats tab
+    // Smooth count-up & entrance animation driver triggered whenever user enters the Stats tab OR switches category
     val animTrigger = remember { Animatable(0f) }
-    LaunchedEffect(isVisible) {
+    LaunchedEffect(isVisible, statsCategory) {
         if (isVisible) {
             animTrigger.snapTo(0f)
             animTrigger.animateTo(
                 1f,
-                animationSpec = spring(dampingRatio = 0.82f, stiffness = 160f)
+                animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing)
             )
         }
     }
@@ -106,8 +106,10 @@ fun StatsScreen(
     val animTotalBooks = (state.totalBooks * animFactor).roundToInt()
     val animTotalSeries = (state.totalSeries * animFactor).roundToInt()
 
-    val animAnimeCount = (totalAnimeCount * animFactor).roundToInt()
-    val animAnimeMinutes = (totalAnimeMinutes * animFactor).roundToInt()
+    val animAnimeCount = (animeState.totalAnimes * animFactor).roundToInt()
+    val animAnimeMinutes = (animeState.totalWatchMinutes * animFactor).roundToInt()
+    val animAnimeTodayMinutes = (animeState.todayWatchMinutes * animFactor).roundToInt()
+    val animAnimeEpisodes = (animeState.totalEpisodesWatched * animFactor).roundToInt()
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -137,39 +139,24 @@ fun StatsScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Novel vs Anime Segmented Capsule Switcher
-                Row(
+                // Novel vs Anime Segmented Switcher (Matching AnimeScreen LiquidSegmentedControl styling)
+                LiquidSegmentedControl(
+                    selectedIndex = statsCategory,
+                    onOptionSelected = { statsCategory = it },
+                    options = listOf("小说", "番剧"),
+                    backdrop = globalBackdrop,
+                    fontSize = 12.5.sp,
+                    accentColor = themeAccent,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color.White.copy(alpha = if (isDark) 0.08f else 0.35f))
-                        .border(0.6.dp, Color.White.copy(alpha = if (isDark) 0.20f else 0.50f), RoundedCornerShape(20.dp))
-                        .padding(3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    listOf("📚 小说阅读", "🎬 番剧观看").forEachIndexed { idx, label ->
-                        val isSelected = statsCategory == idx
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(17.dp))
-                                .background(if (isSelected) themeAccent else Color.Transparent)
-                                .clickable { statsCategory = idx }
-                                .padding(horizontal = 16.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = label,
-                                fontSize = 12.5.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color.White else secondaryTextColor
-                            )
-                        }
-                    }
-                }
+                        .width(150.dp)
+                        .height(36.dp)
+                )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             if (statsCategory == 0) {
-                // --- NOVEL STATS ---
+                // ==================== NOVEL STATS ====================
                 // 1. Reading Time Hero Highlights (2x2 Grid)
                 Row(
                     modifier = Modifier
@@ -240,8 +227,107 @@ fun StatsScreen(
                         isDark = isDark
                     )
                 }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // 2. Annual Reading Activity Heatmap (GitHub 风格 52 周年度阅读热力图)
+                AnnualHeatmapCard(
+                    heatmapWeeks = state.heatmapWeeks,
+                    activeDaysCount = state.activeDaysCount,
+                    currentStreakDays = state.currentStreakDays,
+                    maxStreakDays = state.maxStreakDays,
+                    backdrop = globalBackdrop,
+                    themeAccent = themeAccent,
+                    primaryTextColor = primaryTextColor,
+                    secondaryTextColor = secondaryTextColor,
+                    isDark = isDark,
+                    isVisible = isVisible,
+                    animProgress = animFactor
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // 3. Weekly Reading Trend Line Chart (近 7 天阅读趋势)
+                WeeklyTrendChartCard(
+                    weeklyTrend = state.weeklyTrend,
+                    backdrop = globalBackdrop,
+                    themeAccent = themeAccent,
+                    primaryTextColor = primaryTextColor,
+                    secondaryTextColor = secondaryTextColor,
+                    isDark = isDark,
+                    isVisible = isVisible,
+                    animProgress = animFactor
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // 4. Reading Progress & Status Distribution (阅读完成度环形图)
+                ProgressRingCard(
+                    total = state.totalBooks,
+                    finished = state.finishedBooks,
+                    reading = state.readingBooks,
+                    backdrop = globalBackdrop,
+                    themeAccent = themeAccent,
+                    primaryTextColor = primaryTextColor,
+                    secondaryTextColor = secondaryTextColor,
+                    isDark = isDark,
+                    isVisible = isVisible,
+                    animProgress = animFactor
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // 5. Recent Books Activity (最近阅读 & 最新导入)
+                if (state.recentlyRead != null || state.recentlyAdded != null) {
+                    Text(
+                        text = "最近动态",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        state.recentlyRead?.let { book ->
+                            item {
+                                RecentBookLiquidCard(
+                                    tag = "最近在读",
+                                    tagColor = themeAccent,
+                                    book = book,
+                                    backdrop = globalBackdrop,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    isDark = isDark,
+                                    onClick = { navController.navigate("reader/${book.id}") }
+                                )
+                            }
+                        }
+                        state.recentlyAdded?.let { book ->
+                            if (book.id != state.recentlyRead?.id) {
+                                item {
+                                    RecentBookLiquidCard(
+                                        tag = "最新导入",
+                                        tagColor = Color(0xFF10B981),
+                                        book = book,
+                                        backdrop = globalBackdrop,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
+                                        isDark = isDark,
+                                        onClick = { navController.navigate("reader/${book.id}") }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
-                // --- ANIME STATS ---
+                // ==================== ANIME STATS ====================
+                // 1. Anime Time & Status Hero Highlights (2x2 Grid)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -250,10 +336,10 @@ fun StatsScreen(
                 ) {
                     LiquidStatCard(
                         modifier = Modifier.weight(1f),
-                        title = "追番总数",
-                        value = "$animAnimeCount",
-                        unit = "部",
-                        subtitle = "收录番剧",
+                        title = "累计看番",
+                        value = "$animAnimeMinutes",
+                        unit = "分钟",
+                        subtitle = if (animAnimeMinutes >= 60) "${animAnimeMinutes / 60}小时${animAnimeMinutes % 60}分" else "累计观看时长",
                         icon = Icons.Filled.Tv,
                         iconColor = themeAccent,
                         backdrop = globalBackdrop,
@@ -263,11 +349,11 @@ fun StatsScreen(
                     )
                     LiquidStatCard(
                         modifier = Modifier.weight(1f),
-                        title = "累计时长",
-                        value = "$animAnimeMinutes",
+                        title = "今日追番",
+                        value = "$animAnimeTodayMinutes",
                         unit = "分钟",
-                        subtitle = if (animAnimeMinutes >= 60) "${animAnimeMinutes / 60}小时${animAnimeMinutes % 60}分" else "累计看番时长",
-                        icon = Icons.Filled.AccessTime,
+                        subtitle = if (animAnimeTodayMinutes > 0) "今日沉浸中" else "今日待看番",
+                        icon = Icons.Filled.PlayCircleFilled,
                         iconColor = Color(0xFFFF9500),
                         backdrop = globalBackdrop,
                         primaryTextColor = primaryTextColor,
@@ -286,11 +372,11 @@ fun StatsScreen(
                 ) {
                     LiquidStatCard(
                         modifier = Modifier.weight(1f),
-                        title = "正在追番",
-                        value = "$watchingAnimeCount",
+                        title = "追番总数",
+                        value = "$animAnimeCount",
                         unit = "部",
-                        subtitle = "进行中",
-                        icon = Icons.Filled.PlayCircleFilled,
+                        subtitle = "在看 ${animeState.watchingAnimes} · 完结 ${animeState.finishedAnimes}",
+                        icon = Icons.Filled.VideoLibrary,
                         iconColor = Color(0xFF3B82F6),
                         backdrop = globalBackdrop,
                         primaryTextColor = primaryTextColor,
@@ -299,112 +385,97 @@ fun StatsScreen(
                     )
                     LiquidStatCard(
                         modifier = Modifier.weight(1f),
-                        title = "已完结",
-                        value = "$finishedAnimeCount",
-                        unit = "部",
-                        subtitle = "已全集看完",
-                        icon = Icons.Filled.CheckCircle,
-                        iconColor = Color(0xFF10B981),
+                        title = "已看集数",
+                        value = "$animAnimeEpisodes",
+                        unit = "集",
+                        subtitle = "共 ${animeState.totalEpisodesCount} 集已录入",
+                        icon = Icons.Filled.ConfirmationNumber,
+                        iconColor = Color(0xFF8B5CF6),
                         backdrop = globalBackdrop,
                         primaryTextColor = primaryTextColor,
                         secondaryTextColor = secondaryTextColor,
                         isDark = isDark
                     )
                 }
-            }
 
-            Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-            // 2. Annual Reading Activity Heatmap (GitHub 风格 52 周年度阅读热力图 - 高性能 Canvas 极速渲染)
-            AnnualHeatmapCard(
-                heatmapWeeks = state.heatmapWeeks,
-                activeDaysCount = state.activeDaysCount,
-                currentStreakDays = state.currentStreakDays,
-                maxStreakDays = state.maxStreakDays,
-                backdrop = globalBackdrop,
-                themeAccent = themeAccent,
-                primaryTextColor = primaryTextColor,
-                secondaryTextColor = secondaryTextColor,
-                isDark = isDark,
-                isVisible = isVisible,
-                animProgress = animFactor
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // 3. Weekly Reading Trend Line Chart (近 7 天阅读趋势)
-            WeeklyTrendChartCard(
-                weeklyTrend = state.weeklyTrend,
-                backdrop = globalBackdrop,
-                themeAccent = themeAccent,
-                primaryTextColor = primaryTextColor,
-                secondaryTextColor = secondaryTextColor,
-                isDark = isDark,
-                isVisible = isVisible,
-                animProgress = animFactor
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // 4. Reading Progress & Status Distribution (阅读完成度环形图)
-            ProgressRingCard(
-                total = state.totalBooks,
-                finished = state.finishedBooks,
-                reading = state.readingBooks,
-                backdrop = globalBackdrop,
-                themeAccent = themeAccent,
-                primaryTextColor = primaryTextColor,
-                secondaryTextColor = secondaryTextColor,
-                isDark = isDark,
-                isVisible = isVisible,
-                animProgress = animFactor
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 5. Recent Books Activity (最近阅读 & 最新导入)
-            if (state.recentlyRead != null || state.recentlyAdded != null) {
-                Text(
-                    text = "最近动态",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = primaryTextColor,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+                // 2. Anime 7-Day Watch Trend
+                AnimeWeeklyTrendChartCard(
+                    weeklyTrend = animeState.weeklyTrend,
+                    backdrop = globalBackdrop,
+                    themeAccent = themeAccent,
+                    primaryTextColor = primaryTextColor,
+                    secondaryTextColor = secondaryTextColor,
+                    isDark = isDark,
+                    isVisible = isVisible,
+                    animProgress = animFactor
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    state.recentlyRead?.let { book ->
-                        item {
-                            RecentBookLiquidCard(
-                                tag = "最近在读",
-                                tagColor = themeAccent,
-                                book = book,
-                                backdrop = globalBackdrop,
-                                primaryTextColor = primaryTextColor,
-                                secondaryTextColor = secondaryTextColor,
-                                isDark = isDark,
-                                onClick = { navController.navigate("reader/${book.id}") }
-                            )
-                        }
-                    }
-                    state.recentlyAdded?.let { book ->
-                        if (book.id != state.recentlyRead?.id) {
+                // 3. Anime Progress Ring & Score Overview
+                AnimeProgressRingCard(
+                    total = animeState.totalAnimes,
+                    watching = animeState.watchingAnimes,
+                    finished = animeState.finishedAnimes,
+                    unwatched = animeState.unwatchedAnimes,
+                    averageScore = animeState.averageScore,
+                    backdrop = globalBackdrop,
+                    themeAccent = themeAccent,
+                    primaryTextColor = primaryTextColor,
+                    secondaryTextColor = secondaryTextColor,
+                    isDark = isDark,
+                    isVisible = isVisible,
+                    animProgress = animFactor
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // 4. Recent Anime Activity (最近观看 & 最新导入)
+                if (animeState.recentlyWatched != null || animeState.recentlyAdded != null) {
+                    Text(
+                        text = "最近动态",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        animeState.recentlyWatched?.let { anime ->
                             item {
-                                RecentBookLiquidCard(
-                                    tag = "最新导入",
-                                    tagColor = Color(0xFF10B981),
-                                    book = book,
+                                RecentAnimeLiquidCard(
+                                    tag = "最近在追",
+                                    tagColor = themeAccent,
+                                    anime = anime,
                                     backdrop = globalBackdrop,
                                     primaryTextColor = primaryTextColor,
                                     secondaryTextColor = secondaryTextColor,
                                     isDark = isDark,
-                                    onClick = { navController.navigate("reader/${book.id}") }
+                                    onClick = { navController.navigate("anime") }
                                 )
+                            }
+                        }
+                        animeState.recentlyAdded?.let { anime ->
+                            if (anime.id != animeState.recentlyWatched?.id) {
+                                item {
+                                    RecentAnimeLiquidCard(
+                                        tag = "最新收录",
+                                        tagColor = Color(0xFF10B981),
+                                        anime = anime,
+                                        backdrop = globalBackdrop,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
+                                        isDark = isDark,
+                                        onClick = { navController.navigate("anime") }
+                                    )
+                                }
                             }
                         }
                     }
@@ -413,6 +484,8 @@ fun StatsScreen(
         }
     }
 }
+
+
 
 @Composable
 fun LiquidStatCard(
@@ -522,7 +595,7 @@ fun LiquidStatCard(
                     Text(
                         text = value,
                         fontSize = 28.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        fontWeight = FontWeight.Black,
                         color = primaryTextColor
                     )
                     Spacer(modifier = Modifier.width(4.dp))
@@ -543,6 +616,653 @@ fun LiquidStatCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun AnimeWeeklyTrendChartCard(
+    weeklyTrend: List<DayWatchingStat>,
+    backdrop: com.kyant.backdrop.Backdrop,
+    themeAccent: Color,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    isDark: Boolean,
+    isVisible: Boolean = true,
+    animProgress: Float = 1f
+) {
+    val maxMinutes = remember(weeklyTrend) {
+        (weeklyTrend.maxOfOrNull { it.minutes } ?: 0).coerceAtLeast(30)
+    }
+    val weekTotal = remember(weeklyTrend) { weeklyTrend.sumOf { it.minutes } }
+
+    val animatedProgress = remember { Animatable(0f) }
+    LaunchedEffect(isVisible) {
+        if (isVisible) {
+            animatedProgress.snapTo(0f)
+            animatedProgress.animateTo(
+                1f,
+                animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing)
+            )
+        }
+    }
+
+    val path = remember { Path() }
+    val fillPath = remember { Path() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(24.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = { 
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
+                    ) 
+                },
+                onDrawSurface = { 
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                            )
+                        )
+                    )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                themeAccent.copy(alpha = if (isDark) 0.16f else 0.22f),
+                                themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
+                }
+            )
+            .border(
+                width = 0.8.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        themeAccent.copy(alpha = if (isDark) 0.50f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                        Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+                        themeAccent.copy(alpha = if (isDark) 0.25f else 0.35f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                ),
+                shape = RoundedCornerShape(24.dp)
+            )
+            .padding(18.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp, 16.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(themeAccent)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "近 7 天追番时长趋势",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
+                    )
+                }
+
+                Text(
+                    text = "近7天合计 ${weekTotal} 分钟",
+                    fontSize = 12.sp,
+                    color = secondaryTextColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Chart Canvas
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(130.dp)
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    if (weeklyTrend.isEmpty()) return@Canvas
+
+                    val anim = animProgress.coerceIn(0f, 1f)
+                    val width = size.width
+                    val height = size.height
+                    val stepX = width / (weeklyTrend.size - 1).coerceAtLeast(1)
+
+                    val points = weeklyTrend.mapIndexed { index, stat ->
+                        val ratio = (stat.minutes.toFloat() / maxMinutes.toFloat()).coerceIn(0f, 1f)
+                        val animatedRatio = ratio * anim
+                        val x = index * stepX
+                        val y = height - (animatedRatio * (height - 24.dp.toPx())) - 12.dp.toPx()
+                        Offset(x, y)
+                    }
+
+                    // Build smooth cubic bezier path
+                    path.reset()
+                    if (points.isNotEmpty()) {
+                        path.moveTo(points.first().x, points.first().y)
+                        for (i in 0 until points.size - 1) {
+                            val p0 = points[i]
+                            val p1 = points[i + 1]
+                            val cx = (p0.x + p1.x) / 2f
+                            path.cubicTo(cx, p0.y, cx, p1.y, p1.x, p1.y)
+                        }
+                    }
+
+                    // Build area fill path
+                    fillPath.reset()
+                    fillPath.addPath(path)
+                    fillPath.lineTo(points.last().x, height)
+                    fillPath.lineTo(points.first().x, height)
+                    fillPath.close()
+
+                    // 1. Draw gradient fill
+                    drawPath(
+                        path = fillPath,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                themeAccent.copy(alpha = if (isDark) 0.35f else 0.25f),
+                                themeAccent.copy(alpha = 0f)
+                            )
+                        )
+                    )
+
+                    // 2. Draw smooth stroke line
+                    drawPath(
+                        path = path,
+                        color = themeAccent,
+                        style = Stroke(
+                            width = 3.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round
+                        )
+                    )
+
+                    // 3. Draw node points
+                    points.forEachIndexed { idx, point ->
+                        val stat = weeklyTrend[idx]
+                        drawCircle(
+                            color = Color.White,
+                            radius = 4.5.dp.toPx(),
+                            center = point
+                        )
+                        drawCircle(
+                            color = if (stat.minutes > 0) themeAccent else Color.Gray.copy(alpha = 0.5f),
+                            radius = 3.dp.toPx(),
+                            center = point
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // X-Axis Day Labels & Minutes
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                weeklyTrend.forEach { stat ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.width(36.dp)
+                    ) {
+                        Text(
+                            text = if (stat.minutes > 0) "${stat.minutes}m" else "-",
+                            fontSize = 11.sp,
+                            fontWeight = if (stat.minutes > 0) FontWeight.Bold else FontWeight.Normal,
+                            color = if (stat.minutes > 0) themeAccent else secondaryTextColor.copy(alpha = 0.5f)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stat.dayLabel,
+                            fontSize = 11.sp,
+                            color = secondaryTextColor
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AnimeProgressRingCard(
+    total: Int,
+    watching: Int,
+    finished: Int,
+    unwatched: Int,
+    averageScore: Double,
+    backdrop: com.kyant.backdrop.Backdrop,
+    themeAccent: Color,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    isDark: Boolean,
+    isVisible: Boolean = true,
+    animProgress: Float = 1f
+) {
+    val progressRate = if (total > 0) finished.toFloat() / total.toFloat() else 0f
+
+    val ringProgress = remember { Animatable(0f) }
+    LaunchedEffect(isVisible, progressRate) {
+        if (isVisible) {
+            ringProgress.snapTo(0f)
+            ringProgress.animateTo(
+                progressRate,
+                animationSpec = spring(dampingRatio = 0.82f, stiffness = 160f)
+            )
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(24.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = { 
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
+                    ) 
+                },
+                onDrawSurface = { 
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                            )
+                        )
+                    )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                themeAccent.copy(alpha = if (isDark) 0.16f else 0.22f),
+                                themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
+                }
+            )
+            .border(
+                width = 0.8.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        themeAccent.copy(alpha = if (isDark) 0.50f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                        Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+                        themeAccent.copy(alpha = if (isDark) 0.25f else 0.35f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                ),
+                shape = RoundedCornerShape(24.dp)
+            )
+            .padding(18.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp, 16.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(themeAccent)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "追番状态分布与评分",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
+                    )
+                }
+
+                if (averageScore > 0.0) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFF59E0B).copy(alpha = 0.18f))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "★ ${String.format(Locale.getDefault(), "%.1f", averageScore)} 均分",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFF59E0B)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                // Ring Chart
+                Box(
+                    modifier = Modifier.size(110.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val strokeWidth = 10.dp.toPx()
+                        val diameter = size.minDimension - strokeWidth
+                        val topLeft = Offset(strokeWidth / 2, strokeWidth / 2)
+                        val arcSize = Size(diameter, diameter)
+
+                        // Background Track
+                        drawArc(
+                            color = if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.06f),
+                            startAngle = -90f,
+                            sweepAngle = 360f,
+                            useCenter = false,
+                            topLeft = topLeft,
+                            size = arcSize,
+                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                        )
+
+                        // Progress Arc
+                        val currentSweep = 360f * ringProgress.value
+                        if (currentSweep > 0f) {
+                            drawArc(
+                                brush = Brush.sweepGradient(
+                                    listOf(themeAccent.copy(alpha = 0.6f), themeAccent, Color(0xFF10B981))
+                                ),
+                                startAngle = -90f,
+                                sweepAngle = currentSweep,
+                                useCenter = false,
+                                topLeft = topLeft,
+                                size = arcSize,
+                                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                            )
+                        }
+                    }
+
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        val percentage = (progressRate * 100).roundToInt()
+                        Text(
+                            text = "$percentage%",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = primaryTextColor
+                        )
+                        Text(
+                            text = "完结率",
+                            fontSize = 11.sp,
+                            color = secondaryTextColor
+                        )
+                    }
+                }
+
+                // Legend Column
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    AnimeLegendItem(
+                        color = Color(0xFF3B82F6),
+                        label = "正在追番",
+                        count = "$watching 部",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor
+                    )
+                    AnimeLegendItem(
+                        color = Color(0xFF10B981),
+                        label = "已看完结",
+                        count = "$finished 部",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor
+                    )
+                    AnimeLegendItem(
+                        color = if (isDark) Color.White.copy(alpha = 0.35f) else Color.Gray.copy(alpha = 0.5f),
+                        label = "待开播/未看",
+                        count = "$unwatched 部",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnimeLegendItem(
+    color: Color,
+    label: String,
+    count: String,
+    primaryTextColor: Color,
+    secondaryTextColor: Color
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            color = secondaryTextColor,
+            modifier = Modifier.width(72.dp)
+        )
+        Text(
+            text = count,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = primaryTextColor
+        )
+    }
+}
+
+@Composable
+fun RecentAnimeLiquidCard(
+    tag: String,
+    tagColor: Color,
+    anime: AnimeEntity,
+    backdrop: com.kyant.backdrop.Backdrop,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    isDark: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .width(160.dp)
+            .height(230.dp)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(22.dp) },
+                effects = {
+                    vibrancy()
+                    blur(4f.dp.toPx())
+                    lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                },
+                highlight = { Highlight.Plain },
+                shadow = { 
+                    Shadow(
+                        radius = 12.dp,
+                        color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
+                    ) 
+                },
+                onDrawSurface = { 
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.14f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.10f)
+                            )
+                        )
+                    )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                tagColor.copy(alpha = if (isDark) 0.18f else 0.24f),
+                                tagColor.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
+                }
+            )
+            .border(
+                width = 0.8.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        tagColor.copy(alpha = if (isDark) 0.50f else 0.70f),
+                        Color.White.copy(alpha = if (isDark) 0.40f else 0.75f),
+                        Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+                        tagColor.copy(alpha = if (isDark) 0.25f else 0.35f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                ),
+                shape = RoundedCornerShape(22.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(14.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(tagColor.copy(alpha = 0.15f))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = tag,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = tagColor
+                    )
+                }
+
+                if (anime.score > 0.0) {
+                    Text(
+                        text = "★ ${String.format(Locale.getDefault(), "%.1f", anime.score)}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFF59E0B)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val coverPath = anime.localCoverPath
+            val coverUrl = anime.coverUrl
+            val model = when {
+                coverPath != null && java.io.File(coverPath).exists() -> java.io.File(coverPath)
+                !coverUrl.isNullOrBlank() -> coverUrl
+                else -> null
+            }
+
+            if (model != null) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(model)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Anime Cover",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(
+                            0.6.dp,
+                            Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.40f), Color.White.copy(alpha = 0.15f))
+                            ),
+                            RoundedCornerShape(12.dp)
+                        )
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.05f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Tv,
+                        contentDescription = null,
+                        tint = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Gray
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = anime.title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = primaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Text(
+                text = if (!anime.lastWatchEpisodeName.isNullOrBlank()) "看至 ${anime.lastWatchEpisodeName}" else "共 ${anime.totalEpisodes} 集",
+                fontSize = 11.sp,
+                color = secondaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -665,7 +1385,7 @@ fun WeeklyTrendChartCard(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Chart Canvas - Ultra-smooth 120 FPS rendering
+            // Chart Canvas
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -674,7 +1394,7 @@ fun WeeklyTrendChartCard(
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     if (weeklyTrend.isEmpty()) return@Canvas
 
-                    val anim = animatedProgress.value
+                    val anim = animProgress.coerceIn(0f, 1f)
                     val width = size.width
                     val height = size.height
                     val stepX = width / (weeklyTrend.size - 1).coerceAtLeast(1)
@@ -731,13 +1451,11 @@ fun WeeklyTrendChartCard(
                     // 3. Draw node points
                     points.forEachIndexed { idx, point ->
                         val stat = weeklyTrend[idx]
-                        // Outer glow circle
                         drawCircle(
                             color = Color.White,
                             radius = 4.5.dp.toPx(),
                             center = point
                         )
-                        // Inner colored circle
                         drawCircle(
                             color = if (stat.minutes > 0) themeAccent else Color.Gray.copy(alpha = 0.5f),
                             radius = 3.dp.toPx(),
@@ -860,111 +1578,121 @@ fun ProgressRingCard(
                 ),
                 shape = RoundedCornerShape(24.dp)
             )
-            .padding(20.dp)
+            .padding(18.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Circular Ring Chart
-            Box(
-                modifier = Modifier.size(96.dp),
-                contentAlignment = Alignment.Center
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Canvas(modifier = Modifier.matchParentSize()) {
-                    // Track background
-                    drawArc(
-                        color = if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.06f),
-                        startAngle = 0f,
-                        sweepAngle = 360f,
-                        useCenter = false,
-                        style = Stroke(width = 10.dp.toPx(), cap = StrokeCap.Round)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp, 16.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(themeAccent)
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "阅读完成度与状态",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
+                    )
+                }
+            }
 
-                    // Active progress sweep
-                    if (ringProgress.value > 0.001f) {
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                // Ring Chart
+                Box(
+                    modifier = Modifier.size(110.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val strokeWidth = 10.dp.toPx()
+                        val diameter = size.minDimension - strokeWidth
+                        val topLeft = Offset(strokeWidth / 2, strokeWidth / 2)
+                        val arcSize = Size(diameter, diameter)
+
+                        // Background Track
                         drawArc(
-                            brush = Brush.sweepGradient(
-                                colors = listOf(themeAccent, Color(0xFF10B981), themeAccent)
-                            ),
+                            color = if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.06f),
                             startAngle = -90f,
-                            sweepAngle = ringProgress.value * 360f,
+                            sweepAngle = 360f,
                             useCenter = false,
-                            style = Stroke(width = 10.dp.toPx(), cap = StrokeCap.Round)
+                            topLeft = topLeft,
+                            size = arcSize,
+                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                        )
+
+                        // Progress Arc
+                        val currentSweep = 360f * ringProgress.value
+                        if (currentSweep > 0f) {
+                            drawArc(
+                                brush = Brush.sweepGradient(
+                                    listOf(themeAccent.copy(alpha = 0.6f), themeAccent, Color(0xFF10B981))
+                                ),
+                                startAngle = -90f,
+                                sweepAngle = currentSweep,
+                                useCenter = false,
+                                topLeft = topLeft,
+                                size = arcSize,
+                                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                            )
+                        }
+                    }
+
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        val percentage = (progressRate * 100).roundToInt()
+                        Text(
+                            text = "$percentage%",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = primaryTextColor
+                        )
+                        Text(
+                            text = "完读率",
+                            fontSize = 11.sp,
+                            color = secondaryTextColor
                         )
                     }
                 }
 
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "${(ringProgress.value * 100).roundToInt()}%",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Black,
-                        color = primaryTextColor
-                    )
-                    Text(
-                        text = "完成度",
-                        fontSize = 10.sp,
-                        color = secondaryTextColor
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(20.dp))
-
-            // Stats Breakdown Column
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "藏书阅读进度",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = primaryTextColor
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                // Legend Column
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    StatusPill(label = "已读完", count = finished, color = Color(0xFF10B981), isDark = isDark)
-                    StatusPill(label = "在读中", count = reading, color = Color(0xFFF59E0B), isDark = isDark)
-                    StatusPill(label = "未开始", count = unread, color = Color.Gray, isDark = isDark)
+                    AnimeLegendItem(
+                        color = Color(0xFF3B82F6),
+                        label = "正在阅读",
+                        count = "$reading 本",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor
+                    )
+                    AnimeLegendItem(
+                        color = Color(0xFF10B981),
+                        label = "已读完结",
+                        count = "$finished 本",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor
+                    )
+                    AnimeLegendItem(
+                        color = if (isDark) Color.White.copy(alpha = 0.35f) else Color.Gray.copy(alpha = 0.5f),
+                        label = "尚未阅读",
+                        count = "$unread 本",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor
+                    )
                 }
             }
         }
-    }
-}
-
-@Composable
-fun StatusPill(
-    label: String,
-    count: Int,
-    color: Color,
-    isDark: Boolean
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(color)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = label,
-                fontSize = 11.sp,
-                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
-            )
-        }
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = "$count 本",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (isDark) Color.White else Color(0xFF1E1E24)
-        )
     }
 }
 
@@ -981,8 +1709,8 @@ fun RecentBookLiquidCard(
 ) {
     Box(
         modifier = Modifier
-            .width(190.dp)
-            .height(260.dp)
+            .width(160.dp)
+            .height(230.dp)
             .drawBackdrop(
                 backdrop = backdrop,
                 shape = { RoundedCornerShape(22.dp) },
@@ -1103,26 +1831,20 @@ fun RecentBookLiquidCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()) }
-            val dateStr = if (tag == "最新导入") dateFormat.format(Date(book.addedTime)) else dateFormat.format(Date(book.lastReadTime))
-            
-            Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = dateStr,
+                text = "进度: ${(book.totalProgress * 100).roundToInt()}%",
                 fontSize = 11.sp,
                 color = secondaryTextColor,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
 }
 
-data class SelectedHeatmapDayInfo(
+private data class HeatmapSelection(
     val day: HeatmapDay,
-    val cellCenterX: Float,
-    val cellTopY: Float,
-    val cellBottomY: Float,
-    val isTopRow: Boolean
+    val centerOffset: Offset
 )
 
 @Composable
@@ -1139,38 +1861,16 @@ fun AnnualHeatmapCard(
     isVisible: Boolean = true,
     animProgress: Float = 1f
 ) {
-    var selectedDayInfo by remember { mutableStateOf<SelectedHeatmapDayInfo?>(null) }
-    val horizontalScrollState = rememberScrollState()
+    val scrollState = rememberScrollState()
 
-    // Auto-scroll to latest week on tab enter
-    LaunchedEffect(isVisible, heatmapWeeks.size) {
-        if (isVisible && heatmapWeeks.isNotEmpty()) {
-            horizontalScrollState.scrollTo(horizontalScrollState.maxValue)
+    // Automatically scroll to the right (latest current week) upon loading
+    LaunchedEffect(heatmapWeeks.size, isVisible) {
+        if (heatmapWeeks.isNotEmpty()) {
+            scrollState.scrollTo(scrollState.maxValue)
         }
     }
 
-    // Auto-dismiss tooltip bubble after 4s
-    LaunchedEffect(selectedDayInfo) {
-        if (selectedDayInfo != null) {
-            kotlinx.coroutines.delay(4000L)
-            selectedDayInfo = null
-        }
-    }
-
-    val density = LocalDensity.current
-    val cellSizeDp = 11.dp
-    val cellGapDp = 3.5.dp
-    val cellSizePx = with(density) { cellSizeDp.toPx() }
-    val cellGapPx = with(density) { cellGapDp.toPx() }
-    val stepPx = cellSizePx + cellGapPx
-    val totalWidthPx = heatmapWeeks.size * stepPx
-    val totalWidthDp = with(density) { totalWidthPx.toDp() }
-    val totalHeightDp = with(density) { (7 * stepPx).toDp() }
-
-    val tooltipWidthDp = 186.dp
-    val tooltipHeightDp = 32.dp
-    val tooltipWidthPx = with(density) { tooltipWidthDp.toPx() }
-    val tooltipHeightPx = with(density) { tooltipHeightDp.toPx() }
+    var selectedDayInfo by remember { mutableStateOf<HeatmapSelection?>(null) }
 
     Box(
         modifier = Modifier
@@ -1178,7 +1878,7 @@ fun AnnualHeatmapCard(
             .padding(horizontal = 20.dp)
             .drawBackdrop(
                 backdrop = backdrop,
-                shape = { RoundedCornerShape(22.dp) },
+                shape = { RoundedCornerShape(24.dp) },
                 effects = {
                     vibrancy()
                     blur(4f.dp.toPx())
@@ -1225,27 +1925,25 @@ fun AnnualHeatmapCard(
                     start = Offset(0f, 0f),
                     end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                 ),
-                shape = RoundedCornerShape(22.dp)
+                shape = RoundedCornerShape(24.dp)
             )
             .padding(18.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            // Header with Streaks
+        Column {
+            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.CalendarMonth,
-                        contentDescription = null,
-                        tint = themeAccent,
-                        modifier = Modifier.size(20.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp, 16.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(themeAccent)
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "年度阅读热力图",
                         fontSize = 16.sp,
@@ -1254,83 +1952,71 @@ fun AnnualHeatmapCard(
                     )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(themeAccent.copy(alpha = 0.12f))
-                            .padding(horizontal = 7.dp, vertical = 3.dp)
-                    ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "🔥 ", fontSize = 11.sp)
                         Text(
-                            text = "活跃 ${(activeDaysCount * animProgress).roundToInt()} 天",
-                            fontSize = 11.sp,
+                            text = "连续 ${currentStreakDays} 天",
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = themeAccent
+                            color = primaryTextColor
                         )
                     }
-                    if (currentStreakDays > 0) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFFF9800).copy(alpha = 0.15f))
-                                .padding(horizontal = 7.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = "连续 ${(currentStreakDays * animProgress).roundToInt()} 天",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFF9800)
-                            )
-                        }
-                    }
+                    Text(text = "·", color = secondaryTextColor)
+                    Text(
+                        text = "活跃 ${activeDaysCount} 天",
+                        fontSize = 12.sp,
+                        color = secondaryTextColor
+                    )
                 }
             }
 
-            // 52-Week Grid (120 FPS High-Performance Batch Canvas + Floating Popover Tooltip Bubble)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Scrollable 52-Week Matrix Canvas
+            val density = LocalDensity.current
+            val cellSizePx = with(density) { 13.dp.toPx() }
+            val cellSpacingPx = with(density) { 3.5.dp.toPx() }
+            val cornerRadiusPx = with(density) { 3.dp.toPx() }
+
+            val totalCols = heatmapWeeks.size
+            val canvasWidthDp = with(density) { ((cellSizePx + cellSpacingPx) * totalCols).toDp() }
+            val canvasHeightDp = with(density) { ((cellSizePx + cellSpacingPx) * 7).toDp() }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(horizontalScrollState)
+                    .horizontalScroll(scrollState)
             ) {
                 Box(
-                    modifier = Modifier.size(totalWidthDp, totalHeightDp)
-                ) {
-                    Canvas(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .pointerInput(heatmapWeeks) {
-                                detectTapGestures { offset ->
-                                    val weekIdx = (offset.x / stepPx).toInt().coerceIn(0, (heatmapWeeks.size - 1).coerceAtLeast(0))
-                                    val dayIdx = (offset.y / stepPx).toInt().coerceIn(0, 6)
-                                    val week = heatmapWeeks.getOrNull(weekIdx)
-                                    val day = week?.getOrNull(dayIdx)
-                                    if (day != null) {
-                                        if (selectedDayInfo?.day?.dateTimestamp == day.dateTimestamp) {
-                                            selectedDayInfo = null
-                                        } else {
-                                            val cellCenterX = weekIdx * stepPx + (cellSizePx / 2f)
-                                            val cellTopY = dayIdx * stepPx
-                                            val cellBottomY = cellTopY + cellSizePx
-                                            selectedDayInfo = SelectedHeatmapDayInfo(
-                                                day = day,
-                                                cellCenterX = cellCenterX,
-                                                cellTopY = cellTopY,
-                                                cellBottomY = cellBottomY,
-                                                isTopRow = dayIdx <= 1
-                                            )
-                                        }
+                    modifier = Modifier
+                        .width(canvasWidthDp)
+                        .height(canvasHeightDp)
+                        .pointerInput(heatmapWeeks) {
+                            detectTapGestures { tapOffset ->
+                                val col = (tapOffset.x / (cellSizePx + cellSpacingPx)).toInt()
+                                val row = (tapOffset.y / (cellSizePx + cellSpacingPx)).toInt()
+                                if (col in heatmapWeeks.indices) {
+                                    val week = heatmapWeeks[col]
+                                    if (row in week.indices) {
+                                        val day = week[row]
+                                        val cellCenterX = col * (cellSizePx + cellSpacingPx) + cellSizePx / 2f
+                                        val cellCenterY = row * (cellSizePx + cellSpacingPx) + cellSizePx / 2f
+                                        selectedDayInfo = HeatmapSelection(day, Offset(cellCenterX, cellCenterY))
                                     }
                                 }
                             }
-                    ) {
-                        val cornerRadius = CornerRadius(2.5.dp.toPx(), 2.5.dp.toPx())
-                        val selectedTimestamp = selectedDayInfo?.day?.dateTimestamp
+                        }
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        heatmapWeeks.forEachIndexed { colIdx, week ->
+                            val x = colIdx * (cellSizePx + cellSpacingPx)
+                            week.forEachIndexed { rowIdx, day ->
+                                val y = rowIdx * (cellSizePx + cellSpacingPx)
 
-                        heatmapWeeks.forEachIndexed { weekIdx, weekDays ->
-                            val x = weekIdx * stepPx
-                            weekDays.forEachIndexed { dayIdx, day ->
-                                val y = dayIdx * stepPx
-                                val isSelected = selectedTimestamp == day.dateTimestamp
                                 val cellColor = when (day.level) {
                                     0 -> if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
                                     1 -> themeAccent.copy(alpha = 0.35f)
@@ -1343,15 +2029,15 @@ fun AnnualHeatmapCard(
                                     color = cellColor,
                                     topLeft = Offset(x, y),
                                     size = Size(cellSizePx, cellSizePx),
-                                    cornerRadius = cornerRadius
+                                    cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
                                 )
 
-                                if (isSelected) {
+                                if (selectedDayInfo?.day?.dateTimestamp == day.dateTimestamp) {
                                     drawRoundRect(
                                         color = Color.White,
-                                        topLeft = Offset(x - 0.5f, y - 0.5f),
-                                        size = Size(cellSizePx + 1f, cellSizePx + 1f),
-                                        cornerRadius = cornerRadius,
+                                        topLeft = Offset(x - 1.5f, y - 1.5f),
+                                        size = Size(cellSizePx + 3f, cellSizePx + 3f),
+                                        cornerRadius = CornerRadius(cornerRadiusPx + 1.5f, cornerRadiusPx + 1.5f),
                                         style = Stroke(width = 1.5.dp.toPx())
                                     )
                                 }
@@ -1359,85 +2045,65 @@ fun AnnualHeatmapCard(
                         }
                     }
 
-                    // Floating Frosted Glass Tooltip Bubble with Spring Scale + Fade Animation
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = selectedDayInfo != null,
-                        enter = androidx.compose.animation.fadeIn(animationSpec = tween(180)) +
-                                androidx.compose.animation.scaleIn(
-                                    animationSpec = spring(dampingRatio = 0.72f, stiffness = 380f),
-                                    initialScale = 0.75f,
-                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
-                                        0.5f,
-                                        if (selectedDayInfo?.isTopRow == true) 0f else 1f
-                                    )
-                                ),
-                        exit = androidx.compose.animation.fadeOut(animationSpec = tween(120)) +
-                               androidx.compose.animation.scaleOut(animationSpec = tween(120), targetScale = 0.8f),
-                        modifier = Modifier.offset {
-                            val sel = selectedDayInfo ?: return@offset IntOffset.Zero
-                            val x = (sel.cellCenterX - tooltipWidthPx / 2f).roundToInt()
-                                .coerceIn(0, (totalWidthPx.toInt() - tooltipWidthPx.toInt()).coerceAtLeast(0))
-                            val y = if (sel.isTopRow) (sel.cellBottomY + 6.dp.toPx()).roundToInt()
-                            else (sel.cellTopY - tooltipHeightPx - 6.dp.toPx()).roundToInt().coerceAtLeast(0)
-                            IntOffset(x, y)
+                    // Floating Tooltip for Selected Day
+                    selectedDayInfo?.let { sel ->
+                        val tooltipXDp = with(density) { (sel.centerOffset.x - 70.dp.toPx()).coerceAtLeast(0f).toDp() }
+                        val tooltipYDp = with(density) {
+                            if (sel.centerOffset.y > 60.dp.toPx()) {
+                                (sel.centerOffset.y - 36.dp.toPx()).toDp()
+                            } else {
+                                (sel.centerOffset.y + 16.dp.toPx()).toDp()
+                            }
                         }
-                    ) {
-                        selectedDayInfo?.let { sel ->
-                            Box(
-                                modifier = Modifier
-                                    .width(tooltipWidthDp)
-                                    .height(tooltipHeightDp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(
-                                        brush = Brush.verticalGradient(
-                                            colors = listOf(
-                                                Color(0xFF23202E).copy(alpha = 0.88f),
-                                                Color(0xFF16131F).copy(alpha = 0.92f)
-                                            )
+
+                        Box(
+                            modifier = Modifier
+                                .offset(x = tooltipXDp, y = tooltipYDp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF1E1E2E).copy(alpha = 0.95f))
+                                .border(
+                                    width = 0.9.dp,
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(
+                                            Color.White.copy(alpha = 0.55f),
+                                            themeAccent.copy(alpha = 0.70f),
+                                            Color.White.copy(alpha = 0.20f)
                                         )
-                                    )
-                                    .border(
-                                        width = 0.9.dp,
-                                        brush = Brush.linearGradient(
-                                            colors = listOf(
-                                                Color.White.copy(alpha = 0.55f),
-                                                themeAccent.copy(alpha = 0.70f),
-                                                Color.White.copy(alpha = 0.20f)
-                                            )
-                                        ),
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
-                                    .padding(horizontal = 10.dp),
-                                contentAlignment = Alignment.Center
+                                    ),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                ) {
-                                    Text(
-                                        text = "${sel.day.fullDateStr} (${sel.day.dayLabel})",
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color.White.copy(alpha = 0.95f)
-                                    )
-                                    Text(
-                                        text = "·",
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White.copy(alpha = 0.40f)
-                                    )
-                                    Text(
-                                        text = if (sel.day.minutes > 0) "${sel.day.minutes}分钟 🔥" else "未阅读 ☕",
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = if (sel.day.minutes > 0) themeAccent else Color.White.copy(alpha = 0.65f)
-                                    )
-                                }
+                                Text(
+                                    text = "${sel.day.fullDateStr} (${sel.day.dayLabel})",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White.copy(alpha = 0.95f)
+                                )
+                                Text(
+                                    text = "·",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White.copy(alpha = 0.40f)
+                                )
+                                Text(
+                                    text = if (sel.day.minutes > 0) "${sel.day.minutes}分钟 🔥" else "未阅读 ☕",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (sel.day.minutes > 0) themeAccent else Color.White.copy(alpha = 0.65f)
+                                )
                             }
                         }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Legend Strip
             Row(

@@ -111,3 +111,23 @@ fun getThemeAccentColor(theme: AppTheme, customColors: List<Color> = emptyList()
         AppTheme.CUSTOM -> customColors.firstOrNull() ?: Color(0xFF007AFF)
     }
 }
+
+fun getThemeColors(theme: AppTheme, customColors: List<Color> = emptyList()): List<Color> {
+    return when (theme) {
+        AppTheme.PEACH_BLOSSOM -> listOf(Color(0xFFFF2D75), Color(0xFFFF7597), Color(0xFFFFB3C6))
+        AppTheme.CYBER_SUNSET -> listOf(Color(0xFF8B5CF6), Color(0xFFB87CF8), Color(0xFFF472B6))
+        AppTheme.OCEAN_WAVE -> listOf(Color(0xFF007AFF), Color(0xFF38BDF8), Color(0xFF67E8F9))
+        AppTheme.AURORA_GREEN -> listOf(Color(0xFF059669), Color(0xFF10B981), Color(0xFF34D399))
+        AppTheme.FROSTED_MINT -> listOf(Color(0xFF0D9488), Color(0xFF14B8A6), Color(0xFF2DD4BF))
+        AppTheme.STARLIGHT_PURPLE -> listOf(Color(0xFF6D28D9), Color(0xFF8B5CF6), Color(0xFFA78BFA))
+        AppTheme.SUNSET_GLOW -> listOf(Color(0xFFEA580C), Color(0xFFF97316), Color(0xFFFB923C))
+        AppTheme.MIDNIGHT_GLASS -> listOf(Color(0xFF38BDF8), Color(0xFF0284C7), Color(0xFF6366F1))
+        AppTheme.CUSTOM -> if (customColors.isNotEmpty()) customColors else listOf(Color(0xFF007AFF), Color(0xFF38BDF8))
+    }
+}
+
+fun getThemeAccentGradient(theme: AppTheme, customColors: List<Color> = emptyList()): Brush {
+    val colors = getThemeColors(theme, customColors)
+    return Brush.horizontalGradient(if (colors.size == 1) listOf(colors[0], colors[0]) else colors)
+}
+

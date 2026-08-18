@@ -24,6 +24,10 @@ interface AnimeDao {
     @Query("SELECT * FROM animes ORDER BY updatedAt DESC")
     fun getAllAnimes(): Flow<List<AnimeEntity>>
 
+    @Transaction
+    @Query("SELECT * FROM animes ORDER BY updatedAt DESC")
+    fun getAllAnimesWithEpisodes(): Flow<List<AnimeWithEpisodes>>
+
     @Query("SELECT * FROM animes WHERE id = :id")
     suspend fun getAnimeById(id: Long): AnimeEntity?
 
@@ -60,6 +64,21 @@ interface AnimeDao {
 
     @Query("UPDATE anime_episodes SET lastPlayedPositionMs = :positionMs, durationMs = :durationMs, isWatched = :isWatched WHERE id = :episodeId")
     suspend fun updateEpisodeProgress(episodeId: Long, positionMs: Long, durationMs: Long, isWatched: Boolean)
+
+    @Query("SELECT COUNT(*) FROM anime_episodes WHERE isWatched = 1")
+    fun getCompletedEpisodeCountFlow(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM anime_episodes")
+    fun getTotalEpisodeCountFlow(): Flow<Int>
+
+    @Query("UPDATE animes SET totalWatchDurationSeconds = totalWatchDurationSeconds + :secondsToAdd, updatedAt = :updatedAt WHERE id = :animeId")
+    suspend fun addWatchDuration(animeId: Long, secondsToAdd: Long, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("SELECT * FROM animes WHERE coverUrl IS NULL OR coverUrl = '' LIMIT 100")
+    suspend fun getAnimesWithoutCover(): List<AnimeEntity>
+
+    @Query("DELETE FROM anime_episodes WHERE animeId = :animeId")
+    suspend fun deleteEpisodesByAnimeId(animeId: Long)
 
     @Query("DELETE FROM animes WHERE id = :id")
     suspend fun deleteAnime(id: Long)

@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -33,11 +34,21 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import com.example.epubreader.ui.components.liquid.LiquidSegmentedControl
+import com.example.epubreader.ui.theme.ClaudeUIFontFamily
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Folder
@@ -106,10 +117,60 @@ import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import java.io.File
-import kotlin.math.roundToInt
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.ui.input.pointer.positionChange
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
+
+fun Modifier.tactilePressAndHold(
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+    onPressStateChanged: ((Boolean) -> Unit)? = null
+): Modifier = this.pointerInput(onClick, onLongClick) {
+    coroutineScope {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            onPressStateChanged?.invoke(true)
+            var isLongClicked = false
+            var isCanceled = false
+            var totalDrag = Offset.Zero
+            val longPressJob = onLongClick?.let { action ->
+                launch {
+                    delay(280L) // 280ms instant trigger while holding down!
+                    if (!isCanceled) {
+                        isLongClicked = true
+                        action()
+                    }
+                }
+            }
+            while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                if (isLongClicked) {
+                    change.consume()
+                }
+                if (!change.pressed) {
+                    longPressJob?.cancel()
+                    onPressStateChanged?.invoke(false)
+                    if (!isLongClicked && !isCanceled && totalDrag.getDistance() < 20f) {
+                        onClick?.invoke()
+                    }
+                    break
+                }
+                totalDrag += change.positionChange()
+                if (totalDrag.getDistance() > 20f && !isLongClicked) {
+                    longPressJob?.cancel()
+                    isCanceled = true
+                }
+            }
+        }
+    }
+}
 
 sealed class ContextMenuTarget {
     data class Book(val book: BookEntity, val isInner: Boolean = false) : ContextMenuTarget()
@@ -167,6 +228,7 @@ fun BookshelfScreen(
         }
     }
     var showSortMenu by remember { mutableStateOf(false) }
+    var showDeleteAllConfirmDialog by remember { mutableStateOf(false) }
     var sortButtonBounds by remember { mutableStateOf(Rect.Zero) }
     val seriesCoords = remember { mutableStateMapOf<String, LayoutCoordinates>() }
 
@@ -220,12 +282,13 @@ fun BookshelfScreen(
     val bookCoords = remember { mutableStateMapOf<Long, LayoutCoordinates>() }
     
     val sortMethod by viewModel.sortMethod.collectAsState()
+    val sortAscending by viewModel.sortAscending.collectAsState()
     
     var draggedItem by remember { mutableStateOf<BookEntity?>(null) }
     var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var localBooks by remember(books) { mutableStateOf(books.toMutableList()) }
 
-    val groupedItems = remember(localBooks, sortMethod) {
+    val groupedItems = remember(localBooks, sortMethod, sortAscending) {
         val collator = java.text.Collator.getInstance(java.util.Locale.CHINA)
         val groups = mutableMapOf<String, MutableList<BookEntity>>()
         val standalones = mutableListOf<BookEntity>()
@@ -249,10 +312,10 @@ fun BookshelfScreen(
             }
         }
 
-        // Sort both standalone books and series together based on selected sortMethod!
+        // Sort both standalone books and series together based on selected sortMethod & direction!
         items.sortWith { itemA, itemB ->
             when (sortMethod) {
-                0 -> { // 最近阅读 (Last Read DESC)
+                0 -> { // 最近阅读 (正序: 最早阅读排前, 倒序: 最近阅读排前)
                     val timeA = when (itemA) {
                         is BookEntity -> if (itemA.lastReadTime > 0) itemA.lastReadTime else itemA.addedTime
                         is Pair<*, *> -> (@Suppress("UNCHECKED_CAST") (itemA.second as List<BookEntity>)).maxOfOrNull { if (it.lastReadTime > 0) it.lastReadTime else it.addedTime } ?: 0L
@@ -263,9 +326,9 @@ fun BookshelfScreen(
                         is Pair<*, *> -> (@Suppress("UNCHECKED_CAST") (itemB.second as List<BookEntity>)).maxOfOrNull { if (it.lastReadTime > 0) it.lastReadTime else it.addedTime } ?: 0L
                         else -> 0L
                     }
-                    timeB.compareTo(timeA)
+                    if (sortAscending) timeA.compareTo(timeB) else timeB.compareTo(timeA)
                 }
-                1 -> { // 导入时间 (Import Time DESC)
+                1 -> { // 导入时间 (正序: 最早导入排前, 倒序: 最新导入排前)
                     val timeA = when (itemA) {
                         is BookEntity -> itemA.addedTime
                         is Pair<*, *> -> (@Suppress("UNCHECKED_CAST") (itemA.second as List<BookEntity>)).maxOfOrNull { it.addedTime } ?: 0L
@@ -276,9 +339,9 @@ fun BookshelfScreen(
                         is Pair<*, *> -> (@Suppress("UNCHECKED_CAST") (itemB.second as List<BookEntity>)).maxOfOrNull { it.addedTime } ?: 0L
                         else -> 0L
                     }
-                    timeB.compareTo(timeA)
+                    if (sortAscending) timeA.compareTo(timeB) else timeB.compareTo(timeA)
                 }
-                2 -> { // 书籍名称 (Chinese Pinyin ASC: A-Z)
+                2 -> { // 书籍名称 (正序: A 到 Z, 倒序: Z 到 A)
                     val titleA = when (itemA) {
                         is BookEntity -> itemA.title
                         is Pair<*, *> -> itemA.first as String
@@ -289,9 +352,9 @@ fun BookshelfScreen(
                         is Pair<*, *> -> itemB.first as String
                         else -> ""
                     }
-                    collator.compare(titleA, titleB)
+                    if (sortAscending) collator.compare(titleA, titleB) else collator.compare(titleB, titleA)
                 }
-                3 -> { // 阅读进度 (Progress DESC)
+                3 -> { // 阅读进度 (正序: 0% -> 100%, 倒序: 100% -> 0%)
                     val progA = when (itemA) {
                         is BookEntity -> itemA.totalProgress
                         is Pair<*, *> -> (@Suppress("UNCHECKED_CAST") (itemA.second as List<BookEntity>)).map { it.totalProgress }.average().toFloat()
@@ -302,7 +365,7 @@ fun BookshelfScreen(
                         is Pair<*, *> -> (@Suppress("UNCHECKED_CAST") (itemB.second as List<BookEntity>)).map { it.totalProgress }.average().toFloat()
                         else -> 0f
                     }
-                    progB.compareTo(progA)
+                    if (sortAscending) progA.compareTo(progB) else progB.compareTo(progA)
                 }
                 else -> 0
             }
@@ -328,6 +391,10 @@ fun BookshelfScreen(
     var openingBookIsInner by remember { mutableStateOf(false) }
     var openingInnerSeriesInfo by remember { mutableStateOf<Pair<String, Int>?>(null) }
     var isOpeningBookExpanded by remember { mutableStateOf(false) }
+
+    androidx.activity.compose.BackHandler(enabled = isOpeningBookExpanded) {
+        isOpeningBookExpanded = false
+    }
 
     val isOpeningBookActive = openingBook != null
     val bookOpenTransition = updateTransition(targetState = isOpeningBookExpanded, label = "BookOpenTransition")
@@ -462,202 +529,181 @@ fun BookshelfScreen(
                 .blur(backgroundBlurRadius)
                 .layerBackdrop(bookshelfBackdrop)
         ) {
-        Scaffold(
-            containerColor = Color.Transparent,
-            contentColor = primaryTextColor,
-            topBar = {
-                TopAppBar(
-                    title = { 
-                        Text(
-                            "我的书架", 
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold, 
-                            fontSize = 24.sp,
-                            color = primaryTextColor
-                        ) 
-                    },
-                    actions = {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(end = 8.dp)
-                        ) {
-                            LiquidButton(
-                                onClick = {
-                                    localImportLauncher.launch(arrayOf("application/epub+zip", "text/plain", "application/octet-stream", "*/*"))
-                                },
-                                backdrop = globalBackdrop,
-                                modifier = Modifier.size(44.dp)
+            Scaffold(
+                containerColor = Color.Transparent,
+                contentColor = primaryTextColor,
+                topBar = {
+                    TopAppBar(
+                        title = { 
+                            Text(
+                                "我的书架", 
+                                fontWeight = FontWeight.ExtraBold, 
+                                fontSize = 24.sp,
+                                color = primaryTextColor
+                            ) 
+                        },
+                        actions = {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(end = 8.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Add,
-                                    contentDescription = "导入书籍",
-                                    tint = primaryTextColor,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
+                                LiquidButton(
+                                    onClick = {
+                                        localImportLauncher.launch(arrayOf("application/epub+zip", "text/plain", "application/octet-stream", "*/*"))
+                                    },
+                                    backdrop = globalBackdrop,
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Add,
+                                        contentDescription = "导入书籍",
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
 
-                            LiquidButton(
-                                onClick = { viewModel.setLayoutMethod(if (layoutMethod == 0) 1 else 0) },
-                                backdrop = globalBackdrop,
-                                modifier = Modifier.size(44.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (layoutMethod == 0) Icons.Filled.ViewList else Icons.Filled.GridView,
-                                    contentDescription = "切换布局",
-                                    tint = primaryTextColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                                LiquidButton(
+                                    onClick = { viewModel.setLayoutMethod(if (layoutMethod == 0) 1 else 0) },
+                                    backdrop = globalBackdrop,
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (layoutMethod == 0) Icons.Filled.ViewList else Icons.Filled.GridView,
+                                        contentDescription = "切换布局",
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
 
-                            LiquidButton(
-                                onClick = { showSortMenu = true },
-                                backdrop = globalBackdrop,
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .onGloballyPositioned { coords ->
-                                        rootCoords?.let { root ->
-                                            sortButtonBounds = root.localBoundingBoxOf(coords, clipBounds = false)
+                                LiquidButton(
+                                    onClick = { showSortMenu = true },
+                                    backdrop = globalBackdrop,
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .onGloballyPositioned { coords ->
+                                            rootCoords?.let { root ->
+                                                sortButtonBounds = root.localBoundingBoxOf(coords, clipBounds = false)
+                                            }
                                         }
-                                    }
-                                    .graphicsLayer {
-                                        alpha = if (morphProgress > 0.001f) 0f else 1f
-                                    }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Sort, 
-                                    contentDescription = "排序",
-                                    tint = primaryTextColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                        .graphicsLayer {
+                                            alpha = if (morphProgress > 0.001f) 0f else 1f
+                                        }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Sort, 
+                                        contentDescription = "排序",
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                            titleContentColor = primaryTextColor,
+                            actionIconContentColor = primaryTextColor
+                        )
+                    )
+                }
+            ) { paddingValues ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(horizontal = 8.dp)
+                ) {
+                    LazyVerticalGrid(
+                        columns = if (layoutMethod == 0) GridCells.Fixed(3) else GridCells.Fixed(1),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 80.dp)
+                    ) {
+                        items(groupedItems) { item ->
+                            when (item) {
+                                is BookEntity -> {
+                                    val isOpeningThis = (openingBook?.id == item.id && bookOpenProgress > 0.001f)
+                                    val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
+                                    val isItemContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Book && currentContextMenu.book.id == item.id && !currentContextMenu.isInner)
+                                    val isEditingThis = (showEditDialogForBook?.id == item.id && (isEditExpanded || editExpandProgress > 0.001f)) || (activeEditBook?.id == item.id && (isEditExpanded || editExpandProgress > 0.001f))
+                                    BookItem(
+                                        book = item, 
+                                        isListLayout = layoutMethod == 1, 
+                                        isPressed = false, 
+                                        backdrop = globalBackdrop, 
+                                        themeAccent = themeAccent,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
+                                        isDark = isDark,
+                                        isHidden = isOpeningThis || isItemContextMenuActive || isEditingThis,
+                                        onPositioned = { coords -> bookCoords[item.id] = coords },
+                                        onClick = { 
+                                            if (isOpeningBookActive) return@BookItem
+                                            val coords = bookCoords[item.id]
+                                            val bounds = if (coords != null && rootCoords != null) {
+                                                try { rootCoords!!.localBoundingBoxOf(coords, clipBounds = false) } catch (e: Exception) { Rect.Zero }
+                                            } else Rect.Zero
+                                            openingBookBounds = bounds
+                                            openingBook = item
+                                            openingBookIsListLayout = (layoutMethod == 1)
+                                            openingBookIsInner = false
+                                            openingInnerSeriesInfo = null
+                                            isOpeningBookExpanded = true
+                                        },
+                                        onLongClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            contextMenuTarget = ContextMenuTarget.Book(item, isInner = false)
+                                        },
+                                        modifier = Modifier.padding(4.dp)
+                                    )
+                                }
+                                is Pair<*, *> -> {
+                                    val seriesTitle = item.first as String
+                                    @Suppress("UNCHECKED_CAST")
+                                    val seriesBooks = item.second as List<BookEntity>
+                                    val isSeriesExpandedThis = (displaySeries?.first == seriesTitle && seriesExpandProgress > 0.001f)
+                                    val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
+                                    val isSeriesContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Series && currentContextMenu.series.first == seriesTitle)
+                                    val isSeriesHidden = isSeriesExpandedThis || isSeriesContextMenuActive
+
+                                    SeriesItem(
+                                        seriesName = seriesTitle,
+                                        books = seriesBooks,
+                                        rootCoords = rootCoords,
+                                        isListLayout = layoutMethod == 1,
+                                        backdrop = globalBackdrop,
+                                        themeAccent = themeAccent,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
+                                        isDark = isDark,
+                                        isHidden = isSeriesHidden,
+                                        onPositioned = { coords ->
+                                            seriesCoords[seriesTitle] = coords
+                                        },
+                                        onClick = { bounds -> 
+                                            handleSeriesClick(Pair(seriesTitle, seriesBooks), bounds)
+                                        },
+                                        onLongClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            val coords = seriesCoords[seriesTitle]
+                                            if (coords != null && coords.isAttached && rootCoords != null && rootCoords!!.isAttached) {
+                                                lastTargetBounds = try { rootCoords!!.localBoundingBoxOf(coords, clipBounds = false) } catch (e: Exception) { Rect.Zero }
+                                            }
+                                            contextMenuTarget = ContextMenuTarget.Series(Pair(seriesTitle, seriesBooks))
+                                        },
+                                        modifier = Modifier.padding(4.dp)
+                                    )
+                                }
                             }
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        titleContentColor = primaryTextColor,
-                        actionIconContentColor = primaryTextColor
-                    )
-                )
-            }
-        ) { paddingValues ->
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 8.dp)
-        ) {
-            LazyVerticalGrid(
-                columns = if (layoutMethod == 0) GridCells.Fixed(3) else GridCells.Fixed(1),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 80.dp)
-            ) {
-            items(groupedItems) { item ->
-                when (item) {
-                    is BookEntity -> {
-                        val isOpeningThis = (openingBook?.id == item.id && bookOpenProgress > 0.001f)
-                        val dragModifier = if (sortMethod == 2) {
-                            Modifier.pointerInput(item.id) {
-                                var hasDragged = false
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = { 
-                                        draggedItem = item
-                                        dragOffset = androidx.compose.ui.geometry.Offset.Zero
-                                        hasDragged = false
-                                    },
-                                    onDrag = { _, dragAmount ->
-                                        dragOffset += dragAmount
-                                        hasDragged = true
-                                    },
-                                    onDragEnd = {
-                                        if (hasDragged && (dragOffset.x * dragOffset.x + dragOffset.y * dragOffset.y) > 400f) {
-                                            viewModel.updateSortOrder(localBooks)
-                                        } else {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            contextMenuTarget = ContextMenuTarget.Book(item, isInner = false)
-                                        }
-                                        draggedItem = null
-                                    },
-                                    onDragCancel = { 
-                                        if (!hasDragged) {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            contextMenuTarget = ContextMenuTarget.Book(item, isInner = false)
-                                        }
-                                        draggedItem = null 
-                                    }
-                                )
+                        if (groupedItems.isEmpty()) {
+                            item {
+                                Text("书架空空如也，点击右上角导入书籍，或者前往配置页同步 WebDAV", modifier = Modifier.padding(16.dp))
                             }
-                        } else Modifier
-
-                        val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
-                        val isItemContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Book && currentContextMenu.book.id == item.id && !currentContextMenu.isInner)
-                        val isEditingThis = (showEditDialogForBook?.id == item.id && (isEditExpanded || editExpandProgress > 0.001f)) || (activeEditBook?.id == item.id && (isEditExpanded || editExpandProgress > 0.001f))
-                        BookItem(
-                            book = item, 
-                            isListLayout = layoutMethod == 1, 
-                            isPressed = false, 
-                            backdrop = globalBackdrop, 
-                            isDark = isDark,
-                            themeAccent = themeAccent,
-                            isHidden = isOpeningThis || isItemContextMenuActive || isEditingThis,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor,
-                            onPositioned = { coords ->
-                                bookCoords[item.id] = coords
-                            },
-                            onClick = {
-                                handleBookClick(item, layoutMethod == 1, false, "", 1)
-                            },
-                            onLongClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                contextMenuTarget = ContextMenuTarget.Book(item, isInner = false)
-                            },
-                            modifier = dragModifier.padding(6.dp)
-                        )
-                    }
-                    is Pair<*, *> -> {
-                        @Suppress("UNCHECKED_CAST")
-                        val series = item as Pair<String, List<BookEntity>>
-                        val currentContextMenu = contextMenuTarget ?: activeContextMenuTarget
-                        val isSeriesContextMenuActive = isContextMenuOverlayActive && (currentContextMenu is ContextMenuTarget.Series && currentContextMenu.series.first == series.first)
-                        val isSeriesHidden = (displaySeries?.first == series.first && seriesExpandProgress > 0.001f) || isSeriesContextMenuActive
-                        SeriesItem(
-                            seriesName = series.first,
-                            books = series.second,
-                            rootCoords = rootCoords,
-                            backdrop = globalBackdrop,
-                            isHidden = isSeriesHidden,
-                            isListLayout = layoutMethod == 1,
-                            isDark = isDark,
-                            themeAccent = themeAccent,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor,
-                            onPositioned = { coords ->
-                                seriesCoords[series.first] = coords
-                            },
-                            onClick = { bounds ->
-                                handleSeriesClick(series, bounds)
-                            },
-                            onLongClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                contextMenuTarget = ContextMenuTarget.Series(series)
-                            },
-                            modifier = Modifier.padding(6.dp)
-                        )
+                        }
                     }
                 }
             }
-            
-            if (groupedItems.isEmpty()) {
-                item {
-                    Text("书架空空如也，点击右上角导入书籍，或者前往配置页同步 WebDAV", modifier = Modifier.padding(16.dp))
-                }
-            }
         }
-        }
-        
-        }
-    }
 
         if (seriesExpandProgress > 0.001f && displaySeries != null) {
             val (seriesTitle, seriesBooks) = displaySeries!!
@@ -774,14 +820,15 @@ fun BookshelfScreen(
                                 modifier = Modifier.weight(1f)
                             )
 
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(androidx.compose.foundation.shape.CircleShape)
-                                    .background(if (isDark) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.35f))
-                                    .border(0.6.dp, Color.White.copy(alpha = 0.5f), androidx.compose.foundation.shape.CircleShape)
-                                    .clickable { handleSeriesDismiss() },
-                                contentAlignment = Alignment.Center
+                            LiquidButton(
+                                onClick = { handleSeriesDismiss() },
+                                backdrop = bookshelfBackdrop,
+                                surfaceColor = Color.White.copy(alpha = if (isDark) 0.15f else 0.35f),
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                isCrystal = true,
+                                themeAccent = themeAccent,
+                                isDark = isDark,
+                                modifier = Modifier.requiredSize(34.dp)
                             ) {
                                 Text("✕", color = primaryTextColor, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, fontSize = 14.sp)
                             }
@@ -1122,13 +1169,20 @@ fun BookshelfScreen(
                 lastTargetBounds = currentBounds
             }
 
-            val effectiveTargetBounds = if (lastTargetBounds != Rect.Zero) {
+            val fallbackBounds = Rect(
+                screenWidthPx * 0.08f, screenHeightPx * 0.25f,
+                screenWidthPx * 0.92f, screenHeightPx * 0.65f
+            )
+
+            val effectiveTargetBounds = if (currentBounds != Rect.Zero && currentBounds.width > 10f) {
+                currentBounds
+            } else if (lastTargetBounds != Rect.Zero && lastTargetBounds.width > 10f) {
                 lastTargetBounds
             } else {
-                currentBounds
+                fallbackBounds
             }
 
-            if (effectiveTargetBounds != Rect.Zero && target != null) {
+            if (target != null) {
                 val elevatedScale = lerp(1.0f, 1.04f, contextMenuProgress)
 
                 // 1. Focused Elevated Floating Item
@@ -1467,7 +1521,7 @@ fun BookshelfScreen(
                 val btnBounds = if (sortButtonBounds != Rect.Zero) sortButtonBounds else fallbackBtnBounds
 
                 val menuWidthPx = with(density) { 156.dp.toPx() }
-                val menuHeightPx = with(density) { 178.dp.toPx() }
+                val menuHeightPx = with(density) { 272.dp.toPx() }
                 val dialogLeft = (btnBounds.right - menuWidthPx).coerceAtLeast(with(density) { 16.dp.toPx() })
                 val dialogTop = btnBounds.bottom + with(density) { 6.dp.toPx() }
                 val dialogBounds = Rect(dialogLeft, dialogTop, dialogLeft + menuWidthPx, dialogTop + menuHeightPx)
@@ -1542,13 +1596,14 @@ fun BookshelfScreen(
                                     alpha = ((morphProgress - 0.20f) / 0.80f).coerceIn(0f, 1f)
                                 }
                         ) {
+                            val themeAccent = getThemeAccentColor(appTheme, if (isCustomThemeThreeColors) customColors else customColors.take(2))
                             val sortOptions = listOf(
                                 "最近阅读",
                                 "导入时间",
                                 "书籍名称",
                                 "阅读进度"
                             )
-                            val itemHeightDp = 38.dp
+                            val itemHeightDp = 36.dp
                             val itemSpacingDp = 2.dp
                             val itemSlotHeightPx = with(density) { (itemHeightDp + itemSpacingDp).toPx() }
 
@@ -1571,141 +1626,144 @@ fun BookshelfScreen(
                                 label = "sortThumbProgress"
                             )
 
-                            val currentHoverIndex = if (isDraggingSlider) {
-                                kotlin.math.round(localDragProgress).toInt().coerceIn(0, sortOptions.size - 1)
-                            } else {
-                                sortMethod
-                            }
-
-                            val sortTextBackdrop = rememberLayerBackdrop()
-
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height((itemHeightDp + itemSpacingDp) * sortOptions.size - itemSpacingDp)
-                                    .pointerInput(sortOptions.size) {
-                                        detectDragGestures(
-                                            onDragStart = { offset ->
-                                                isDraggingSlider = true
-                                                localDragProgress = (offset.y / itemSlotHeightPx).coerceIn(0f, (sortOptions.size - 1).toFloat())
-                                            },
-                                            onDragEnd = {
-                                                val finalIndex = kotlin.math.round(localDragProgress).toInt().coerceIn(0, sortOptions.size - 1)
-                                                viewModel.setSortMethod(finalIndex)
-                                                isDraggingSlider = false
-                                            },
-                                            onDragCancel = {
-                                                isDraggingSlider = false
-                                                localDragProgress = sortMethod.toFloat()
-                                            },
-                                            onDrag = { change, dragAmount ->
-                                                change.consume()
-                                                localDragProgress = (localDragProgress + dragAmount.y / itemSlotHeightPx).coerceIn(-0.2f, (sortOptions.size - 0.8f))
-                                            }
-                                        )
-                                    }
-                            ) {
-                                // 1. Base Layer: Inactive/Neutral Dark Options Text
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                // 1. Sort Options List
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
-                                    verticalArrangement = Arrangement.spacedBy(itemSpacingDp)
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    sortOptions.forEach { label ->
+                                    sortOptions.forEachIndexed { index, label ->
+                                        val isSelected = sortMethod == index
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .height(itemHeightDp)
-                                                .padding(horizontal = 14.dp),
-                                            contentAlignment = Alignment.CenterStart
-                                        ) {
-                                            Text(
-                                                text = label,
-                                                fontSize = 14.sp,
-                                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                                                color = secondaryTextColor.copy(alpha = 0.85f)
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // 2. Hidden Layer: Active Highlighted Theme Accent Text (captured by sortTextBackdrop)
-                                val themeAccent = getThemeAccentColor(appTheme, if (isCustomThemeThreeColors) customColors else customColors.take(2))
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .alpha(0f)
-                                        .layerBackdrop(sortTextBackdrop),
-                                    verticalArrangement = Arrangement.spacedBy(itemSpacingDp)
-                                ) {
-                                    sortOptions.forEach { label ->
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(itemHeightDp)
-                                                .padding(horizontal = 14.dp),
-                                            contentAlignment = Alignment.CenterStart
-                                        ) {
-                                            Text(
-                                                text = label,
-                                                fontSize = 14.sp,
-                                                fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
-                                                color = themeAccent
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // 3. The Glass Slider Capsule Thumb (CombinedBackdrop with strong edge lens refraction)
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(itemHeightDp)
-                                        .layout { measurable, constraints ->
-                                            val placeable = measurable.measure(constraints)
-                                            val y = (animatedThumbProgress * itemSlotHeightPx).fastRoundToInt()
-                                            layout(placeable.width, placeable.height) {
-                                                placeable.place(0, y)
-                                            }
-                                        }
-                                        .drawBackdrop(
-                                            backdrop = rememberCombinedBackdrop(sortDialogBackdrop, sortTextBackdrop),
-                                            shape = { RoundedCornerShape(12.dp) },
-                                            effects = {
-                                                vibrancy()
-                                                lens(
-                                                    refractionHeight = 14f.dp.toPx(),
-                                                    refractionAmount = 20f.dp.toPx(),
-                                                    depthEffect = true
+                                                .height(36.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(
+                                                    if (isSelected) themeAccent.copy(alpha = if (isDark) 0.28f else 0.18f)
+                                                    else Color.Transparent
                                                 )
-                                            },
-                                            highlight = { Highlight.Default },
-                                            shadow = { Shadow(alpha = 0.20f) },
-                                            innerShadow = {
-                                                InnerShadow(
-                                                    radius = 8.dp,
-                                                    alpha = 0.55f
+                                                .then(
+                                                    if (isSelected) {
+                                                        Modifier.border(
+                                                            0.8.dp,
+                                                            themeAccent.copy(alpha = 0.50f),
+                                                            RoundedCornerShape(10.dp)
+                                                        )
+                                                    } else Modifier
                                                 )
-                                            }
-                                        )
-                                )
-
-                                // 4. Interactive Clickable Targets
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalArrangement = Arrangement.spacedBy(itemSpacingDp)
-                                ) {
-                                    sortOptions.forEachIndexed { index, _ ->
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(itemHeightDp)
-                                                .clip(RoundedCornerShape(12.dp))
                                                 .clickable(
                                                     interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                                                     indication = null
                                                 ) {
                                                     viewModel.setSortMethod(index)
                                                 }
+                                                .padding(horizontal = 12.dp),
+                                            contentAlignment = Alignment.CenterStart
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    fontSize = 13.5.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = if (isSelected) themeAccent else (if (isDark) Color(0xFFF1F5F9) else Color(0xFF1E293B))
+                                                )
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Check,
+                                                        contentDescription = null,
+                                                        tint = themeAccent,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(0.6.dp)
+                                        .background(Color.White.copy(alpha = 0.15f))
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Order Toggle Pill
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(34.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Color.Black.copy(alpha = if (isDark) 0.25f else 0.08f))
+                                        .padding(2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    listOf(true to "正序 ↓", false to "倒序 ↑").forEach { (asc, title) ->
+                                        val isChosen = sortAscending == asc
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxHeight()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(
+                                                    if (isChosen) themeAccent.copy(alpha = if (isDark) 0.35f else 0.22f)
+                                                    else Color.Transparent
+                                                )
+                                                .clickable(
+                                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                                    indication = null
+                                                ) { viewModel.setSortAscending(asc) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = title,
+                                                fontSize = 12.sp,
+                                                fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isChosen) themeAccent else secondaryTextColor
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Clear All Books Button
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(32.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Color(0xFFFF453A).copy(alpha = 0.10f))
+                                        .border(0.6.dp, Color(0xFFFF453A).copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) {
+                                            showDeleteAllConfirmDialog = true
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.DeleteSweep,
+                                            contentDescription = "清空书架",
+                                            tint = Color(0xFFFF453A),
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                        Text(
+                                            text = "清空全部书籍",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFFF453A)
                                         )
                                     }
                                 }
@@ -1714,6 +1772,31 @@ fun BookshelfScreen(
                     }
                 }
             }
+        }
+
+        if (showDeleteAllConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteAllConfirmDialog = false },
+                title = { Text("清空书架", fontWeight = FontWeight.Bold, color = primaryTextColor) },
+                text = { Text("确定要删除书架中的全部书籍吗？此操作无法撤销。", color = secondaryTextColor) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.deleteAllBooks()
+                            showDeleteAllConfirmDialog = false
+                            showSortMenu = false
+                        }
+                    ) {
+                        Text("确认清空", color = Color(0xFFFF453A), fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteAllConfirmDialog = false }) {
+                        Text("取消", color = primaryTextColor)
+                    }
+                },
+                containerColor = if (isDark) Color(0xFF1E293B) else Color.White
+            )
         }
 
         if ((isEditExpanded || editExpandProgress > 0.001f) && activeEditBook != null) {
@@ -1886,8 +1969,7 @@ fun SeriesItem(
     modifier: Modifier = Modifier
 ) {
     var localBounds by remember { mutableStateOf(Rect.Zero) }
-    val interactionSource = remember { MutableInteractionSource() }
-    val isItemPressed by interactionSource.collectIsPressedAsState()
+    var isItemPressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (isItemPressed) 0.93f else 1f,
         animationSpec = spring(dampingRatio = 0.75f, stiffness = 320f),
@@ -1907,11 +1989,10 @@ fun SeriesItem(
                     localBounds = root.localBoundingBoxOf(coords, clipBounds = false)
                 }
             }
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = null,
+            .tactilePressAndHold(
                 onClick = { onClick(localBounds) },
-                onLongClick = onLongClick
+                onLongClick = onLongClick,
+                onPressStateChanged = { isItemPressed = it }
             )
             .fillMaxWidth()
             .drawBackdrop(
@@ -2534,8 +2615,7 @@ fun BookItem(
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isItemPressed by interactionSource.collectIsPressedAsState()
+    var isItemPressed by remember { mutableStateOf(false) }
 
     val scale by animateFloatAsState(
         targetValue = if (isPressed || isItemPressed) 0.93f else 1f,
@@ -2556,11 +2636,10 @@ fun BookItem(
             }
             .then(
                 if (onClick != null || onLongClick != null) {
-                    Modifier.combinedClickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = { onClick?.invoke() },
-                        onLongClick = onLongClick
+                    Modifier.tactilePressAndHold(
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                        onPressStateChanged = { isItemPressed = it }
                     )
                 } else Modifier
             )
@@ -2828,14 +2907,14 @@ fun SeriesInnerBookRow(
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val coroutineScope = rememberCoroutineScope()
     val interactionSource = remember { MutableInteractionSource() }
-    val isItemPressed by interactionSource.collectIsPressedAsState()
 
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed || isItemPressed) 0.94f else 1f,
-        animationSpec = spring(dampingRatio = 0.75f, stiffness = 320f),
-        label = "seriesBookPressScale"
-    )
+    val interactiveHighlight = remember(coroutineScope) {
+        com.example.epubreader.ui.components.liquid.InteractiveHighlight(
+            animationScope = coroutineScope
+        )
+    }
 
     Box(
         modifier = modifier
@@ -2846,26 +2925,14 @@ fun SeriesInnerBookRow(
             }
             .graphicsLayer {
                 alpha = if (isHidden) 0f else 1f
-                scaleX = scale
-                scaleY = scale
             }
-            .then(
-                if (onClick != null || onLongClick != null) {
-                    Modifier.combinedClickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = { onClick?.invoke() },
-                        onLongClick = onLongClick
-                    )
-                } else Modifier
-            )
             .drawBackdrop(
                 backdrop = backdrop,
                 shape = { RoundedCornerShape(20.dp) },
                 effects = {
                     vibrancy()
                     blur(4f.dp.toPx())
-                    lens(16f.dp.toPx(), 32f.dp.toPx(), chromaticAberration = true)
+                    lens(16f.dp.toPx(), 32f.dp.toPx(), depthEffect = false, chromaticAberration = true)
                 },
                 highlight = { Highlight.Plain },
                 shadow = {
@@ -2874,19 +2941,39 @@ fun SeriesInnerBookRow(
                         color = Color.Black.copy(alpha = if (isDark) 0.20f else 0.08f)
                     )
                 },
+                layerBlock = {
+                    val width = size.width
+                    val height = size.height
+
+                    val progress = interactiveHighlight.pressProgress
+                    val scale = androidx.compose.ui.util.lerp(1f, 0.94f, progress)
+
+                    val maxOffset = size.minDimension * 0.45f
+                    val initialDerivative = 0.08f
+                    val offset = interactiveHighlight.offset
+                    translationX = maxOffset * kotlin.math.tanh(initialDerivative * offset.x / maxOffset.coerceAtLeast(1f))
+                    translationY = maxOffset * kotlin.math.tanh(initialDerivative * offset.y / maxOffset.coerceAtLeast(1f))
+
+                    val maxDragScale = 4f.dp.toPx() / size.height.coerceAtLeast(1f)
+                    val offsetAngle = kotlin.math.atan2(offset.y, offset.x)
+                    scaleX = scale + maxDragScale * kotlin.math.abs(kotlin.math.cos(offsetAngle) * offset.x / size.maxDimension.coerceAtLeast(1f)) *
+                            (width / height.coerceAtLeast(1f)).coerceAtMost(1.15f)
+                    scaleY = scale + maxDragScale * kotlin.math.abs(kotlin.math.sin(offsetAngle) * offset.y / size.maxDimension.coerceAtLeast(1f)) *
+                            (height / width.coerceAtLeast(1f)).coerceAtMost(1.15f)
+                },
                 onDrawSurface = {
                     drawRect(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.18f else 0.12f) else (if (isPressed || isItemPressed) 0.28f else 0.22f)),
-                                Color.White.copy(alpha = if (isDark) (if (isPressed || isItemPressed) 0.06f else 0.03f) else (if (isPressed || isItemPressed) 0.12f else 0.08f))
+                                Color.White.copy(alpha = if (isDark) 0.16f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.08f)
                             )
                         )
                     )
                     drawRect(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                themeAccent.copy(alpha = if (isDark) 0.16f else 0.22f),
+                                themeAccent.copy(alpha = if (isDark) 0.18f else 0.22f),
                                 themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
                                 Color.Transparent
                             ),
@@ -2895,6 +2982,14 @@ fun SeriesInnerBookRow(
                         )
                     )
                 }
+            )
+            .then(interactiveHighlight.modifier)
+            .then(interactiveHighlight.gestureModifier)
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = { onClick?.invoke() },
+                onLongClick = onLongClick
             )
             .border(
                 width = 0.8.dp,

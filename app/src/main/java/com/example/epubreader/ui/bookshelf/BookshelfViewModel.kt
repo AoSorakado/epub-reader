@@ -28,21 +28,49 @@ class BookshelfViewModel(private val bookDao: BookDao, application: Application)
 
     private val prefs = application.getSharedPreferences("bookshelf_settings", Context.MODE_PRIVATE)
 
-    // 0: 最近阅读, 1: 导入时间, 2: 书名排序, 3: 阅读进度
     private val _sortMethod = MutableStateFlow(prefs.getInt("sortMethod", 0))
     val sortMethod = _sortMethod.asStateFlow()
+
+    private val _sortAscending = MutableStateFlow(prefs.getBoolean("sortAscending", false))
+    val sortAscending = _sortAscending.asStateFlow()
 
     private val _layoutMethod = MutableStateFlow(prefs.getInt("layoutMethod", 0)) // 0: Grid, 1: List
     val layoutMethod = _layoutMethod.asStateFlow()
 
-    // Observe real DB data based on sort mode
-    val books: StateFlow<List<BookEntity>> = _sortMethod.flatMapLatest { sort ->
-        when (sort) {
-            0 -> bookDao.getAllBooksByLastRead()
-            1 -> bookDao.getAllBooksByTime()
-            2 -> bookDao.getAllBooksByName()
-            3 -> bookDao.getAllBooksByProgress()
-            else -> bookDao.getAllBooksByLastRead()
+    // 0: 全部, 1: 在读, 2: 已读完
+    private val _filterStatus = MutableStateFlow(0)
+    val filterStatus = _filterStatus.asStateFlow()
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
+    // Observe real DB data based on sort mode, ascending order, search query, and reading status filter
+    val books: StateFlow<List<BookEntity>> = kotlinx.coroutines.flow.combine(
+        _sortMethod.flatMapLatest { sort ->
+            when (sort) {
+                0 -> bookDao.getAllBooksByLastRead()
+                1 -> bookDao.getAllBooksByTime()
+                2 -> bookDao.getAllBooksByName()
+                3 -> bookDao.getAllBooksByProgress()
+                else -> bookDao.getAllBooksByLastRead()
+            }
+        },
+        _sortAscending,
+        _searchQuery,
+        _filterStatus
+    ) { rawBooks, ascending, query, filter ->
+        var list = if (ascending) rawBooks.reversed() else rawBooks
+        if (query.isNotBlank()) {
+            list = list.filter {
+                it.title.contains(query, ignoreCase = true) ||
+                (it.author?.contains(query, ignoreCase = true) == true) ||
+                (it.seriesName?.contains(query, ignoreCase = true) == true)
+            }
+        }
+        when (filter) {
+            1 -> list.filter { it.totalProgress > 0f && it.totalProgress < 0.999f }
+            2 -> list.filter { it.totalProgress >= 0.999f }
+            else -> list
         }
     }.stateIn(
         scope = viewModelScope,
@@ -50,9 +78,28 @@ class BookshelfViewModel(private val bookDao: BookDao, application: Application)
         initialValue = emptyList()
     )
 
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun setFilterStatus(status: Int) {
+        _filterStatus.value = status
+    }
+
     fun setSortMethod(method: Int) {
         prefs.edit().putInt("sortMethod", method).apply()
         _sortMethod.value = method
+    }
+
+    fun setSortAscending(ascending: Boolean) {
+        prefs.edit().putBoolean("sortAscending", ascending).apply()
+        _sortAscending.value = ascending
+    }
+
+    fun toggleSortOrder() {
+        val newOrder = !_sortAscending.value
+        prefs.edit().putBoolean("sortAscending", newOrder).apply()
+        _sortAscending.value = newOrder
     }
 
     fun setLayoutMethod(method: Int) {

@@ -1,10 +1,10 @@
 package com.example.epubreader.ui.components.liquid
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -20,147 +20,184 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.fastCoerceAtMost
+import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.shadow.Shadow
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
-import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.tanh
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+
+import androidx.compose.ui.geometry.Offset
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LiquidButton(
     onClick: () -> Unit,
-    backdrop: Backdrop,
+    backdrop: Backdrop? = null,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    enableDrag: Boolean = true,
     isInteractive: Boolean = true,
     shape: Shape = RoundedCornerShape(50),
     tint: Color = Color.Unspecified,
     surfaceColor: Color = Color.Unspecified,
-    blurRadius: Float = 8f,
-    refractionHeight: Float = 24f,
-    refractionAmount: Float = 48f,
+    themeAccent: Color = Color.Unspecified,
+    isCrystal: Boolean = false,
+    isDark: Boolean = false,
+    blurRadius: Float = 6f,
+    refractionHeight: Float = 16f,
+    refractionAmount: Float = 32f,
     content: @Composable RowScope.() -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val interactionSource = remember { MutableInteractionSource() }
 
-    // Physical Elastic Animation States (Drag Pull Deformation + Press Bounce)
-    val dragX = remember { Animatable(0f) }
-    val dragY = remember { Animatable(0f) }
-    val pressScale = remember { Animatable(1f) }
-
-    val curDx = dragX.value
-    val curDy = dragY.value
-    val curScale = pressScale.value
-
-    // Dynamic directional stretch & squash calculations for organic liquid jelly physics
-    val stretchX = if (abs(curDx) > 0.1f) 1f + (abs(curDx) / 160f).coerceAtMost(0.20f) else 1f
-    val stretchY = if (abs(curDy) > 0.1f) 1f + (abs(curDy) / 160f).coerceAtMost(0.20f) else 1f
-    val squashX = if (abs(curDy) > 0.1f) 1f - (abs(curDy) / 320f).coerceAtMost(0.10f) else 1f
-    val squashY = if (abs(curDx) > 0.1f) 1f - (abs(curDx) / 320f).coerceAtMost(0.10f) else 1f
-
-    val finalScaleX = curScale * stretchX * squashX
-    val finalScaleY = curScale * stretchY * squashY
-
-    val springSpec = spring<Float>(
-        dampingRatio = 0.52f, // Bouncy liquid jelly spring physics
-        stiffness = 380f
-    )
-
-    fun releasePhysics() {
-        coroutineScope.launch {
-            launch { dragX.animateTo(0f, springSpec) }
-            launch { dragY.animateTo(0f, springSpec) }
-            launch { pressScale.animateTo(1f, springSpec) }
-        }
+    val interactiveHighlight = remember(coroutineScope) {
+        InteractiveHighlight(
+            animationScope = coroutineScope
+        )
     }
 
-    val gestureModifier = if (isInteractive) {
-        Modifier
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        coroutineScope.launch {
-                            pressScale.animateTo(0.92f, spring(dampingRatio = 0.70f, stiffness = 600f))
-                        }
-                        val success = tryAwaitRelease()
-                        if (success) {
-                            onClick()
-                        }
-                        releasePhysics()
-                    }
-                )
-            }
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = {
-                        coroutineScope.launch {
-                            pressScale.animateTo(0.95f, spring(dampingRatio = 0.70f, stiffness = 500f))
-                        }
-                    },
-                    onDragEnd = {
-                        releasePhysics()
-                    },
-                    onDragCancel = {
-                        releasePhysics()
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        coroutineScope.launch {
-                            val nextX = (dragX.value + dragAmount.x * 0.45f).coerceIn(-45f, 45f)
-                            val nextY = (dragY.value + dragAmount.y * 0.45f).coerceIn(-35f, 35f)
-                            dragX.snapTo(nextX)
-                            dragY.snapTo(nextY)
-                        }
-                    }
-                )
-            }
-    } else Modifier
-
-    Row(
-        modifier = modifier
-            .graphicsLayer {
-                translationX = curDx * 0.65f
-                translationY = curDy * 0.65f
-                scaleX = finalScaleX
-                scaleY = finalScaleY
-            }
-            .drawBackdrop(
-                backdrop = backdrop,
-                shape = { shape },
-                effects = {
-                    vibrancy()
-                    blur(blurRadius.dp.toPx())
-                    lens(refractionHeight.dp.toPx(), refractionAmount.dp.toPx(), depthEffect = false, chromaticAberration = true)
-                },
-                highlight = { Highlight.Plain },
-                onDrawSurface = {
-                    if (tint.isSpecified) {
-                        drawRect(tint, blendMode = BlendMode.Hue)
-                        drawRect(tint.copy(alpha = 0.75f))
-                    } else if (surfaceColor.isSpecified) {
-                        drawRect(surfaceColor)
-                    } else {
-                        drawRect(Color.White.copy(alpha = 0.12f))
-                    }
+    val baseModifier = if (backdrop != null) {
+        modifier.drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            effects = {
+                vibrancy()
+                blur(blurRadius.dp.toPx())
+                lens(refractionHeight.dp.toPx(), refractionAmount.dp.toPx(), depthEffect = false, chromaticAberration = true)
+            },
+            highlight = { Highlight.Plain },
+            shadow = {
+                if (isDark || isCrystal) {
+                    Shadow(radius = 0.dp, color = Color.Transparent)
+                } else {
+                    Shadow(radius = 3.dp, color = Color.Black.copy(alpha = 0.08f))
                 }
-            )
-            .border(
-                width = 0.8.dp,
+            },
+            layerBlock = if (isInteractive && enableDrag) {
+                {
+                    val width = size.width
+                    val height = size.height
+
+                    val progress = interactiveHighlight.pressProgress
+                    val scale = lerp(1f, 0.94f, progress)
+
+                    val maxOffset = size.minDimension * 0.45f
+                    val initialDerivative = 0.08f
+                    val offset = interactiveHighlight.offset
+                    translationX = maxOffset * tanh(initialDerivative * offset.x / maxOffset.coerceAtLeast(1f))
+                    translationY = maxOffset * tanh(initialDerivative * offset.y / maxOffset.coerceAtLeast(1f))
+
+                    val maxDragScale = 4f.dp.toPx() / size.height.coerceAtLeast(1f)
+                    val offsetAngle = atan2(offset.y, offset.x)
+                    scaleX = scale + maxDragScale * abs(cos(offsetAngle) * offset.x / size.maxDimension.coerceAtLeast(1f)) *
+                            (width / height.coerceAtLeast(1f)).fastCoerceAtMost(1.15f)
+                    scaleY = scale + maxDragScale * abs(sin(offsetAngle) * offset.y / size.maxDimension.coerceAtLeast(1f)) *
+                            (height / width.coerceAtLeast(1f)).fastCoerceAtMost(1.15f)
+                }
+            } else null,
+            onDrawSurface = {
+                if (isCrystal && themeAccent.isSpecified) {
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isDark) 0.16f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.08f)
+                            )
+                        )
+                    )
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                themeAccent.copy(alpha = if (isDark) 0.18f else 0.22f),
+                                themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.width * 0.95f
+                        )
+                    )
+                    if (surfaceColor.isSpecified) {
+                        drawRect(surfaceColor)
+                    }
+                } else if (tint.isSpecified) {
+                    drawRect(tint, blendMode = BlendMode.Hue)
+                    drawRect(tint.copy(alpha = 0.75f))
+                } else if (surfaceColor.isSpecified) {
+                    drawRect(surfaceColor)
+                } else {
+                    drawRect(Color.White.copy(alpha = 0.12f))
+                }
+            }
+        )
+    } else {
+        modifier
+            .clip(shape)
+            .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.55f),
-                        Color.White.copy(alpha = 0.20f)
+                        if (tint.isSpecified) tint.copy(alpha = 0.75f) else (if (surfaceColor.isSpecified) surfaceColor else if (isCrystal) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.16f)),
+                        if (tint.isSpecified) tint.copy(alpha = 0.55f) else (if (surfaceColor.isSpecified) surfaceColor.copy(alpha = 0.85f) else if (isCrystal) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.06f))
                     )
-                ),
+                )
+            )
+    }
+
+    val borderBrush = if (isCrystal && themeAccent.isSpecified) {
+        Brush.linearGradient(
+            colors = listOf(
+                themeAccent.copy(alpha = if (isDark) 0.85f else 0.95f),
+                Color.White.copy(alpha = if (isDark) 0.70f else 0.90f),
+                Color.White.copy(alpha = if (isDark) 0.20f else 0.35f),
+                themeAccent.copy(alpha = if (isDark) 0.65f else 0.80f)
+            ),
+            start = Offset(0f, 0f),
+            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+        )
+    } else {
+        Brush.linearGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.65f),
+                Color(0xFFE0E7FF).copy(alpha = 0.45f),
+                Color.White.copy(alpha = 0.20f)
+            )
+        )
+    }
+
+    Row(
+        modifier = baseModifier
+            .then(
+                if (isInteractive && enableDrag) {
+                    Modifier
+                        .then(interactiveHighlight.modifier)
+                        .then(interactiveHighlight.gestureModifier)
+                } else Modifier
+            )
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+            .border(
+                width = 1.0.dp,
+                brush = borderBrush,
                 shape = shape
             )
-            .then(gestureModifier)
             .defaultMinSize(minHeight = 42.dp)
             .padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
