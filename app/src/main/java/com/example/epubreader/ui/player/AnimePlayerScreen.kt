@@ -914,14 +914,12 @@ fun AnimePlayerScreen(
         }
     }
 
-    // Video Metadata Latch (Persistent HDR & media spec cache that NEVER drops when switching players)
+    // Strict Genuine HDR Detection: Only genuine HDR streams/tags qualify (no false positives for SDR)
     val videoUrlHdrHint = remember(episode.videoUrl, episode.resolution) {
         episode.videoUrl.contains("HDR", ignoreCase = true) ||
-        episode.videoUrl.contains("Ma10p", ignoreCase = true) ||
-        episode.videoUrl.contains("10bit", ignoreCase = true) ||
         episode.videoUrl.contains("BT2020", ignoreCase = true) ||
-        episode.resolution.contains("HDR", ignoreCase = true) ||
-        episode.fileSize > 20L * 1024 * 1024 * 1024
+        episode.videoUrl.contains("ST2084", ignoreCase = true) ||
+        episode.resolution.contains("HDR", ignoreCase = true)
     }
 
     var cachedIsHdr by remember(episode.id) { mutableStateOf(videoUrlHdrHint) }
@@ -945,18 +943,14 @@ fun AnimePlayerScreen(
         mpvPlayer.pixelFormat.value,
         useHdrPassthrough
     ) {
-        if (mpvPlayer.isHdr.value || useHdrPassthrough) {
+        val detectedHdr = mpvPlayer.isHdr.value ||
+                (mpvPlayer.hdrType.value.isNotBlank() && !mpvPlayer.hdrType.value.contains("SDR", ignoreCase = true)) ||
+                mpvPlayer.colorPrimaries.value.contains("2020", ignoreCase = true) ||
+                useHdrPassthrough
+
+        if (detectedHdr) {
             cachedIsHdr = true
-            cachedHdrType = "HDR10 / ST 2084 (高动态范围)"
-            cachedColorSpace = "BT.2020 广色域"
-            cachedBitDepth = "10-bit HDR (10.7亿色)"
-        } else if (mpvPlayer.hdrType.value.isNotBlank() && !mpvPlayer.hdrType.value.contains("SDR", ignoreCase = true)) {
-            cachedIsHdr = true
-            cachedHdrType = mpvPlayer.hdrType.value
-            cachedColorSpace = "BT.2020 广色域"
-            cachedBitDepth = "10-bit HDR (10.7亿色)"
-        } else if (mpvPlayer.colorPrimaries.value.contains("2020", ignoreCase = true)) {
-            cachedIsHdr = true
+            cachedHdrType = if (mpvPlayer.hdrType.value.isNotBlank() && !mpvPlayer.hdrType.value.contains("SDR", ignoreCase = true)) mpvPlayer.hdrType.value else "HDR10 / ST 2084 (高动态范围)"
             cachedColorSpace = "BT.2020 广色域"
             cachedBitDepth = "10-bit HDR (10.7亿色)"
         }

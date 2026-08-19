@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import android.view.SurfaceView
+import android.view.TextureView
 import android.view.ViewGroup
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
@@ -287,27 +288,16 @@ fun HdrExoPlayerView(
     ) {
         AndroidView(
             factory = { ctx ->
-                SurfaceView(ctx).apply {
+                TextureView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    setZOrderMediaOverlay(true)
-                    try {
-                        holder.setFormat(android.graphics.PixelFormat.RGBA_1010102)
-                    } catch (e: Throwable) {}
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        try {
-                            setDesiredHdrHeadroom(10.0f)
-                        } catch (e: Throwable) {}
-                    }
-                    currentSurfaceView = this
-                    exoPlayer?.setVideoSurfaceView(this)
+                    exoPlayer?.setVideoTextureView(this)
                 }
             },
-            update = { surfaceView ->
-                currentSurfaceView = surfaceView
-                exoPlayer?.setVideoSurfaceView(surfaceView)
+            update = { textureView ->
+                exoPlayer?.setVideoTextureView(textureView)
             },
             modifier = when (resizeMode) {
                 MpvPlayerManager.ResizeMode.FIT -> Modifier

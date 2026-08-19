@@ -231,22 +231,21 @@ class WebDavClient(
             return path
         }
         val cleanBase = baseUrl.trimEnd('/')
-        return try {
-            val schemeEnd = baseUrl.indexOf("://")
-            val hostOrigin = if (schemeEnd != -1) {
-                val slash = baseUrl.indexOf('/', schemeEnd + 3)
-                if (slash != -1) baseUrl.substring(0, slash) else baseUrl
-            } else cleanBase
+        val cleanPath = path.trimStart('/')
 
-            if (path.startsWith("/")) {
-                "$hostOrigin$path"
-            } else {
-                "$cleanBase/$path"
-            }
-        } catch (e: Exception) {
-            val cleanPath = path.trimStart('/')
-            "$cleanBase/$cleanPath"
+        val schemeEnd = cleanBase.indexOf("://")
+        val baseSubpath = if (schemeEnd != -1) {
+            val slash = cleanBase.indexOf('/', schemeEnd + 3)
+            if (slash != -1) cleanBase.substring(slash).trimStart('/') else ""
+        } else ""
+
+        val effectivePath = if (baseSubpath.isNotEmpty() && (cleanPath == baseSubpath || cleanPath.startsWith("$baseSubpath/"))) {
+            cleanPath.removePrefix(baseSubpath).trimStart('/')
+        } else {
+            cleanPath
         }
+
+        return if (effectivePath.isEmpty()) cleanBase else "$cleanBase/$effectivePath"
     }
 
     suspend fun uploadTextFile(path: String, content: String): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
