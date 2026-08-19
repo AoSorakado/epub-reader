@@ -1036,6 +1036,9 @@ fun QualitySpecsDialogContent(
     cacheReadaheadStr: String = "150 MB (60s 预读)",
     playerBackdrop: Backdrop? = null,
     themeAccent: Color,
+    mpvPlayer: MpvPlayerManager? = null,
+    useHdrPassthrough: Boolean = false,
+    onToggleHdrPassthrough: (Boolean) -> Unit = {},
     onClose: () -> Unit
 ) {
     Column(
@@ -1092,25 +1095,112 @@ fun QualitySpecsDialogContent(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column {
-                    Text("色彩空间与动态范围", fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.7f))
+                    Text("色彩空间与动态范围", fontSize = 11.sp, color = Color.White.copy(alpha = 0.7f))
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "$hdrType · $colorSpaceStr · $bitDepthStr",
-                        fontSize = 13.5.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                 }
-                if (isHdr) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isHdr) themeAccent.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.12f))
+                        .border(0.8.dp, if (isHdr) themeAccent.copy(alpha = 0.70f) else Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (isHdr) "HDR10 生效中" else "BT.2020 广色域",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        // HDR Passthrough Channel Toggle (Always available for HDR content)
+        if (isHdr) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(
+                        if (useHdrPassthrough) themeAccent.copy(alpha = 0.25f)
+                        else Color.White.copy(alpha = 0.08f)
+                    )
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.linearGradient(
+                            if (useHdrPassthrough) listOf(
+                                themeAccent.copy(alpha = 0.9f),
+                                Color(0xFFFFB800).copy(alpha = 0.6f),
+                                Color.White.copy(alpha = 0.3f)
+                            )
+                            else listOf(
+                                Color.White.copy(alpha = 0.40f),
+                                Color(0xFFE0E7FF).copy(alpha = 0.20f),
+                                Color.White.copy(alpha = 0.08f)
+                            )
+                        ),
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                    .clickable { onToggleHdrPassthrough(!useHdrPassthrough) }
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.HdrOn,
+                            contentDescription = null,
+                            tint = if (useHdrPassthrough) Color(0xFFFFB800) else Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Text(
+                            text = "HDR 硬件直通通道",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                    Text(
+                        text = if (useHdrPassthrough)
+                            "✓ 硬件直通激活中 · 10-bit HDR 信号直达 OLED 屏幕"
+                        else
+                            "直通 10-bit HDR 硬件激发通道，呈现物理光学高光",
+                        fontSize = 10.5.sp,
+                        color = if (useHdrPassthrough) Color(0xFFFFB800).copy(alpha = 0.9f)
+                        else Color.White.copy(alpha = 0.6f),
+                        lineHeight = 14.sp
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(width = 42.dp, height = 24.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (useHdrPassthrough) themeAccent
+                            else Color.White.copy(alpha = 0.20f)
+                        )
+                        .padding(2.dp),
+                    contentAlignment = if (useHdrPassthrough) Alignment.CenterEnd else Alignment.CenterStart
+                ) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(themeAccent.copy(alpha = 0.25f))
-                            .border(0.8.dp, themeAccent.copy(alpha = 0.70f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text("HDR 生效中", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    }
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(Color.White)
+                    )
                 }
             }
         }

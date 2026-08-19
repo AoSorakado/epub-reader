@@ -26,8 +26,13 @@ class WebDavClient(
     } else null
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .dispatcher(okhttp3.Dispatcher().apply {
+            maxRequests = 64
+            maxRequestsPerHost = 32
+        })
+        .connectionPool(okhttp3.ConnectionPool(32, 5, TimeUnit.MINUTES))
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val req = chain.request()
             val newReq = if (credential != null && req.header("Authorization") == null) {
@@ -48,9 +53,6 @@ class WebDavClient(
 
     private fun encodeUrlForHttp(rawUrl: String): String {
         return try {
-            val uri = java.net.URI(rawUrl)
-            uri.toASCIIString()
-        } catch (e: Exception) {
             val schemeEnd = rawUrl.indexOf("://")
             if (schemeEnd != -1) {
                 val scheme = rawUrl.substring(0, schemeEnd + 3)
@@ -60,7 +62,8 @@ class WebDavClient(
                     val host = rest.substring(0, hostSlash)
                     val path = rest.substring(hostSlash)
                     val encodedPath = path.split("/").joinToString("/") { segment ->
-                        android.net.Uri.encode(segment)
+                        val decoded = android.net.Uri.decode(segment)
+                        android.net.Uri.encode(decoded)
                     }
                     "$scheme$host$encodedPath"
                 } else {
@@ -69,6 +72,8 @@ class WebDavClient(
             } else {
                 rawUrl
             }
+        } catch (e: Exception) {
+            rawUrl
         }
     }
 
@@ -97,16 +102,23 @@ class WebDavClient(
         val allResources = parsePropfindXml(xmlResponse)
 
         // Filter out the requested directory itself
-        val cleanTargetUrl = targetUrl.trimEnd('/')
-        val targetPathOnly = try { java.net.URI(cleanTargetUrl).path?.trimEnd('/') ?: cleanTargetUrl } catch (e: Exception) { cleanTargetUrl }
+        val cleanTargetUrl = encodeUrlForHttp(targetUrl).trimEnd('/')
+        val targetPathOnly = try {
+            val p = java.net.URI(cleanTargetUrl).path?.trimEnd('/') ?: cleanTargetUrl
+            android.net.Uri.decode(p).trimEnd('/')
+        } catch (e: Exception) {
+            android.net.Uri.decode(cleanTargetUrl).trimEnd('/')
+        }
 
         allResources.filter { res ->
-            val resPath = res.path.trimEnd('/')
-            val decodedResPath = try { java.net.URI(resPath).path?.trimEnd('/') ?: resPath } catch (e: Exception) { resPath }
-            val decodedTargetPath = try { android.net.Uri.decode(targetPathOnly) } catch (e: Exception) { targetPathOnly }
-            
-            resPath != targetPathOnly && 
-            decodedResPath != decodedTargetPath && 
+            val resPathOnly = try {
+                val p = java.net.URI(encodeUrlForHttp(res.path)).path?.trimEnd('/') ?: res.path
+                android.net.Uri.decode(p).trimEnd('/')
+            } catch (e: Exception) {
+                android.net.Uri.decode(res.path).trimEnd('/')
+            }
+
+            resPathOnly != targetPathOnly && 
             res.name.isNotBlank() &&
             res.name != "." &&
             res.name != ".." &&
@@ -220,18 +232,14 @@ class WebDavClient(
         }
         val cleanBase = baseUrl.trimEnd('/')
         return try {
-            val uri = java.net.URI(baseUrl)
-            val hostOrigin = "${uri.scheme}://${uri.authority}"
-            val basePath = uri.path?.trimEnd('/') ?: ""
+            val schemeEnd = baseUrl.indexOf("://")
+            val hostOrigin = if (schemeEnd != -1) {
+                val slash = baseUrl.indexOf('/', schemeEnd + 3)
+                if (slash != -1) baseUrl.substring(0, slash) else baseUrl
+            } else cleanBase
 
             if (path.startsWith("/")) {
-                if (basePath.isNotEmpty() && path.startsWith(basePath)) {
-                    "$hostOrigin$path"
-                } else if (basePath.isEmpty()) {
-                    "$hostOrigin$path"
-                } else {
-                    "$hostOrigin$basePath$path"
-                }
+                "$hostOrigin$path"
             } else {
                 "$cleanBase/$path"
             }

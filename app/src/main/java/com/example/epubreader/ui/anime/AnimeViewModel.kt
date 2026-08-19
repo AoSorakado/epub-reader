@@ -52,20 +52,21 @@ class AnimeViewModel(application: Application) : AndroidViewModel(application) {
     var activePlayingPair by androidx.compose.runtime.mutableStateOf<Pair<AnimeEntity, AnimeEpisodeEntity>?>(null)
 
     init {
-        // Pre-warm Coil image cache with all anime covers in background for instant scrolling
+        // Pre-warm Coil image cache ONLY for new covers that haven't been loaded
         viewModelScope.launch(Dispatchers.IO) {
+            val queuedCovers = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
             animes.collect { list ->
                 val imageLoader = coil.Coil.imageLoader(getApplication())
                 for (anime in list) {
                     val coverPath = anime.localCoverPath
                     val coverUrl = anime.coverUrl
-                    val target: Any? = if (!coverPath.isNullOrBlank() && File(coverPath).exists()) {
-                        File(coverPath)
-                    } else if (!coverUrl.isNullOrBlank()) {
-                        coverUrl
-                    } else null
-
-                    if (target != null) {
+                    val key = coverPath?.ifBlank { null } ?: coverUrl?.ifBlank { null } ?: continue
+                    if (queuedCovers.add(key)) {
+                        val target: Any = if (!coverPath.isNullOrBlank() && File(coverPath).exists()) {
+                            File(coverPath)
+                        } else {
+                            key
+                        }
                         val req = coil.request.ImageRequest.Builder(getApplication())
                             .data(target)
                             .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
@@ -243,11 +244,14 @@ class AnimeViewModel(application: Application) : AndroidViewModel(application) {
                     context = getApplication(),
                     onProgress = { current, total, name ->
                         _scanProgress.value = "正在解析 [$current/$total] $name"
-                        GlobalToastManager.showSyncing("正在解析 [$current/$total] $name")
+                        GlobalToastManager.showSyncing("正在扫描 [$current/$total] $name")
+                    },
+                    onAnimeImported = { title, epCount ->
+                        GlobalToastManager.show("✨ 已收录: $title ($epCount 集)", ToastType.Success)
                     }
                 )
                 if (count > 0) {
-                    GlobalToastManager.show("✨ 扫描完成，已收录 $count 部番剧", ToastType.Success)
+                    GlobalToastManager.show("✨ 扫描完成，共收录 $count 部番剧", ToastType.Success)
                     AnimeWebDavScanner.enrichAnimeMetadataInBackground(animeDao, getApplication())
                 } else {
                     GlobalToastManager.show("未在指定的 WebDAV 目录中找到视频文件，请检查链接配置", ToastType.Info)

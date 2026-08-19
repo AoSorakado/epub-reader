@@ -29,7 +29,7 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
 
     private val mpv = MPV()
     private var isDestroyed = false
-    private var isSurfaceAttached = false
+    var isSurfaceAttached = false
 
     val isPlaying = mutableStateOf(true)
     val positionMs = mutableStateOf(0L)
@@ -50,6 +50,8 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
     val videoFps = mutableStateOf(23.976)
     val aspectRatio = mutableStateOf(16.0 / 9.0)
     val hwdecActive = mutableStateOf("mediacodec")
+    val isHdr = mutableStateOf(false)
+    val hdrType = mutableStateOf("SDR 标准动态范围")
     val audioChannels = mutableStateOf("")
     val audioSampleRate = mutableStateOf(48000)
     val audioDelayMs = mutableStateOf(0L)
@@ -85,23 +87,29 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.setOptionString("gpu-shader-cache-dir", cacheDir.absolutePath)
             mpv.setOptionString("icc-cache-dir", cacheDir.absolutePath)
 
-            // Video output & hardware decoding (Low-power GPU pipeline)
+            // Video output & hardware decoding (Zero-copy native Surface GPU pipeline)
             mpv.setOptionString("vo", "gpu")
             mpv.setOptionString("gpu-context", "android")
             mpv.setOptionString("hwdec", "mediacodec")
             mpv.setOptionString("hwdec-codecs", "all")
             mpv.setOptionString("force-window", "no")
-            mpv.setOptionString("video-sync", "audio")
+            mpv.setOptionString("video-sync", "desync")
             mpv.setOptionString("framedrop", "vo")
-            mpv.setOptionString("hr-seek", "yes")
-            mpv.setOptionString("hr-seek-framedrop", "yes")
-            mpv.setOptionString("vd-lavc-threads", "2")
+            mpv.setOptionString("hr-seek", "no")
+            mpv.setOptionString("hr-seek-framedrop", "no")
+            mpv.setOptionString("vd-lavc-threads", "0")
 
-            // Mobile GPU Thermal & Wattage Optimization (Replaces heavy Lanczos/Spline shaders with low-power Bilinear)
+            // HDR & Wide Color Gamut (HDR10 ST 2084 / BT.2020 / HLG) Pipeline
+            mpv.setOptionString("target-colorspace-hint", "yes")
+            mpv.setOptionString("target-peak", "auto")
+            mpv.setOptionString("hdr-compute-peak", "auto")
+            mpv.setOptionString("tone-mapping", "auto")
+            mpv.setOptionString("gamut-mapping-mode", "auto")
+
+            // Mobile GPU Thermal & Wattage Optimization (Bilinear scaling for low battery draw)
             mpv.setOptionString("scale", "bilinear")
             mpv.setOptionString("cscale", "bilinear")
             mpv.setOptionString("dscale", "bilinear")
-            mpv.setOptionString("gpu-dumb-mode", "yes")
             mpv.setOptionString("correct-downscaling", "no")
             mpv.setOptionString("linear-downscaling", "no")
             mpv.setOptionString("sigmoid-upscaling", "no")
@@ -113,10 +121,10 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.setOptionString("sub-auto", "fuzzy")
             mpv.setOptionString("sub-ass", "yes")
             mpv.setOptionString("sub-visibility", "yes")
-            mpv.setOptionString("sub-ass-override", "no") // Full ASS styling retention
+            mpv.setOptionString("sub-ass-override", "no")
             mpv.setOptionString("sub-ass-force-margins", "yes")
-            mpv.setOptionString("sub-ass-hinting", "native")
-            mpv.setOptionString("sub-ass-shaper", "harfbuzz")
+            mpv.setOptionString("sub-hinting", "native")
+            mpv.setOptionString("sub-shaper", "harfbuzz")
             mpv.setOptionString("embeddedfonts", "yes")
             mpv.setOptionString("sub-fonts-dir", fontsDir.absolutePath)
             mpv.setOptionString("sub-font", "GenRyuMin2 TW SB")
@@ -126,19 +134,33 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.setOptionString("subs-fallback", "yes")
             mpv.setOptionString("blend-subtitles", "video")
 
-            // Streaming Cache & IO Buffer
+            // Audio Output - Force 16-bit downmix to ensure 100% Android AudioTrack compatibility
+            mpv.setOptionString("ao", "audiotrack")
+            mpv.setOptionString("audio-format", "s16")
+            mpv.setOptionString("audio-channels", "stereo")
+            mpv.setOptionString("audio-pitch-correction", "yes")
+            mpv.setOptionString("ad-lavc-downmix", "yes")
+            mpv.setOptionString("ad-lavc-threads", "0")
+            mpv.setOptionString("audio-fallback-to-null", "yes")
+            mpv.setOptionString("volume-max", "200")
+
+            // Streaming Cache & IO Buffer - 512MB buffer for high bitrate 4K/8K Blu-ray original discs
             mpv.setOptionString("cache", "yes")
+            mpv.setOptionString("cache-pause", "no")
+            mpv.setOptionString("cache-pause-initial", "no")
+            mpv.setOptionString("demuxer-lavf-probesize", "1048576")
+            mpv.setOptionString("demuxer-lavf-analyzeduration", "1.0")
             mpv.setOptionString("demuxer-lavf-buffersize", "2097152")
-            mpv.setOptionString("demuxer-max-bytes", "150MiB")
-            mpv.setOptionString("demuxer-max-back-bytes", "50MiB")
+            mpv.setOptionString("demuxer-max-bytes", "512MiB")
+            mpv.setOptionString("demuxer-max-back-bytes", "128MiB")
             mpv.setOptionString("demuxer-readahead-secs", "60")
 
             // Disable default mpv key/gesture handlers
             mpv.setOptionString("input-default-bindings", "no")
             mpv.setOptionString("input-vo-keyboard", "no")
 
-            // Logging config - Production grade warning/error logging only to eliminate JNI CPU/GC overhead
-            mpv.setOptionString("msg-level", "all=warn")
+            // Logging config - Full info logging for diagnosis
+            mpv.setOptionString("msg-level", "all=info")
 
             // 5. Initialize MPV engine
             mpv.init()
@@ -156,6 +178,13 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.observeProperty("aid", MPV.mpvFormat.MPV_FORMAT_STRING)
             mpv.observeProperty("sub-visibility", MPV.mpvFormat.MPV_FORMAT_FLAG)
             mpv.observeProperty("paused-for-cache", MPV.mpvFormat.MPV_FORMAT_FLAG)
+            mpv.observeProperty("video-params/gamma", MPV.mpvFormat.MPV_FORMAT_STRING)
+            mpv.observeProperty("video-params/primaries", MPV.mpvFormat.MPV_FORMAT_STRING)
+            mpv.observeProperty("video-params/pixelformat", MPV.mpvFormat.MPV_FORMAT_STRING)
+            mpv.observeProperty("video-params/w", MPV.mpvFormat.MPV_FORMAT_INT64)
+            mpv.observeProperty("video-params/h", MPV.mpvFormat.MPV_FORMAT_INT64)
+            mpv.observeProperty("video-codec", MPV.mpvFormat.MPV_FORMAT_STRING)
+            mpv.observeProperty("hwdec-current", MPV.mpvFormat.MPV_FORMAT_STRING)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize MPV", e)
         }
@@ -234,13 +263,28 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
         }
     }
 
+    private var attachedSurface: Surface? = null
+
     fun attachSurface(surface: Surface) {
         if (isDestroyed) return
         try {
-            Log.d(TAG, "Attaching surface to mpv")
+            if (attachedSurface === surface && isSurfaceAttached) {
+                Log.d(TAG, "Surface already attached to mpv")
+                return
+            }
+            Log.d(TAG, "Attaching surface to mpv: $surface")
+            attachedSurface = surface
             mpv.attachSurface(surface)
             isSurfaceAttached = true
             mpv.setPropertyBoolean("sub-visibility", true)
+            
+            // Re-enable video output (mpv disables video output when surface/opengl context is destroyed)
+            try {
+                mpv.setPropertyInt("vid", 1)
+                mpv.setPropertyBoolean("pause", !isPlaying.value)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to re-enable video track with vid=1", e)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to attach surface", e)
         }
@@ -256,10 +300,15 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
         }
     }
 
-    fun detachSurface() {
+    fun detachSurface(surface: Surface? = null) {
         if (isDestroyed || !isSurfaceAttached) return
+        if (surface != null && attachedSurface != null && attachedSurface !== surface) {
+            Log.d(TAG, "Ignoring detach request for non-active surface")
+            return
+        }
         try {
             Log.d(TAG, "Detaching surface from mpv")
+            attachedSurface = null
             isSurfaceAttached = false
             mpv.detachSurface()
         } catch (e: Exception) {
@@ -396,6 +445,72 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
         }
     }
 
+    val hdrToneMappingMode = mutableStateOf("bt.2446a")
+    val hdrPeakNits = mutableStateOf(1000)
+    val isHdrBoostEnabled = mutableStateOf(true)
+    val hdrExposureBoost = mutableStateOf(15)
+
+    fun setHdrToneMapping(mode: String) {
+        if (isDestroyed) return
+        hdrToneMappingMode.value = mode
+        try {
+            mpv.setPropertyString("tone-mapping", mode)
+            Log.d(TAG, "Set tone-mapping to $mode")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set tone-mapping $mode", e)
+        }
+    }
+
+    fun setHdrExposureBoost(level: Int) {
+        if (isDestroyed) return
+        hdrExposureBoost.value = level
+        try {
+            val gammaVal = (level * 1.5).coerceIn(0.0, 50.0)
+            val brightnessVal = (level * 0.8).coerceIn(0.0, 30.0)
+            mpv.setPropertyDouble("gamma", gammaVal)
+            mpv.setPropertyDouble("brightness", brightnessVal)
+            Log.d(TAG, "Applied HDR exposure boost: level=$level (gamma=$gammaVal, brightness=$brightnessVal)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set HDR exposure boost", e)
+        }
+    }
+
+    fun setHdrBoost(enabled: Boolean) {
+        if (isDestroyed) return
+        isHdrBoostEnabled.value = enabled
+        try {
+            if (enabled) {
+                mpv.setPropertyString("target-peak", "1000")
+                mpv.setPropertyString("hdr-compute-peak", "yes")
+                mpv.setPropertyString("tone-mapping", "bt.2446a")
+                hdrToneMappingMode.value = "bt.2446a"
+                setHdrExposureBoost(hdrExposureBoost.value)
+            } else {
+                mpv.setPropertyString("target-peak", "auto")
+                mpv.setPropertyString("hdr-compute-peak", "auto")
+                mpv.setPropertyString("tone-mapping", "auto")
+                hdrToneMappingMode.value = "auto"
+                setHdrExposureBoost(0)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle HDR boost $enabled", e)
+        }
+    }
+
+    fun setTargetPeakNits(nits: Int) {
+        if (isDestroyed) return
+        hdrPeakNits.value = nits
+        try {
+            if (nits <= 0) {
+                mpv.setPropertyString("target-peak", "auto")
+            } else {
+                mpv.setPropertyString("target-peak", nits.toString())
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set target-peak $nits", e)
+        }
+    }
+
     fun selectSubtitleTrack(id: Int) {
         if (isDestroyed) return
         try {
@@ -505,10 +620,34 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
 
             videoCodec.value = mpv.getPropertyString("video-codec") ?: ""
             audioCodec.value = mpv.getPropertyString("audio-codec-name") ?: ""
-            pixelFormat.value = mpv.getPropertyString("video-params/pixelformat") ?: ""
+            val gamma = mpv.getPropertyString("video-params/gamma") ?: ""
+            val primaries = mpv.getPropertyString("video-params/primaries") ?: ""
+            val pixFmt = mpv.getPropertyString("video-params/pixelformat") ?: ""
+
+            pixelFormat.value = pixFmt
             colorMatrix.value = mpv.getPropertyString("video-params/colormatrix") ?: ""
-            colorPrimaries.value = mpv.getPropertyString("video-params/primaries") ?: ""
-            colorGamma.value = mpv.getPropertyString("video-params/gamma") ?: ""
+            colorPrimaries.value = primaries
+            colorGamma.value = gamma
+
+            val isHdrContent = gamma.contains("pq", ignoreCase = true) ||
+                    gamma.contains("smpte2084", ignoreCase = true) ||
+                    gamma.contains("st2084", ignoreCase = true) ||
+                    gamma.contains("hlg", ignoreCase = true) ||
+                    gamma.contains("arib", ignoreCase = true) ||
+                    primaries.contains("bt.2020", ignoreCase = true) ||
+                    primaries.contains("bt2020", ignoreCase = true) ||
+                    pixFmt.contains("10bit", ignoreCase = true) ||
+                    pixFmt.contains("p010", ignoreCase = true) ||
+                    pixFmt.contains("yuv420p10", ignoreCase = true)
+
+            isHdr.value = isHdrContent
+            hdrType.value = when {
+                gamma.contains("pq", ignoreCase = true) || gamma.contains("smpte2084", ignoreCase = true) || gamma.contains("st2084", ignoreCase = true) -> "HDR10 / ST 2084 (高动态范围)"
+                gamma.contains("hlg", ignoreCase = true) || gamma.contains("arib", ignoreCase = true) -> "HLG (广播高动态范围)"
+                primaries.contains("bt.2020", ignoreCase = true) || primaries.contains("bt2020", ignoreCase = true) -> "HDR (BT.2020 广色域)"
+                pixFmt.contains("10") -> "10-bit SDR (高色彩精度)"
+                else -> "SDR 标准动态范围"
+            }
 
             val fpsVal = mpv.getPropertyDouble("container-fps") ?: mpv.getPropertyDouble("estimated-vf-fps")
             if (fpsVal != null && fpsVal > 0) videoFps.value = fpsVal
@@ -543,7 +682,7 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
     }
 
     override fun logMessage(prefix: String, level: Int, text: String) {
-        if (level <= 20) { // Only log warnings (20) and errors (10)
+        if (level <= 20) {
             Log.w("MpvLog", "[$prefix] ($level) $text")
         }
     }
@@ -553,6 +692,7 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
     override fun eventProperty(property: String, value: Long) {
         when (property) {
             "track-list/count" -> updateTracks()
+            "video-params/w", "video-params/h" -> updateMediaParams()
         }
     }
 
@@ -595,6 +735,9 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
     override fun eventProperty(property: String, value: String) {
         when (property) {
             "sid", "aid" -> updateTracks()
+            "video-params/gamma", "video-params/primaries", "video-params/pixelformat", "video-codec", "hwdec-current" -> {
+                updateMediaParams()
+            }
         }
     }
 

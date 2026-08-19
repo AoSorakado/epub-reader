@@ -43,26 +43,22 @@ object AnimeFilenameParser {
      */
     fun isIgnoredExtraFile(filename: String): Boolean {
         val name = filename.lowercase()
-        // Never scan or add any .m2ts files
-        if (name.endsWith(".m2ts")) {
-            return true
-        }
 
-        // Quick keyword check
+        // Quick keyword check (Menu, Extras, Bonus, Trailers, etc.)
         if (name.contains("ncop") || name.contains("nced") || name.contains("menu") ||
             name.contains("trailer") || name.contains("preview") || name.contains("bonus") ||
-            name.contains("creditless") || name.contains("textless")) {
+            name.contains("creditless") || name.contains("textless") || name.contains("sample")) {
             return true
         }
 
         // Bracketed patterns e.g. [NCOP], [NCED], [NCOP_EP08], [OP], [ED], [SP], [SP01], [PV], [CM], [Menu]
-        val bracketExtraRegex = Regex("(?i)\\[(NCOP|NCED|OP|ED|SP|PV|CM|MENU|EXTRA|BONUS|TRAILER)[^\\]]*\\]")
+        val bracketExtraRegex = Regex("(?i)\\[(NCOP|NCED|OP|ED|SP|PV|CM|MENU|EXTRA|BONUS|TRAILER|SAMPLE)[^\\]]*\\]")
         if (bracketExtraRegex.containsMatchIn(filename)) {
             return true
         }
 
         // Word boundary patterns e.g. NCOP01, NCED_EP01, SP01, PV1, Menu.mkv
-        val wordExtraRegex = Regex("(?i)(?:^|[\\s._\\-])(NCOP|NCED|MENU|TRAILER|BONUS|EXTRA|PREVIEW)(?:[0-9._\\-]|$)")
+        val wordExtraRegex = Regex("(?i)(?:^|[\\s._\\-])(NCOP|NCED|MENU|TRAILER|BONUS|EXTRA|PREVIEW|SAMPLE)(?:[0-9._\\-]|$)")
         if (wordExtraRegex.containsMatchIn(filename)) {
             return true
         }
@@ -114,13 +110,31 @@ object AnimeFilenameParser {
         }
     }
 
-    // Clean prefixes like "B 4k ", "A 4k ", "[4K_60FPS_SDR]", "(1)", "(2)"
+    // Clean prefixes and disc/release tags like "Your.Name.2016.JAPANESE.2160p.BluRay.HEVC.DTS-HD.MA.5.1-TASTED", "B 4k ", "[DBD-Raws]"
     fun cleanAnimeFolderName(folderName: String): String {
         var clean = folderName
         clean = clean.replace(Regex("(?i)^[A-Z]\\s*4k\\s*"), "") // e.g. "B 4k ", "A 4k "
-        clean = clean.replace(Regex("\\[[^\\]]*\\]"), " ")       // e.g. "[DBD-Raws]"
+        clean = clean.replace(Regex("\\[[^\\]]*\\]"), " ")       // e.g. "[DBD-Raws]", "[BDMV]"
         clean = clean.replace(Regex("\\([0-9]+\\)"), " ")        // e.g. "(1)"
-        clean = clean.replace(Regex("(?i)(2160p|4k|1080p|60fps|sdr|hdr|bdremux|简繁外挂|pcm|mkv|m2ts)"), " ")
+        clean = clean.replace(Regex("-[a-zA-Z0-9_]+$"), " ")     // Strip trailing -TASTED before removing dots
+        
+        // Remove known technical spec compound tags (both dot-separated and space-separated)
+        clean = clean.replace(Regex("(?i)\\b(DTS[-.]HD([-. ]MA)?|Dolby[-. ]Digital|TrueHD([-. ]Atmos)?)\\b"), " ")
+        clean = clean.replace(Regex("(?i)\\b(5\\.1|7\\.1|2\\.0)\\b"), " ")
+
+        // Convert dot and underscore separators in scene releases: Your.Name.2016... -> Your Name 2016...
+        if (clean.contains(".") || clean.contains("_")) {
+            clean = clean.replace(Regex("[._]+"), " ")
+        }
+        
+        // Remove technical specs, audio, video codecs, release groups
+        clean = clean.replace(Regex("(?i)\\b(2160p|4k|1080p|720p|480p|60fps|sdr|hdr10\\+?|hdr|dovi|dv|bdremux|remux|bluray|blu-ray|uhd|hevc|h265|x265|x264|h264|avc|av1|ma10p|10bit|8bit|dts|hd|ma|atmos|truehd|flac|aac|ac3|eac3|pcm|5\\s*1|7\\s*1|2\\s*0|japanese|jpn|chs|cht|gb|big5|tasted|raws?|bdrip|web-dl|webrip|mkv|mp4|m2ts)\\b"), " ")
+        
+        // Strip release year (1980-2039)
+        clean = clean.replace(Regex("(?i)\\b(19[89][0-9]|20[0-3][0-9])\\b"), " ")
+        
+        // Strip trailing punctuation / hyphens
+        clean = clean.replace(Regex("[\\-_]+"), " ")
         clean = clean.replace(Regex("\\s+"), " ").trim()
         return clean.ifBlank { folderName }
     }
@@ -132,24 +146,57 @@ object AnimeFilenameParser {
         grandParentFolderName: String? = null
     ): ParsedEpisodeInfo {
         val nameWithoutExt = filename.substringBeforeLast(".")
+        val ext = filename.substringAfterLast(".").lowercase()
+
+        // Combine context strings for spec extraction (e.g. parent folder might contain "2160p.BluRay.HEVC.DTS-HD.MA.5.1-TASTED")
+        val contextString = "$filename $parentFolderName ${grandParentFolderName ?: ""}"
 
         // 1. Extract Release Group
         val releaseGroupMatch = RELEASE_GROUP_REGEX.find(nameWithoutExt)
-        val releaseGroup = releaseGroupMatch?.groupValues?.getOrNull(1)
+        val releaseGroup = releaseGroupMatch?.groupValues?.getOrNull(1) ?: run {
+            // Check trailing -GROUP in parent folder or filename
+            val trailingGroup = Regex("-([A-Za-z0-9_]+)$").find(parentFolderName)?.groupValues?.getOrNull(1)
+            trailingGroup
+        }
 
-        // 2. Extract Resolution & Codecs
-        val resolution = RESOLUTION_REGEX.find(nameWithoutExt)?.value?.uppercase() ?: "1080P"
-        val videoCodec = VIDEO_CODEC_REGEX.find(nameWithoutExt)?.value?.uppercase() ?: "HEVC"
-        val audioCodec = AUDIO_CODEC_REGEX.find(nameWithoutExt)?.value?.uppercase() ?: "AAC"
+        // 2. Extract Resolution & Codecs (from filename or parent folder context)
+        val resolution = RESOLUTION_REGEX.find(contextString)?.value?.uppercase() ?: "1080P"
+        val videoCodec = VIDEO_CODEC_REGEX.find(contextString)?.value?.uppercase() ?: "HEVC"
+        val audioCodec = when {
+            contextString.contains("DTS-HD", ignoreCase = true) || contextString.contains("DTS-HD MA", ignoreCase = true) -> "DTS-HD MA"
+            contextString.contains("TrueHD", ignoreCase = true) || contextString.contains("Atmos", ignoreCase = true) -> "TrueHD"
+            else -> AUDIO_CODEC_REGEX.find(contextString)?.value?.uppercase() ?: "AAC"
+        }
 
         // 3. Determine Anime Base Title
-        val cleanAnimeTitle = if (!grandParentFolderName.isNullOrBlank() && SEASON_REGEX.containsMatchIn(parentFolderName)) {
+        val cleanAnimeTitle = if (!grandParentFolderName.isNullOrBlank() && (SEASON_REGEX.containsMatchIn(parentFolderName) || parentFolderName.contains("2160p", ignoreCase = true) || parentFolderName.contains("BluRay", ignoreCase = true))) {
             cleanAnimeFolderName(grandParentFolderName)
         } else {
             cleanAnimeFolderName(parentFolderName)
         }
 
-        // 4. Check for Special / Extra Types: OP, ED, NCOP, NCED, SP, OVA, OAD
+        // 4. Handle Blu-ray / M2TS disc main feature (e.g. 00000.m2ts, 00001.m2ts)
+        val isM2tsDiscFeature = ext == "m2ts" || nameWithoutExt.matches(Regex("^[0-9]{5}$"))
+        if (isM2tsDiscFeature && (nameWithoutExt == "00000" || nameWithoutExt == "00001")) {
+            val detectedSeason = if (parentFolderName.contains("剧场版", ignoreCase = true) || cleanAnimeTitle.contains("剧场版") || parentFolderName.contains("2160p", ignoreCase = true) || parentFolderName.contains("BluRay", ignoreCase = true)) {
+                "剧场版"
+            } else {
+                "正片"
+            }
+            return ParsedEpisodeInfo(
+                animeTitle = cleanAnimeTitle,
+                seasonName = detectedSeason,
+                episodeNumber = "01",
+                episodeIndex = 1,
+                cleanTitle = "正片",
+                resolution = resolution,
+                videoCodec = videoCodec,
+                audioCodec = audioCodec,
+                releaseGroup = releaseGroup
+            )
+        }
+
+        // 5. Check for Special / Extra Types: OP, ED, NCOP, NCED, SP, OVA, OAD
         var detectedSeason = if (SEASON_REGEX.containsMatchIn(parentFolderName)) {
             parentFolderName.trim()
         } else {

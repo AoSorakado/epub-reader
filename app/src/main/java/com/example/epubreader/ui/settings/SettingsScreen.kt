@@ -281,6 +281,14 @@ fun SettingsScreen(
                             accentColor = themeAccent
                         )
                     }
+
+                    // Interactive HDR & Display Test Lab
+                    HdrDisplayTesterCard(
+                        backdrop = backgroundBackdrop,
+                        themeAccent = themeAccent,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor
+                    )
                 }
 
                 // READER SETTINGS SECTION

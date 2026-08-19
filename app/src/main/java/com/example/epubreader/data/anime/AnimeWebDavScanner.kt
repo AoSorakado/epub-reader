@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger
 object AnimeWebDavScanner {
 
     private const val TAG = "AnimeWebDavScanner"
-    private val VIDEO_EXTENSIONS = setOf("mkv", "mp4", "webm", "avi", "ts")
+    private val VIDEO_EXTENSIONS = setOf("mkv", "mp4", "webm", "avi", "ts", "m2ts")
     private val SUBTITLE_EXTENSIONS = setOf("ass", "ssa", "srt", "vtt")
     private val SEASON_REGEX = Regex("(?i)(第[0-9一二三四五六七八九十]+季|S[0-9]+|Season\\s*[0-9]+|剧场版|总集篇|圣王国篇|篇|OVA|OAD|SP|特典|Bonus|Menu)")
 
@@ -23,14 +23,36 @@ object AnimeWebDavScanner {
      * Filters candidate video files:
      * 1. Keeps all valid main episodes and decimal episodes (e.g. 01, 11.5, 12, 13, OVA, OAD).
      * 2. Cleans & discards junk files: NCOP, NCED, OP, ED clips, Menu, SP, PV, CM, Trailer, Bonus clips.
+     * 3. Size-based Feature Detection for .m2ts files: Keeps only legitimate feature films / episodes,
+     *    discarding short menu/warning/promo clips (e.g. 100MB-600MB vs 58GB).
      */
     private fun filterCandidateVideoFiles(files: List<WebDavResource>): List<WebDavResource> {
-        return files.filter { 
+        val candidates = files.filter { 
             !it.isDirectory && 
             it.name.substringAfterLast(".").lowercase() in VIDEO_EXTENSIONS &&
-            !it.name.endsWith(".m2ts", ignoreCase = true) &&
             !AnimeFilenameParser.isIgnoredExtraFile(it.name)
         }
+
+        val m2tsFiles = candidates.filter { it.name.endsWith(".m2ts", ignoreCase = true) }
+        if (m2tsFiles.isEmpty()) {
+            return candidates
+        }
+
+        val nonM2tsFiles = candidates.filter { !it.name.endsWith(".m2ts", ignoreCase = true) }
+
+        // Size-based Feature Detection for m2ts:
+        val maxM2tsSize = m2tsFiles.maxOfOrNull { it.size } ?: 0L
+
+        // Thresholds:
+        // If maximum m2ts is large (>= 1.5 GB), filter out tiny clips (< 1.5 GB or < 30% of max size)
+        val validM2ts = if (maxM2tsSize >= 1500L * 1024L * 1024L) {
+            m2tsFiles.filter { it.size >= 1500L * 1024L * 1024L && it.size >= (maxM2tsSize * 0.3).toLong() }
+        } else {
+            // For smaller test sets or samples, keep files with size >= 50% of the largest
+            m2tsFiles.filter { it.size >= (maxM2tsSize * 0.5).toLong() }
+        }
+
+        return nonM2tsFiles + validM2ts
     }
 
     /**
@@ -59,13 +81,43 @@ object AnimeWebDavScanner {
     }
 
     /**
-     * Scans a single directory for valid video files and subtitle subfolders.
+     * Scans a single directory for valid video files and subtitle subfolders,
+     * with automatic traversal for BDMV/STREAM directories.
      */
     private suspend fun scanDirectoryVideos(
         webDavClient: WebDavClient,
         childResources: List<WebDavResource>
     ): Pair<List<WebDavResource>, List<WebDavResource>> {
-        val videoFiles = filterCandidateVideoFiles(childResources)
+        // Check if there is an embedded BDMV or STREAM folder to include its video streams
+        val bdmvDir = childResources.find { it.isDirectory && it.name.equals("BDMV", ignoreCase = true) }
+        val streamDir = childResources.find { it.isDirectory && it.name.equals("STREAM", ignoreCase = true) }
+        
+        val expandedResources = mutableListOf<WebDavResource>()
+        expandedResources.addAll(childResources)
+
+        if (bdmvDir != null) {
+            try {
+                val bdmvChildren = webDavClient.listFiles(bdmvDir.path)
+                val innerStream = bdmvChildren.find { it.isDirectory && it.name.equals("STREAM", ignoreCase = true) }
+                if (innerStream != null) {
+                    val streamChildren = webDavClient.listFiles(innerStream.path)
+                    expandedResources.addAll(streamChildren)
+                } else {
+                    expandedResources.addAll(bdmvChildren)
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Failed to traverse BDMV folder ${bdmvDir.path}: ${e.message}")
+            }
+        } else if (streamDir != null) {
+            try {
+                val streamChildren = webDavClient.listFiles(streamDir.path)
+                expandedResources.addAll(streamChildren)
+            } catch (e: Exception) {
+                Log.d(TAG, "Failed to traverse STREAM folder ${streamDir.path}: ${e.message}")
+            }
+        }
+
+        val videoFiles = filterCandidateVideoFiles(expandedResources)
         val directSubtitleFiles = childResources.filter {
             !it.isDirectory && it.name.substringAfterLast(".").lowercase() in SUBTITLE_EXTENSIONS
         }
@@ -73,7 +125,7 @@ object AnimeWebDavScanner {
         val allSubtitleFiles = mutableListOf<WebDavResource>()
         allSubtitleFiles.addAll(directSubtitleFiles)
 
-        // Check for subtitle subfolders: 字幕, 字幕包, 字幕备份, 备份字幕, Subs, Subtitles, 出包女王字幕 etc.
+        // Check for subtitle subfolders: 字幕, 字幕包, 字幕备份, 备份字幕, Subs, Subtitles, etc.
         val subFolders = childResources.filter {
             it.isDirectory && AnimeFilenameParser.isSubtitleFolder(it.name)
         }
@@ -109,13 +161,13 @@ object AnimeWebDavScanner {
 
         val childResources = preloadedChildren ?: try {
             webDavClient.listFiles(folderPath)
-                .filter { !it.name.equals("Menu", ignoreCase = true) && !it.name.startsWith(".") && !it.name.endsWith(".m2ts", ignoreCase = true) && !it.name.equals("BDMV", ignoreCase = true) }
+                .filter { !it.name.equals("Menu", ignoreCase = true) && !it.name.startsWith(".") }
         } catch (e: Exception) {
             return null
         }
 
         val subFolders = childResources.filter {
-            it.isDirectory && !AnimeFilenameParser.isNonSeasonFolder(it.name) && !it.name.equals("BDMV", ignoreCase = true)
+            it.isDirectory && !AnimeFilenameParser.isNonSeasonFolder(it.name) && !it.name.equals("BDMV", ignoreCase = true) && !it.name.equals("STREAM", ignoreCase = true)
         }
         val (directVideos, directSubs) = scanDirectoryVideos(webDavClient, childResources)
 
@@ -123,7 +175,7 @@ object AnimeWebDavScanner {
         val parentSubtitles = mutableListOf<WebDavResource>()
         parentSubtitles.addAll(directSubs)
 
-        // 1. If direct videos exist in this anime folder:
+        // 1. If direct videos (or BDMV/STREAM videos) exist in this anime folder:
         if (directVideos.isNotEmpty()) {
             directVideos.forEach { vFile ->
                 val parsed = AnimeFilenameParser.parseEpisodeFilename(
@@ -131,6 +183,9 @@ object AnimeWebDavScanner {
                     parentFolderName = rawFolderName
                 )
                 val existingEp = animeDao.getEpisodeByVideoUrl(vFile.path)
+
+                // Match best external subtitle if available
+                val matchedSub = findBestSubtitle(parentSubtitles, vFile.name.substringBeforeLast("."), parsed.episodeNumber, parsed.seasonName)
 
                 episodesList.add(
                     AnimeEpisodeEntity(
@@ -141,7 +196,7 @@ object AnimeWebDavScanner {
                         episodeNumber = parsed.episodeNumber,
                         title = parsed.cleanTitle,
                         videoUrl = vFile.path,
-                        subtitleUrl = null,
+                        subtitleUrl = existingEp?.subtitleUrl ?: matchedSub?.path,
                         durationMs = existingEp?.durationMs ?: 0L,
                         lastPlayedPositionMs = existingEp?.lastPlayedPositionMs ?: 0L,
                         isWatched = existingEp?.isWatched ?: false,
@@ -163,19 +218,19 @@ object AnimeWebDavScanner {
                 val subRawName = sub.name.ifBlank { sub.path.trimEnd('/').substringAfterLast('/') }
                 val subChildren = try { 
                     webDavClient.listFiles(sub.path)
-                        .filter { !it.name.equals("Menu", ignoreCase = true) && !it.name.startsWith(".") && !it.name.endsWith(".m2ts", ignoreCase = true) && !it.name.equals("BDMV", ignoreCase = true) }
+                        .filter { !it.name.equals("Menu", ignoreCase = true) && !it.name.startsWith(".") }
                 } catch (e: Exception) { emptyList() }
                 val (subVideos, subSubs) = scanDirectoryVideos(webDavClient, subChildren)
                 val combinedSubs = (subSubs + parentSubtitles).toMutableList()
 
                 // Check if this subfolder itself has a nested disc/edition subfolder
-                val subSubFolders = subChildren.filter { it.isDirectory && !AnimeFilenameParser.isNonSeasonFolder(it.name) && !it.name.equals("BDMV", ignoreCase = true) }
+                val subSubFolders = subChildren.filter { it.isDirectory && !AnimeFilenameParser.isNonSeasonFolder(it.name) && !it.name.equals("BDMV", ignoreCase = true) && !it.name.equals("STREAM", ignoreCase = true) }
                 val actualVideos = if (subVideos.isEmpty() && subSubFolders.isNotEmpty()) {
                     val collected = mutableListOf<WebDavResource>()
                     for (ss in subSubFolders) {
                         val ssChildren = try { 
                             webDavClient.listFiles(ss.path)
-                                .filter { !it.name.equals("Menu", ignoreCase = true) && !it.name.startsWith(".") && !it.name.endsWith(".m2ts", ignoreCase = true) && !it.name.equals("BDMV", ignoreCase = true) }
+                                .filter { !it.name.equals("Menu", ignoreCase = true) && !it.name.startsWith(".") }
                         } catch (e: Exception) { emptyList() }
                         val (ssVideos, ssSubs) = scanDirectoryVideos(webDavClient, ssChildren)
                         collected.addAll(ssVideos)
@@ -200,7 +255,6 @@ object AnimeWebDavScanner {
                             "正片"
                         }
                         else -> {
-                            // Use the subfolder's specific name (e.g. "绯弹的亚里亚 AA")
                             subRawName
                         }
                     }
@@ -212,6 +266,7 @@ object AnimeWebDavScanner {
                             grandParentFolderName = rawFolderName
                         )
                         val existingEp = animeDao.getEpisodeByVideoUrl(vFile.path)
+                        val matchedSub = findBestSubtitle(combinedSubs, vFile.name.substringBeforeLast("."), parsed.episodeNumber, parsed.seasonName)
 
                         episodesList.add(
                             AnimeEpisodeEntity(
@@ -222,7 +277,7 @@ object AnimeWebDavScanner {
                                 episodeNumber = parsed.episodeNumber,
                                 title = parsed.cleanTitle,
                                 videoUrl = vFile.path,
-                                subtitleUrl = null,
+                                subtitleUrl = existingEp?.subtitleUrl ?: matchedSub?.path,
                                 durationMs = existingEp?.durationMs ?: 0L,
                                 lastPlayedPositionMs = existingEp?.lastPlayedPositionMs ?: 0L,
                                 isWatched = existingEp?.isWatched ?: false,
@@ -279,34 +334,51 @@ object AnimeWebDavScanner {
         webDavClient: WebDavClient,
         animeDao: AnimeDao,
         context: Context,
-        onProgress: ((current: Int, total: Int, name: String) -> Unit)? = null
+        onProgress: ((current: Int, total: Int, name: String) -> Unit)? = null,
+        onAnimeImported: ((title: String, epCount: Int) -> Unit)? = null
     ): Int = withContext(Dispatchers.IO) {
-        Log.d(TAG, "Starting ultra-fast concurrent WebDAV scan...")
-        val rootResources = webDavClient.listFiles("")
-            .filter { !it.name.equals("Menu", ignoreCase = true) && !it.name.startsWith(".") }
+        Log.d(TAG, "Starting smooth concurrent WebDAV scan...")
+        val rootResources = try {
+            webDavClient.listFiles("")
+                .filter { !it.name.equals("Menu", ignoreCase = true) && !it.name.startsWith(".") }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to list root files from WebDAV", e)
+            throw e
+        }
 
+        val directRootVideos = filterCandidateVideoFiles(rootResources)
         val rootFolders = rootResources.filter {
-            it.isDirectory && !AnimeFilenameParser.isNonSeasonFolder(it.name) && !it.name.equals("BDMV", ignoreCase = true)
+            it.isDirectory && !AnimeFilenameParser.isNonSeasonFolder(it.name) && !it.name.equals("BDMV", ignoreCase = true) && !it.name.equals("STREAM", ignoreCase = true)
         }
 
         val candidateAnimeFolders = mutableListOf<WebDavResource>()
         val preloadedChildrenMap = java.util.concurrent.ConcurrentHashMap<String, List<WebDavResource>>()
-        val discoverySemaphore = Semaphore(10)
+        val discoverySemaphore = Semaphore(12) // High concurrency for lightning-fast directory discovery
 
-        coroutineScope {
+        // If direct video files exist at root level, add root as a candidate anime
+        if (directRootVideos.isNotEmpty()) {
+            val rootName = rootResources.firstOrNull()?.path?.trimEnd('/')?.substringAfterLast('/')?.ifBlank { "番剧" } ?: "番剧"
+            candidateAnimeFolders.add(WebDavResource(name = rootName, isDirectory = true, path = "", size = 0))
+            preloadedChildrenMap[""] = rootResources
+        }
+
+        supervisorScope {
             rootFolders.map { folder ->
                 async {
                     discoverySemaphore.withPermit {
                         val childResources = try { 
                             webDavClient.listFiles(folder.path)
-                                .filter { !it.name.equals("Menu", ignoreCase = true) && !it.name.startsWith(".") && !it.name.endsWith(".m2ts", ignoreCase = true) && !it.name.equals("BDMV", ignoreCase = true) }
-                        } catch (e: Exception) { emptyList() }
+                                .filter { !it.name.equals("Menu", ignoreCase = true) && !it.name.startsWith(".") }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to list folder ${folder.name}: ${e.message}")
+                            emptyList()
+                        }
                         
                         preloadedChildrenMap[folder.path] = childResources
 
                         val directVideos = filterCandidateVideoFiles(childResources)
                         val subFolders = childResources.filter {
-                            it.isDirectory && !AnimeFilenameParser.isNonSeasonFolder(it.name) && !it.name.equals("BDMV", ignoreCase = true)
+                            it.isDirectory && !AnimeFilenameParser.isNonSeasonFolder(it.name) && !it.name.equals("BDMV", ignoreCase = true) && !it.name.equals("STREAM", ignoreCase = true)
                         }
                         val hasSeasonFolders = subFolders.any { SEASON_REGEX.containsMatchIn(it.name) }
 
@@ -338,16 +410,17 @@ object AnimeWebDavScanner {
         }
 
         val total = candidateAnimeFolders.size
+        Log.d(TAG, "Discovered $total candidate anime folders for scanning")
         if (total == 0) return@withContext 0
 
         val progressCounter = AtomicInteger(0)
-        val semaphore = Semaphore(12) // High parallel workers for ultra fast scanning
-        val scannedCount = AtomicInteger(0)
+        val successCounter = AtomicInteger(0)
+        val scanSemaphore = Semaphore(8) // Boosted parallel anime scan
 
-        coroutineScope {
+        supervisorScope {
             candidateAnimeFolders.map { folder ->
                 async {
-                    semaphore.withPermit {
+                    scanSemaphore.withPermit {
                         val currentIdx = progressCounter.incrementAndGet()
                         val rawFolderName = folder.name.ifBlank {
                             folder.path.trimEnd('/').substringAfterLast('/')
@@ -366,14 +439,11 @@ object AnimeWebDavScanner {
                             )
 
                             if (scanResult != null && scanResult.episodes.isNotEmpty()) {
-                                val animeEntity = scanResult.animeEntity
-                                val episodes = scanResult.episodes
-
-                                val animeId = animeDao.insertAnime(animeEntity)
-                                animeDao.deleteEpisodesByAnimeId(animeId)
-                                animeDao.insertEpisodes(episodes.map { it.copy(animeId = animeId) })
-
-                                scannedCount.incrementAndGet()
+                                // Incremental save so UI updates immediately in real time
+                                animeDao.saveScannedAnime(scanResult.animeEntity, scanResult.episodes)
+                                successCounter.incrementAndGet()
+                                Log.d(TAG, "Successfully scanned and saved: $cleanTitle (${scanResult.episodes.size} eps)")
+                                onAnimeImported?.invoke(cleanTitle, scanResult.episodes.size)
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Error scanning anime folder $rawFolderName", e)
@@ -383,7 +453,9 @@ object AnimeWebDavScanner {
             }.awaitAll()
         }
 
-        scannedCount.get()
+        val importedCount = successCounter.get()
+        Log.d(TAG, "Scan completed, total imported: $importedCount")
+        importedCount
     }
 
     suspend fun refreshSingleAnime(

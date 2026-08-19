@@ -1,6 +1,9 @@
 package com.example.epubreader.ui.components
 
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -135,9 +138,32 @@ fun MainScaffold(navController: NavHostController) {
 
     val isReaderRoute = currentRoute?.startsWith("reader") == true
     val isNoveliaRoute = currentRoute == "novelia"
-    val showBottomBar = !isReaderActive && !isReaderRoute && !isNoveliaRoute && activePlayingPair == null && !isHanimePlaying
+
+    var isBottomBarVisibleByScroll by remember { mutableStateOf(true) }
+
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val delta = available.y
+                if (delta < -8f) {
+                    // Finger swiping up (scrolling down to read more) -> hide bottom bar
+                    isBottomBarVisibleByScroll = false
+                } else if (delta > 8f) {
+                    // Finger swiping down (scrolling up towards top) -> show bottom bar
+                    isBottomBarVisibleByScroll = true
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     var selectedTabIndex by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+
+    LaunchedEffect(selectedTabIndex, currentRoute) {
+        isBottomBarVisibleByScroll = true
+    }
+
+    val showBottomBar = !isReaderActive && !isReaderRoute && !isNoveliaRoute && activePlayingPair == null && !isHanimePlaying && isBottomBarVisibleByScroll
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Layer 1: Background with pure harmonious theme gradient
@@ -152,6 +178,7 @@ fun MainScaffold(navController: NavHostController) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .nestedScroll(nestedScrollConnection)
                 .layerBackdrop(contentBackdrop)
         ) {
             // Tab 0: Bookshelf (Preloaded)

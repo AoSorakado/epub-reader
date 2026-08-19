@@ -38,9 +38,12 @@ object AnimeMetadataScraper {
         .build()
 
     suspend fun scrape(cleanTitle: String, rawFolderName: String = ""): ScrapedAnimeInfo? = withContext(Dispatchers.IO) {
+        val cleanedRaw = if (rawFolderName.isNotBlank()) AnimeFilenameParser.cleanAnimeFolderName(rawFolderName) else ""
         val keywords = listOf(
             cleanTitle,
             cleanTitle.replace(Regex("[0-9]+$"), "").trim(),
+            cleanedRaw,
+            cleanedRaw.replace(Regex("[0-9]+$"), "").trim(),
             rawFolderName.replace(Regex("(?i)^[A-Z]\\s*4k\\s*"), "").trim()
         ).distinct().filter { it.isNotBlank() }
 

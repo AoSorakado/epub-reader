@@ -85,4 +85,21 @@ interface AnimeDao {
 
     @Query("DELETE FROM animes")
     suspend fun clearAllAnimes()
+
+    @Transaction
+    suspend fun saveScannedAnime(anime: AnimeEntity, episodes: List<AnimeEpisodeEntity>): Long {
+        val animeId = insertAnime(anime)
+        deleteEpisodesByAnimeId(animeId)
+        insertEpisodes(episodes.map { it.copy(animeId = animeId) })
+        return animeId
+    }
+
+    @Transaction
+    suspend fun saveAllScannedAnimes(results: List<Pair<AnimeEntity, List<AnimeEpisodeEntity>>>) {
+        for ((anime, episodes) in results) {
+            val animeId = insertAnime(anime)
+            deleteEpisodesByAnimeId(animeId)
+            insertEpisodes(episodes.map { it.copy(animeId = animeId) })
+        }
+    }
 }

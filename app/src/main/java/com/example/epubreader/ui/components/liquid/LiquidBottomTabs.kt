@@ -98,6 +98,9 @@ fun LiquidBottomTabs(
 
         var highlightTrigger by remember { mutableStateOf<InteractiveHighlight?>(null) }
 
+        var didDrag by remember { mutableStateOf(false) }
+        var dragStartOffset by remember { mutableStateOf(Offset.Zero) }
+
         val dampedDragAnimation = remember(animationScope, tabsCount) {
             DampedDragAnimation(
                 animationScope = animationScope,
@@ -107,15 +110,26 @@ fun LiquidBottomTabs(
                 initialScale = 1f,
                 pressedScale = 78f / 56f,
                 onDragStarted = { position ->
-                    highlightTrigger?.press()
+                    highlightTrigger?.press(position)
+                    dragStartOffset = position
+                    didDrag = false
                     val touchX = if (currentIsLtr) position.x else currentConstraints.maxWidth.toFloat() - position.x
                     val slotWidth = (currentConstraints.maxWidth.toFloat() / tabsCount.coerceAtLeast(1)).coerceAtLeast(1f)
-                    val targetTab = (touchX / slotWidth).toInt().fastCoerceIn(0, tabsCount - 1).toFloat()
-                    snapToValue(targetTab)
+                    val targetTab = (touchX / slotWidth).toInt().fastCoerceIn(0, tabsCount - 1)
+                    if (abs(targetValue - targetTab.toFloat()) > 0.01f) {
+                        animateToValue(targetTab.toFloat())
+                        currentOnTabSelected(targetTab)
+                    }
                 },
                 onDragStopped = {
                     highlightTrigger?.release()
-                    val targetIndex = value.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
+                    val targetIndex = if (didDrag) {
+                        value.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
+                    } else {
+                        val touchX = if (currentIsLtr) dragStartOffset.x else currentConstraints.maxWidth.toFloat() - dragStartOffset.x
+                        val slotWidth = (currentConstraints.maxWidth.toFloat() / tabsCount.coerceAtLeast(1)).coerceAtLeast(1f)
+                        (touchX / slotWidth).toInt().fastCoerceIn(0, tabsCount - 1)
+                    }
                     animateToValue(targetIndex.toFloat())
                     animationScope.launch {
                         offsetAnimation.animateTo(
@@ -126,6 +140,9 @@ fun LiquidBottomTabs(
                     currentOnTabSelected(targetIndex)
                 },
                 onDrag = { _, dragAmount ->
+                    if (abs(dragAmount.x) > 1.5f || abs(dragAmount.y) > 1.5f) {
+                        didDrag = true
+                    }
                     if (dragAmount.x != 0f) {
                         val tw = currentTabWidth.coerceAtLeast(1f)
                         val delta = dragAmount.x / tw * if (currentIsLtr) 1f else -1f

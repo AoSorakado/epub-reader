@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -200,6 +201,13 @@ fun AnimePlayerScreen(
                 currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+                // Enable HDR Wide Color Gamut mode for HDR10 / UHD displays
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    try {
+                        window.colorMode = ActivityInfo.COLOR_MODE_HDR
+                    } catch (e: Throwable) {}
+                }
+
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                     val lp = window.attributes
                     lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -216,6 +224,13 @@ fun AnimePlayerScreen(
                     insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
                     currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        try {
+                            window.colorMode = ActivityInfo.COLOR_MODE_DEFAULT
+                        } catch (e: Throwable) {}
+                    }
+
                     val lp = window.attributes
                     lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
@@ -244,6 +259,7 @@ fun AnimePlayerScreen(
     var resizeMode by remember { mutableStateOf(MpvPlayerManager.ResizeMode.FIT) }
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
     var isSpeedBoosting by remember { mutableStateOf(false) }
+    var useHdrPassthrough by remember { mutableStateOf(false) }
 
     // Screen Brightness State (Follows system brightness by default to prevent hardware overheating)
     var playerBrightness by remember {
@@ -448,28 +464,60 @@ fun AnimePlayerScreen(
         return "$scheme$host$encodedPath"
     }
 
-    val mpvPlayer = remember(episode.id) {
-        val player = MpvPlayerManager(context)
-        val safeVideoUrl = encodeMediaUrl(episode.videoUrl)
-        val headers = if (webDavAuth != null && webDavAuth.first.isNotBlank()) {
+    val safeVideoUrl = remember(episode.videoUrl) { encodeMediaUrl(episode.videoUrl) }
+    val mediaHeaders = remember(webDavAuth) {
+        if (webDavAuth != null && webDavAuth.first.isNotBlank()) {
             mapOf("Authorization" to Credentials.basic(webDavAuth.first, webDavAuth.second))
         } else null
+    }
+
+    val mpvPlayer = remember(episode.id) {
+        val player = MpvPlayerManager(context)
         val resumePos = if (episode.lastPlayedPositionMs > 1000L && (episode.durationMs <= 0L || episode.lastPlayedPositionMs < (episode.durationMs * 0.95f))) {
             episode.lastPlayedPositionMs
         } else 0L
-        player.loadFile(safeVideoUrl, headers, resumePos)
+        player.loadFile(safeVideoUrl, mediaHeaders, resumePos)
         player.play()
         player
     }
 
-    val isPlaying = mpvPlayer.isPlaying.value
-    val isBuffering = mpvPlayer.isBuffering.value
+    var hdrExoPositionMs by remember { mutableLongStateOf(0L) }
+    var hdrExoDurationMs by remember { mutableLongStateOf(0L) }
+    var isHdrExoPlaying by remember { mutableStateOf(true) }
+    var isHdrExoBuffering by remember { mutableStateOf(false) }
+    var hdrExoSeekTargetMs by remember { mutableStateOf<Long?>(null) }
+    var hdrStartPositionMs by remember { mutableLongStateOf(0L) }
+
+    val onToggleHdrPassthrough: (Boolean) -> Unit = { enableHdr ->
+        if (enableHdr != useHdrPassthrough) {
+            if (enableHdr) {
+                // Switching from mpv to ExoPlayer: capture position, pause mpv
+                val pos = mpvPlayer.positionMs.value
+                hdrStartPositionMs = pos
+                hdrExoPositionMs = pos
+                isHdrExoPlaying = mpvPlayer.isPlaying.value
+                mpvPlayer.pause()
+                useHdrPassthrough = true
+            } else {
+                // Switching from ExoPlayer back to mpv: restore position in mpv
+                val pos = hdrExoPositionMs
+                useHdrPassthrough = false
+                mpvPlayer.seekTo(pos)
+                if (isHdrExoPlaying) {
+                    mpvPlayer.play()
+                }
+            }
+        }
+    }
+
+    val isPlaying = if (useHdrPassthrough) isHdrExoPlaying else mpvPlayer.isPlaying.value
+    val isBuffering = if (useHdrPassthrough) isHdrExoBuffering else mpvPlayer.isBuffering.value
 
     DisposableEffect(episode.id) {
         onDispose {
             try {
-                val currentPos = mpvPlayer.positionMs.value
-                val currentDur = mpvPlayer.durationMs.value
+                val currentPos = if (useHdrPassthrough) hdrExoPositionMs else mpvPlayer.positionMs.value
+                val currentDur = if (useHdrPassthrough && hdrExoDurationMs > 0L) hdrExoDurationMs else mpvPlayer.durationMs.value
                 if (currentPos > 0L) {
                     onProgressUpdate?.invoke(currentPos, currentDur)
                 }
@@ -489,8 +537,8 @@ fun AnimePlayerScreen(
     // Auto-persist when pausing
     LaunchedEffect(isPlaying) {
         if (!isPlaying) {
-            val pos = mpvPlayer.positionMs.value
-            val dur = mpvPlayer.durationMs.value
+            val pos = if (useHdrPassthrough) hdrExoPositionMs else mpvPlayer.positionMs.value
+            val dur = if (useHdrPassthrough && hdrExoDurationMs > 0L) hdrExoDurationMs else mpvPlayer.durationMs.value
             if (pos > 0L) {
                 onProgressUpdate?.invoke(pos, dur)
             }
@@ -498,15 +546,27 @@ fun AnimePlayerScreen(
     }
 
     val togglePlayPause: () -> Unit = {
-        mpvPlayer.togglePlayPause()
+        if (useHdrPassthrough) {
+            isHdrExoPlaying = !isHdrExoPlaying
+        } else {
+            mpvPlayer.togglePlayPause()
+        }
     }
 
     val seekPlayerTo: (Long) -> Unit = { targetMs ->
-        mpvPlayer.seekTo(targetMs)
+        if (useHdrPassthrough) {
+            hdrExoSeekTargetMs = targetMs
+            hdrExoPositionMs = targetMs
+        } else {
+            mpvPlayer.seekTo(targetMs)
+        }
     }
 
     val setPlayerSpeed: (Float) -> Unit = { speed ->
-        mpvPlayer.setSpeed(speed)
+        playbackSpeed = speed
+        if (!useHdrPassthrough) {
+            mpvPlayer.setSpeed(speed)
+        }
     }
 
     // Sync mpv tracks to UI states
@@ -699,14 +759,21 @@ fun AnimePlayerScreen(
         var rollingBitrateAvg = 0f
 
         while (true) {
-            currentPositionMs = mpvPlayer.positionMs.value
-            val playerDur = mpvPlayer.durationMs.value
-            if (playerDur > 0L) {
-                durationMs = playerDur
-            } else if (episode.durationMs > 0L && durationMs <= 1L) {
-                durationMs = episode.durationMs
+            if (useHdrPassthrough) {
+                currentPositionMs = hdrExoPositionMs
+                if (hdrExoDurationMs > 0L) {
+                    durationMs = hdrExoDurationMs
+                }
+            } else {
+                currentPositionMs = mpvPlayer.positionMs.value
+                val playerDur = mpvPlayer.durationMs.value
+                if (playerDur > 0L) {
+                    durationMs = playerDur
+                } else if (episode.durationMs > 0L && durationMs <= 1L) {
+                    durationMs = episode.durationMs
+                }
+                bufferedPositionMs = currentPositionMs + mpvPlayer.bufferedDurationMs.value
             }
-            bufferedPositionMs = currentPositionMs + mpvPlayer.bufferedDurationMs.value
 
             // Dynamic Real-time Bitrate Calculation
             val now = System.currentTimeMillis()
@@ -776,26 +843,29 @@ fun AnimePlayerScreen(
     val frameCache = remember { android.util.LruCache<Long, android.graphics.Bitmap>(64) }
 
     LaunchedEffect(episode.videoUrl) {
-        withContext(Dispatchers.IO) {
-            try {
-                val r = MediaMetadataRetriever()
-                val uri = android.net.Uri.parse(episode.videoUrl)
-                if (uri.scheme == "content" || uri.scheme == "file") {
-                    r.setDataSource(context, uri)
-                } else if (episode.videoUrl.startsWith("/")) {
-                    r.setDataSource(episode.videoUrl)
-                } else {
-                    val headers = HashMap<String, String>()
-                    if (webDavAuth != null) {
-                        val credentials = "${webDavAuth.first}:${webDavAuth.second}"
-                        val authHeader = "Basic " + android.util.Base64.encodeToString(credentials.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
-                        headers["Authorization"] = authHeader
+        val lowerUrl = episode.videoUrl.lowercase()
+        if (!lowerUrl.endsWith(".m2ts") && !lowerUrl.endsWith(".ts")) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val r = MediaMetadataRetriever()
+                    val uri = android.net.Uri.parse(episode.videoUrl)
+                    if (uri.scheme == "content" || uri.scheme == "file") {
+                        r.setDataSource(context, uri)
+                    } else if (episode.videoUrl.startsWith("/")) {
+                        r.setDataSource(episode.videoUrl)
+                    } else {
+                        val headers = HashMap<String, String>()
+                        if (webDavAuth != null) {
+                            val credentials = "${webDavAuth.first}:${webDavAuth.second}"
+                            val authHeader = "Basic " + android.util.Base64.encodeToString(credentials.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+                            headers["Authorization"] = authHeader
+                        }
+                        r.setDataSource(episode.videoUrl, headers)
                     }
-                    r.setDataSource(episode.videoUrl, headers)
+                    mediaRetriever = r
+                } catch (e: Throwable) {
+                    android.util.Log.w("AnimePlayer", "MediaMetadataRetriever async init warning: ${e.message}")
                 }
-                mediaRetriever = r
-            } catch (e: Throwable) {
-                android.util.Log.w("AnimePlayer", "MediaMetadataRetriever async init warning: ${e.message}")
             }
         }
     }
@@ -846,8 +916,8 @@ fun AnimePlayerScreen(
 
     val vWidth = mpvPlayer.videoWidth.value
     val vHeight = mpvPlayer.videoHeight.value
-    val isHdr = false
-    val hdrType = "SDR 标准动态范围"
+    val isHdr = mpvPlayer.isHdr.value
+    val hdrType = mpvPlayer.hdrType.value
 
     val resolutionLabel = when {
         vHeight >= 2160 || vWidth >= 3840 -> "4K"
@@ -861,18 +931,57 @@ fun AnimePlayerScreen(
         else -> "1080P"
     }
 
-    val qualityBadgeText = resolutionLabel
+    val qualityBadgeText = if (isHdr) "$resolutionLabel HDR" else resolutionLabel
+
+    LaunchedEffect(isHdr, useHdrPassthrough) {
+        val shouldTriggerHdr = isHdr || useHdrPassthrough
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            activity?.window?.colorMode = if (shouldTriggerHdr) {
+                ActivityInfo.COLOR_MODE_HDR
+            } else {
+                ActivityInfo.COLOR_MODE_DEFAULT
+            }
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            activity?.window?.let { win ->
+                val lp = win.attributes
+                lp.desiredHdrHeadroom = if (shouldTriggerHdr) 4.0f else 1.0f
+                win.attributes = lp
+            }
+        }
+    }
 
     val handleExit: () -> Unit = {
-        val currentPos = mpvPlayer.positionMs.value
-        val currentDur = mpvPlayer.durationMs.value
+        val currentPos = if (useHdrPassthrough) hdrExoPositionMs else mpvPlayer.positionMs.value
+        val currentDur = if (useHdrPassthrough && hdrExoDurationMs > 0L) hdrExoDurationMs else mpvPlayer.durationMs.value
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         activity?.window?.let { win ->
             val lp = win.attributes
             lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                lp.desiredHdrHeadroom = 1.0f
+            }
             win.attributes = lp
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                win.colorMode = ActivityInfo.COLOR_MODE_DEFAULT
+            }
         }
         onExit(currentPos, currentDur)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            activity?.window?.let { win ->
+                val lp = win.attributes
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    lp.desiredHdrHeadroom = 1.0f
+                }
+                win.attributes = lp
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    win.colorMode = ActivityInfo.COLOR_MODE_DEFAULT
+                }
+            }
+        }
     }
 
     BackHandler {
@@ -902,20 +1011,34 @@ fun AnimePlayerScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 1. Video Surface, Subtitles & Danmaku layer - captured by playerBackdrop only when controls/sheets need refraction
+        // 1. Video Surface, Subtitles & Danmaku layer - captured by playerBackdrop
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(
-                    if (needsBackdrop) Modifier.layerBackdrop(playerBackdrop) else Modifier
-                )
+                .layerBackdrop(playerBackdrop)
         ) {
             VideoAndDanmakuLayer(
                 mpvPlayer = mpvPlayer,
+                safeVideoUrl = safeVideoUrl,
+                headers = mediaHeaders,
+                useHdrPassthrough = useHdrPassthrough,
+                hdrStartPositionMs = hdrStartPositionMs,
+                isHdrPlaying = isHdrExoPlaying,
+                playbackSpeed = playbackSpeed,
+                hdrSeekCommandMs = hdrExoSeekTargetMs,
+                onHdrPositionUpdate = { current, duration ->
+                    hdrExoPositionMs = current
+                    hdrExoDurationMs = duration
+                },
+                onHdrBufferingUpdate = { buffering ->
+                    isHdrExoBuffering = buffering
+                },
                 danmakuList = danmakuList,
                 positionMsProvider = { currentPositionMs },
                 isPlaying = isPlaying,
                 danmakuConfig = danmakuConfig,
+                resizeMode = resizeMode,
+                onToggleHdrPassthrough = { useHdrPassthrough = it },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -1927,17 +2050,36 @@ fun AnimePlayerScreen(
                             Icon(
                                 imageVector = if (isHdr) Icons.Filled.HdrOn else Icons.Filled.HighQuality,
                                 contentDescription = "画质与片源信息",
-                                tint = if (isHdr) themeAccent else Color.White.copy(alpha = 0.85f),
+                                tint = if (useHdrPassthrough) Color(0xFFFFB800) else if (isHdr) themeAccent else Color.White.copy(alpha = 0.85f),
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(3.dp))
-                            Text(
-                                text = qualityBadgeText,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 4.dp)
-                            )
+                            if (isHdr) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = resolutionLabel,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(start = 2.dp, end = 4.dp)
+                                    )
+                                    Text(
+                                        text = "HDR",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = if (useHdrPassthrough) Color(0xFFFFB800) else themeAccent,
+                                        modifier = Modifier.padding(end = 4.dp)
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = qualityBadgeText,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                )
+                            }
                         }
 
                         // 2. iOS style Playback Speed Button with Animated Vertical Roll Transition
@@ -2732,17 +2874,36 @@ fun AnimePlayerScreen(
                         Icon(
                             imageVector = if (isHdr) Icons.Filled.HdrOn else Icons.Filled.HighQuality,
                             contentDescription = "画质与片源信息",
-                            tint = if (isHdr) themeAccent else Color.White.copy(alpha = 0.85f),
+                            tint = if (useHdrPassthrough) Color(0xFFFFB800) else if (isHdr) themeAccent else Color.White.copy(alpha = 0.85f),
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                            text = qualityBadgeText,
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        )
+                        if (isHdr) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = resolutionLabel,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(start = 2.dp, end = 4.dp)
+                                )
+                                Text(
+                                    text = "HDR",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (useHdrPassthrough) Color(0xFFFFB800) else themeAccent,
+                                    modifier = Modifier.padding(end = 4.dp)
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = qualityBadgeText,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            )
+                        }
                     }
                 }
 
@@ -2840,6 +3001,9 @@ fun AnimePlayerScreen(
                         cacheReadaheadStr = "150 MB (60s 预读缓冲)",
                         playerBackdrop = playerBackdrop,
                         themeAccent = themeAccent,
+                        mpvPlayer = mpvPlayer,
+                        useHdrPassthrough = useHdrPassthrough,
+                        onToggleHdrPassthrough = onToggleHdrPassthrough,
                         onClose = { showQualitySheet = false }
                     )
                 }
@@ -2857,25 +3021,56 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 @Composable
 private fun VideoAndDanmakuLayer(
     mpvPlayer: MpvPlayerManager,
+    safeVideoUrl: String,
+    headers: Map<String, String>?,
+    useHdrPassthrough: Boolean,
+    hdrStartPositionMs: Long,
+    isHdrPlaying: Boolean,
+    playbackSpeed: Float,
+    hdrSeekCommandMs: Long?,
+    onHdrPositionUpdate: (Long, Long) -> Unit,
+    onHdrBufferingUpdate: (Boolean) -> Unit,
     danmakuList: List<DanmakuItem>,
     positionMsProvider: () -> Long,
     isPlaying: Boolean,
     danmakuConfig: DanmakuConfig,
+    resizeMode: MpvPlayerManager.ResizeMode = MpvPlayerManager.ResizeMode.FIT,
+    onToggleHdrPassthrough: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier) {
-        AndroidView(
-            factory = { ctx ->
-                MpvVideoView(ctx).apply {
-                    setPlayer(mpvPlayer)
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
+        if (useHdrPassthrough) {
+            // True Hardware HDR Direct Channel: Native Media3 ExoPlayer + SurfaceView (Hardware Composer HDR10 PQ Passthrough)
+            HdrExoPlayerView(
+                videoUrl = safeVideoUrl,
+                headers = headers,
+                startPositionMs = hdrStartPositionMs,
+                isPlaying = isHdrPlaying,
+                playbackSpeed = playbackSpeed,
+                resizeMode = resizeMode,
+                seekCommandMs = hdrSeekCommandMs,
+                onPositionUpdate = onHdrPositionUpdate,
+                onBufferingUpdate = onHdrBufferingUpdate,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            // Standard Channel: mpv TextureView engine (Full ASS subtitle fidelity + Liquid Glass)
+            AndroidView(
+                factory = { ctx ->
+                    MpvVideoView(ctx).apply {
+                        setPlayer(mpvPlayer)
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                },
+                update = { view ->
+                    view.setPlayer(mpvPlayer)
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         DanmakuCanvas(
             danmakuList = danmakuList,

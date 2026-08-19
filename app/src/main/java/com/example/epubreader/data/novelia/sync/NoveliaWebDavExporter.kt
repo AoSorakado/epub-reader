@@ -75,18 +75,37 @@ class NoveliaWebDavExporter(
             val downloadUrl = volume.engineDownloadUrls[engine] 
                 ?: volume.defaultDownloadUrl.ifEmpty { "/api/wenku/${novel.id}/file/${volume.id}?engine=${engine.code}" }
 
-            val volIndexStr = "第${volume.volumeIndex}卷"
             val rawVolName = volume.volumeName.replace(".epub", "", ignoreCase = true).trim()
-            val cleanVolName = truncateUtf8(sanitizeFilename(rawVolName), 40)
-            // Ensure volume index is ALWAYS in the filename to prevent collision/overwriting
-            val remoteFilename = if (cleanVolName.contains(volIndexStr) || cleanVolName.contains("${volume.volumeIndex}")) {
-                "$cleanVolName [${engine.displayName}].epub"
+            val cleanVolName = truncateUtf8(sanitizeFilename(rawVolName), 60)
+
+            // Extract subtitle or real volume part if repeated
+            val subtitlePart = if (cleanVolName.startsWith(novel.title, ignoreCase = true) && cleanVolName.length > novel.title.length) {
+                cleanVolName.substring(novel.title.length).trimStart(' ', '-', '_', '：', ':', '\t')
             } else {
-                "${volIndexStr}_$cleanVolName [${engine.displayName}].epub"
+                cleanVolName
             }
+
+            val finalFileNameBase = if (subtitlePart.isNotBlank() && subtitlePart != cleanVolName) {
+                "${novel.title} $subtitlePart"
+            } else if (cleanVolName.isNotBlank()) {
+                cleanVolName
+            } else {
+                "${novel.title} 第${volume.volumeIndex}卷"
+            }
+
+            val safeFileBase = truncateUtf8(sanitizeFilename(finalFileNameBase), 80)
+            val remoteFilename = "$safeFileBase [${engine.displayName}].epub"
             val remoteFilePath = "$seriesFolder/$remoteFilename"
 
-            onProgress(0.05f, "正在连接 Novelia 下载 ${volIndexStr}...")
+            val displayVolTitle = if (subtitlePart.isNotBlank() && subtitlePart != cleanVolName) {
+                "${novel.title} $subtitlePart"
+            } else if (cleanVolName.isNotBlank()) {
+                cleanVolName
+            } else {
+                "${novel.title} 第${volume.volumeIndex}卷"
+            }
+
+            onProgress(0.05f, "正在连接 Novelia 下载 ${subtitlePart.ifEmpty { "电子书" }}...")
 
             // Download into temporary cache file
             val tempDir = File(context.cacheDir, "novelia_temp").apply { mkdirs() }
@@ -115,7 +134,7 @@ class NoveliaWebDavExporter(
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                // Ignore cover extract failure
             }
 
             // Fallback to online cover if extract returned null
@@ -146,15 +165,14 @@ class NoveliaWebDavExporter(
             }
 
             // Register in BookDao as Cloud Book (isWebDav = true, filePath = remoteFilePath)
-            val bookTitle = "${novel.title} $volIndexStr"
             val existingBook = bookDao.getAllBooksList().firstOrNull {
-                it.filePath == remoteFilePath || it.title.trim().equals(bookTitle.trim(), ignoreCase = true)
+                it.filePath == remoteFilePath || it.title.trim().equals(displayVolTitle.trim(), ignoreCase = true)
             }
 
             if (existingBook != null) {
                 bookDao.updateBook(
                     existingBook.copy(
-                        title = bookTitle,
+                        title = displayVolTitle,
                         filePath = remoteFilePath,
                         coverImage = coverImagePath ?: existingBook.coverImage,
                         isWebDav = true,
@@ -163,7 +181,7 @@ class NoveliaWebDavExporter(
                 )
             } else {
                 val bookEntity = BookEntity(
-                    title = bookTitle,
+                    title = displayVolTitle,
                     author = novel.author.ifEmpty { "未知作者" },
                     coverImage = coverImagePath,
                     filePath = remoteFilePath,
