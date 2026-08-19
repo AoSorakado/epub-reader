@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -257,8 +258,9 @@ fun ChapterSelectorDialogContent(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 contentPadding = PaddingValues(bottom = 4.dp)
             ) {
-                items(availableChapters) { chapter ->
-                    val isActive = currentPositionMs >= chapter.startMs
+                itemsIndexed(availableChapters) { index, chapter ->
+                    val nextChapterStart = availableChapters.getOrNull(index + 1)?.startMs ?: Long.MAX_VALUE
+                    val isActive = currentPositionMs >= chapter.startMs && currentPositionMs < nextChapterStart
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

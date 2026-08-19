@@ -106,7 +106,7 @@ class DampedDragAnimation(
         val coerced = value.coerceIn(valueRange)
         dragTarget = coerced
         animationScope.launch {
-            launch { valueAnimation.animateTo(coerced, valueAnimationSpec) }
+            valueAnimation.animateTo(coerced, valueAnimationSpec)
         }
     }
 
@@ -114,7 +114,7 @@ class DampedDragAnimation(
         val coerced = value.coerceIn(valueRange)
         dragTarget = coerced
         animationScope.launch {
-            launch { valueAnimation.snapTo(coerced) }
+            valueAnimation.snapTo(coerced)
         }
     }
 
@@ -124,7 +124,7 @@ class DampedDragAnimation(
                 press()
                 val coerced = value.coerceIn(valueRange)
                 dragTarget = coerced
-                launch { valueAnimation.animateTo(coerced, valueAnimationSpec) }
+                valueAnimation.animateTo(coerced, valueAnimationSpec)
                 release()
             }
         }

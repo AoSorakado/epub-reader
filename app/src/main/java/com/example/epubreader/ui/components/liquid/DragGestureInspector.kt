@@ -19,18 +19,17 @@ suspend fun PointerInputScope.inspectDragGestures(
     onDrag: (change: PointerInputChange, dragAmount: Offset) -> Unit
 ) {
     awaitEachGesture {
-        val initialDown = awaitFirstDown(false, PointerEventPass.Initial)
-
-        val down = awaitFirstDown(false)
-        val drag = initialDown
-
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
         onDragStart(down)
-        onDrag(drag, Offset.Zero)
-        val upEvent =
-            drag(
-                pointerId = drag.id,
-                onDrag = { onDrag(it, it.positionChange()) }
-            )
+        val upEvent = drag(
+            pointerId = down.id,
+            onDrag = {
+                val change = it.positionChange()
+                if (change != Offset.Zero) {
+                    onDrag(it, change)
+                }
+            }
+        )
         if (upEvent == null) {
             onDragCancel()
         } else {
@@ -43,44 +42,17 @@ private suspend inline fun AwaitPointerEventScope.drag(
     pointerId: PointerId,
     onDrag: (PointerInputChange) -> Unit
 ): PointerInputChange? {
-    val isPointerUp = currentEvent.changes.fastFirstOrNull { it.id == pointerId }?.pressed != true
-    if (isPointerUp) {
-        return null
-    }
     var pointer = pointerId
     while (true) {
-        val change = awaitDragOrUp(pointer) ?: return null
-        if (change.isConsumed) {
-            return null
-        }
-        if (change.changedToUpIgnoreConsumed()) {
-            return change
-        }
-        onDrag(change)
-        pointer = change.id
-    }
-}
-
-private suspend inline fun AwaitPointerEventScope.awaitDragOrUp(
-    pointerId: PointerId
-): PointerInputChange? {
-    var pointer = pointerId
-    while (true) {
-        val event = awaitPointerEvent()
+        val event = awaitPointerEvent(PointerEventPass.Initial)
         val dragEvent = event.changes.fastFirstOrNull { it.id == pointer } ?: return null
         if (dragEvent.changedToUpIgnoreConsumed()) {
-            val otherDown = event.changes.fastFirstOrNull { it.pressed }
-            if (otherDown == null) {
-                return dragEvent
-            } else {
-                pointer = otherDown.id
-            }
-        } else {
-            val hasDragged = dragEvent.previousPosition != dragEvent.position
-            if (hasDragged) {
-                return dragEvent
-            }
+            return dragEvent
         }
+        if (!dragEvent.pressed) {
+            return null
+        }
+        onDrag(dragEvent)
+        pointer = dragEvent.id
     }
 }
-

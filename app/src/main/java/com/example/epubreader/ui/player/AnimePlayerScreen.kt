@@ -245,10 +245,10 @@ fun AnimePlayerScreen(
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
     var isSpeedBoosting by remember { mutableStateOf(false) }
 
-    // Screen Brightness State (Defaults to 100% full brightness)
+    // Screen Brightness State (Follows system brightness by default to prevent hardware overheating)
     var playerBrightness by remember {
         val cur = activity?.window?.attributes?.screenBrightness ?: -1f
-        mutableFloatStateOf(if (cur in 0.05f..1.0f) cur else 1.0f)
+        mutableFloatStateOf(if (cur in 0.05f..1.0f) cur else -1.0f)
     }
 
     // Gesture HUD States
@@ -2879,7 +2879,7 @@ private fun VideoAndDanmakuLayer(
 
         DanmakuCanvas(
             danmakuList = danmakuList,
-            currentPositionMs = positionMsProvider(),
+            positionMsProvider = positionMsProvider,
             isPlaying = isPlaying,
             config = danmakuConfig,
             modifier = Modifier.fillMaxSize()

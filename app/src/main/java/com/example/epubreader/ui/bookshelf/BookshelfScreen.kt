@@ -472,7 +472,7 @@ fun BookshelfScreen(
 
     val seriesTransition = updateTransition(targetState = isSeriesExpanded, label = "SeriesMorphTransition")
     val seriesExpandProgress by seriesTransition.animateFloat(
-        transitionSpec = { spring(dampingRatio = 0.58f, stiffness = 115f) },
+        transitionSpec = { spring(dampingRatio = 0.70f, stiffness = 140f) },
         label = "seriesMorphProgress"
     ) { if (it) 1f else 0f }
 
@@ -562,6 +562,7 @@ fun BookshelfScreen(
                                 LiquidButton(
                                     onClick = { showSortMenu = true },
                                     backdrop = globalBackdrop,
+                                    shape = CircleShape,
                                     modifier = Modifier
                                         .size(44.dp)
                                         .onGloballyPositioned { coords ->
@@ -800,30 +801,33 @@ fun BookshelfScreen(
                             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                             indication = null
                         ) { },
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.TopStart
                 ) {
-                    // Collapsed Series Card (Fades out)
-                    Box(
-                        modifier = Modifier
-                            .requiredSize(
-                                width = with(density) { sourceBounds.width.toDp() },
-                                height = with(density) { sourceBounds.height.toDp() }
+                    // Collapsed Series Card (Pixel-perfect match to original SeriesCard)
+                    if (boundedProgress < 0.40f) {
+                        val cardAlpha = (1f - (boundedProgress / 0.35f)).coerceIn(0f, 1f)
+                        Box(
+                            modifier = Modifier
+                                .requiredSize(
+                                    width = with(density) { sourceBounds.width.toDp() },
+                                    height = with(density) { sourceBounds.height.toDp() }
+                                )
+                                .graphicsLayer {
+                                    alpha = cardAlpha
+                                }
+                                .padding(10.dp),
+                            contentAlignment = Alignment.TopStart
+                        ) {
+                            SeriesItemContent(
+                                seriesName = seriesTitle,
+                                books = seriesBooks,
+                                isListLayout = layoutMethod == 1,
+                                isDark = isDark,
+                                themeAccent = themeAccent,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor
                             )
-                            .graphicsLayer {
-                                alpha = (1f - progress * 2.8f).coerceIn(0f, 1f)
-                            }
-                            .padding(10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        SeriesItemContent(
-                            seriesName = seriesTitle,
-                            books = seriesBooks,
-                            isListLayout = layoutMethod == 1,
-                            isDark = isDark,
-                            themeAccent = themeAccent,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor
-                        )
+                        }
                     }
 
                     // Expanded Series Content (Fades in inside the morphing glass container with upward drift)
@@ -1481,22 +1485,32 @@ fun BookshelfScreen(
         
         AnimatedVisibility(
             visible = bookToDelete != null,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn() + androidx.compose.animation.scaleIn(
+                animationSpec = spring(dampingRatio = 0.78f, stiffness = 280f),
+                initialScale = 0.85f
+            ),
+            exit = fadeOut() + androidx.compose.animation.scaleOut(
+                animationSpec = spring(dampingRatio = 0.85f, stiffness = 320f),
+                targetScale = 0.85f
+            ),
             modifier = Modifier.fillMaxSize()
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.2f))
                     .pointerInput(Unit) { detectTapGestures { bookToDelete = null } },
                 contentAlignment = Alignment.Center
             ) {
                 bookToDelete?.let { book ->
-                    Box(modifier = Modifier.fillMaxWidth(0.85f).pointerInput(Unit) { detectTapGestures { /* consume clicks inside dialog */ } }) {
+                    Box(modifier = Modifier.fillMaxWidth(0.88f).pointerInput(Unit) { detectTapGestures { /* consume */ } }, contentAlignment = Alignment.Center) {
                         GlassDeleteDialog(
                             bookTitle = book.title,
-                            backdrop = activeBackdrop,
+                            backdrop = bookshelfBackdrop,
+                            isDark = isDark,
+                            primaryTextColor = primaryTextColor,
+                            secondaryTextColor = secondaryTextColor,
+                            themeAccent = themeAccent,
+                            isSeries = false,
                             onDismiss = { bookToDelete = null },
                             onConfirm = {
                                 viewModel.deleteBook(book)
@@ -1510,22 +1524,32 @@ fun BookshelfScreen(
         
         AnimatedVisibility(
             visible = seriesLongPressTarget != null,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn() + androidx.compose.animation.scaleIn(
+                animationSpec = spring(dampingRatio = 0.78f, stiffness = 280f),
+                initialScale = 0.85f
+            ),
+            exit = fadeOut() + androidx.compose.animation.scaleOut(
+                animationSpec = spring(dampingRatio = 0.85f, stiffness = 320f),
+                targetScale = 0.85f
+            ),
             modifier = Modifier.fillMaxSize()
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.2f))
                     .pointerInput(Unit) { detectTapGestures { seriesLongPressTarget = null } },
                 contentAlignment = Alignment.Center
             ) {
                 seriesLongPressTarget?.let { (seriesName, books) ->
-                    Box(modifier = Modifier.fillMaxWidth(0.85f).pointerInput(Unit) { detectTapGestures { /* consume */ } }) {
+                    Box(modifier = Modifier.fillMaxWidth(0.88f).pointerInput(Unit) { detectTapGestures { /* consume */ } }, contentAlignment = Alignment.Center) {
                         GlassDeleteDialog(
-                            bookTitle = "「$seriesName」系列共 ${books.size} 册",
-                            backdrop = activeBackdrop,
+                            bookTitle = "「$seriesName」全系列包含的所有书籍 (${books.size} 本)",
+                            backdrop = bookshelfBackdrop,
+                            isDark = isDark,
+                            primaryTextColor = primaryTextColor,
+                            secondaryTextColor = secondaryTextColor,
+                            themeAccent = themeAccent,
+                            isSeries = true,
                             onDismiss = { seriesLongPressTarget = null },
                             onConfirm = {
                                 books.forEach { viewModel.deleteBook(it) }
@@ -1572,26 +1596,23 @@ fun BookshelfScreen(
                 val menuHeightPx = with(density) { 272.dp.toPx() }
                 val dialogLeft = (btnBounds.right - menuWidthPx).coerceAtLeast(with(density) { 16.dp.toPx() })
                 val dialogTop = btnBounds.bottom + with(density) { 6.dp.toPx() }
+                val dialogBounds = Rect(dialogLeft, dialogTop, dialogLeft + menuWidthPx, dialogTop + menuHeightPx)
 
-                val sourceCenterX = btnBounds.left + btnBounds.width / 2f
-                val sourceCenterY = btnBounds.top + btnBounds.height / 2f
-                val targetCenterX = dialogLeft + menuWidthPx / 2f
-                val targetCenterY = dialogTop + menuHeightPx / 2f
-
+                val currentLeft = androidx.compose.ui.util.lerp(btnBounds.left, dialogBounds.left, morphProgress)
+                val currentTop = androidx.compose.ui.util.lerp(btnBounds.top, dialogBounds.top, morphProgress)
+                val currentWidth = androidx.compose.ui.util.lerp(btnBounds.width, menuWidthPx, morphProgress).coerceAtLeast(1f)
+                val currentHeight = androidx.compose.ui.util.lerp(btnBounds.height, menuHeightPx, morphProgress).coerceAtLeast(1f)
                 val currentCornerRadius = androidx.compose.ui.util.lerp(btnBounds.height / 2f, with(density) { 24.dp.toPx() }, morphProgress).coerceAtLeast(0f)
 
                 Box(
                     modifier = Modifier
-                        .offset { IntOffset(dialogLeft.fastRoundToInt(), dialogTop.fastRoundToInt()) }
-                        .size(156.dp, 272.dp)
-                        .graphicsLayer {
-                            val p = morphProgress.coerceIn(0f, 1f)
-                            val initialScaleX = if (menuWidthPx > 0) btnBounds.width / menuWidthPx else 1f
-                            val initialScaleY = if (menuHeightPx > 0) btnBounds.height / menuHeightPx else 1f
-                            scaleX = androidx.compose.ui.util.lerp(initialScaleX, 1.0f, p)
-                            scaleY = androidx.compose.ui.util.lerp(initialScaleY, 1.0f, p)
-                            translationX = androidx.compose.ui.util.lerp(sourceCenterX - targetCenterX, 0f, p)
-                            translationY = androidx.compose.ui.util.lerp(sourceCenterY - targetCenterY, 0f, p)
+                        .layout { measurable, _ ->
+                            val placeable = measurable.measure(
+                                Constraints.fixed(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt())
+                            )
+                            layout(currentWidth.fastRoundToInt(), currentHeight.fastRoundToInt()) {
+                                placeable.place(currentLeft.fastRoundToInt(), currentTop.fastRoundToInt())
+                            }
                         }
                         .drawBackdrop(
                             backdrop = bookshelfBackdrop,

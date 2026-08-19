@@ -40,7 +40,7 @@ private data class ProcessedDanmaku(
 @Composable
 fun DanmakuCanvas(
     danmakuList: List<DanmakuItem>,
-    currentPositionMs: Long,
+    positionMsProvider: () -> Long,
     isPlaying: Boolean,
     config: DanmakuConfig,
     modifier: Modifier = Modifier
@@ -54,28 +54,28 @@ fun DanmakuCanvas(
 
         // Monotonic Hardware Clock Reference
         var frameTick by remember { mutableLongStateOf(0L) }
-        var basePlayerTimeMs by remember { mutableDoubleStateOf(currentPositionMs.toDouble()) }
+        var basePlayerTimeMs by remember { mutableDoubleStateOf(positionMsProvider().toDouble()) }
         var baseRealtimeNanos by remember { mutableLongStateOf(SystemClock.elapsedRealtimeNanos()) }
 
-        // Resync on seeking or large position drift (> 400ms)
-        LaunchedEffect(currentPositionMs) {
-            val nowNanos = SystemClock.elapsedRealtimeNanos()
-            val currentEstimated = if (isPlaying) {
-                basePlayerTimeMs + ((nowNanos - baseRealtimeNanos) / 1_000_000.0) * config.speedFactor
-            } else {
-                basePlayerTimeMs
-            }
-            val diff = abs(currentPositionMs.toDouble() - currentEstimated)
-            if (diff > 400.0 || !isPlaying) {
-                basePlayerTimeMs = currentPositionMs.toDouble()
-                baseRealtimeNanos = nowNanos
+        // Efficient periodic resync every 400ms without canceling/restarting coroutines
+        LaunchedEffect(isPlaying, config.speedFactor) {
+            basePlayerTimeMs = positionMsProvider().toDouble()
+            baseRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+            while (isPlaying) {
+                kotlinx.coroutines.delay(400L)
+                val currentPos = positionMsProvider().toDouble()
+                val nowNanos = SystemClock.elapsedRealtimeNanos()
+                val currentEstimated = basePlayerTimeMs + ((nowNanos - baseRealtimeNanos) / 1_000_000.0) * config.speedFactor
+                val diff = abs(currentPos - currentEstimated)
+                if (diff > 350.0) {
+                    basePlayerTimeMs = currentPos
+                    baseRealtimeNanos = nowNanos
+                }
             }
         }
 
         // High refresh rate (60Hz/120Hz) frame driver
         LaunchedEffect(isPlaying) {
-            basePlayerTimeMs = currentPositionMs.toDouble()
-            baseRealtimeNanos = SystemClock.elapsedRealtimeNanos()
             while (isPlaying) {
                 withFrameNanos { frameNanos ->
                     frameTick = frameNanos
@@ -287,7 +287,7 @@ fun DanmakuCanvas(
                 val elapsedMs = ((nowNanos - baseRealtimeNanos) / 1_000_000.0) * config.speedFactor
                 basePlayerTimeMs + elapsedMs
             } else {
-                currentPositionMs.toDouble()
+                positionMsProvider().toDouble()
             }
 
             val adjustedTimeMs = currentContinuousMs + config.timeOffsetMs

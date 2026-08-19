@@ -85,7 +85,7 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.setOptionString("gpu-shader-cache-dir", cacheDir.absolutePath)
             mpv.setOptionString("icc-cache-dir", cacheDir.absolutePath)
 
-            // Video output & hardware decoding (Clean native SDR/HDR pipeline)
+            // Video output & hardware decoding (Low-power GPU pipeline)
             mpv.setOptionString("vo", "gpu")
             mpv.setOptionString("gpu-context", "android")
             mpv.setOptionString("hwdec", "mediacodec")
@@ -95,7 +95,19 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.setOptionString("framedrop", "vo")
             mpv.setOptionString("hr-seek", "yes")
             mpv.setOptionString("hr-seek-framedrop", "yes")
-            mpv.setOptionString("vd-lavc-threads", "4")
+            mpv.setOptionString("vd-lavc-threads", "2")
+
+            // Mobile GPU Thermal & Wattage Optimization (Replaces heavy Lanczos/Spline shaders with low-power Bilinear)
+            mpv.setOptionString("scale", "bilinear")
+            mpv.setOptionString("cscale", "bilinear")
+            mpv.setOptionString("dscale", "bilinear")
+            mpv.setOptionString("gpu-dumb-mode", "yes")
+            mpv.setOptionString("correct-downscaling", "no")
+            mpv.setOptionString("linear-downscaling", "no")
+            mpv.setOptionString("sigmoid-upscaling", "no")
+            mpv.setOptionString("dither-depth", "no")
+            mpv.setOptionString("interpolation", "no")
+            mpv.setOptionString("deband", "no")
 
             // Subtitle & ASS rendering settings (Matches desktop mpv-lazy-2026 standard)
             mpv.setOptionString("sub-auto", "fuzzy")
@@ -112,7 +124,7 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.setOptionString("sub-codepage", "GB18030")
             mpv.setOptionString("slang", "chs,sc,zh-cn,chi,zh,ja,jp,jpn,en,eng")
             mpv.setOptionString("subs-fallback", "yes")
-            mpv.setOptionString("blend-subtitles", "yes")
+            mpv.setOptionString("blend-subtitles", "video")
 
             // Streaming Cache & IO Buffer
             mpv.setOptionString("cache", "yes")

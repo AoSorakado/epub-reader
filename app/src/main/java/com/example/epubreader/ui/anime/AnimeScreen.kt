@@ -65,6 +65,7 @@ import com.example.epubreader.data.model.AnimeEntity
 import com.example.epubreader.data.model.AnimeEpisodeEntity
 import com.example.epubreader.data.network.WebDavClient
 import com.example.epubreader.ui.components.liquid.LiquidButton
+import com.example.epubreader.ui.components.liquid.LiquidGlassSegmentedTabs
 import com.example.epubreader.ui.components.liquid.LiquidSegmentedControl
 import com.example.epubreader.ui.components.liquid.LiquidVerticalSegmentedControl
 import com.example.epubreader.ui.components.toast.GlobalToastManager
@@ -153,10 +154,10 @@ fun AnimeScreen(
         label = "sortMenuMorph"
     ) { if (it) 1f else 0f }
 
-    // Anime Expansion Morph Animation (Relaxed Visual Tempo Q-bounce spring)
+    // Anime Expansion Morph Animation (Refined Restrained Micro-Bounce spring)
     val seriesTransition = updateTransition(targetState = isAnimeExpanded, label = "AnimeSeriesMorphTransition")
     val seriesExpandProgress by seriesTransition.animateFloat(
-        transitionSpec = { spring(dampingRatio = 0.58f, stiffness = 115f) },
+        transitionSpec = { spring(dampingRatio = 0.70f, stiffness = 140f) },
         label = "seriesMorphProgress"
     ) { if (it) 1f else 0f }
 
@@ -456,11 +457,15 @@ fun AnimeScreen(
                             )
                         }
 
-                        if (!isSearchExpanded) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
+                        Spacer(modifier = Modifier.weight(1f))
 
-                        // 1. Search Expandable Capsule Button (Takes remaining left space when expanded)
+                        val searchExpansionFraction by animateFloatAsState(
+                            targetValue = if (isSearchExpanded) 1f else 0f,
+                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 160f),
+                            label = "searchExpansionFraction"
+                        )
+
+                        // 1. Search Expandable Capsule Button (Fixed right anchor, expands smoothly to the left)
                         LiquidButton(
                             onClick = {
                                 if (!isSearchExpanded) {
@@ -468,72 +473,79 @@ fun AnimeScreen(
                                 }
                             },
                             backdrop = animeBackdrop,
-                            shape = RoundedCornerShape(22.dp),
-                            modifier = if (isSearchExpanded) {
-                                Modifier
-                                    .weight(1f)
-                                    .height(44.dp)
-                            } else {
-                                Modifier.size(44.dp)
-                            }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = if (isSearchExpanded) 12.dp else 0.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = if (isSearchExpanded) Arrangement.Start else Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Search,
-                                    contentDescription = "搜索",
-                                    tint = if (isSearchExpanded) themeAccent else primaryTextColor,
-                                    modifier = Modifier.size(20.dp)
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .height(44.dp)
+                                .then(
+                                    if (searchExpansionFraction > 0.001f) {
+                                        Modifier.width(androidx.compose.ui.unit.lerp(44.dp, 180.dp, searchExpansionFraction))
+                                    } else {
+                                        Modifier.size(44.dp)
+                                    }
                                 )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = "搜索",
+                                tint = if (isSearchExpanded) themeAccent else primaryTextColor,
+                                modifier = Modifier.size(20.dp)
+                            )
 
-                                if (isSearchExpanded) {
-                                    Spacer(modifier = Modifier.width(6.dp))
+                            if (searchExpansionFraction > 0.10f) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .graphicsLayer {
+                                            alpha = ((searchExpansionFraction - 0.20f) / 0.80f).coerceIn(0f, 1f)
+                                        },
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
                                     BasicTextField(
                                         value = searchQuery,
                                         onValueChange = { viewModel.setSearchQuery(it) },
                                         singleLine = true,
                                         textStyle = androidx.compose.ui.text.TextStyle(
-                                            fontSize = 13.5.sp,
+                                            fontSize = 13.sp,
                                             color = primaryTextColor,
                                             fontFamily = ClaudeUIFontFamily
                                         ),
                                         modifier = Modifier
-                                            .weight(1f)
+                                            .fillMaxWidth()
                                             .focusRequester(focusRequester),
                                         decorationBox = { innerTextField ->
                                             if (searchQuery.isEmpty()) {
                                                 Text(
-                                                    text = "搜索番剧...",
-                                                    fontSize = 13.sp,
+                                                    text = "搜索...",
+                                                    fontSize = 12.5.sp,
                                                     color = secondaryTextColor.copy(alpha = 0.5f)
                                                 )
                                             }
                                             innerTextField()
                                         }
                                     )
+                                }
 
-                                    IconButton(
-                                        onClick = {
-                                            if (searchQuery.isNotEmpty()) {
-                                                viewModel.setSearchQuery("")
-                                            } else {
-                                                isSearchExpanded = false
-                                            }
-                                        },
-                                        modifier = Modifier.size(26.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Close,
-                                            contentDescription = "Close",
-                                            tint = secondaryTextColor,
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                    }
+                                IconButton(
+                                    onClick = {
+                                        if (searchQuery.isNotEmpty()) {
+                                            viewModel.setSearchQuery("")
+                                        } else {
+                                            isSearchExpanded = false
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .graphicsLayer {
+                                            alpha = ((searchExpansionFraction - 0.30f) / 0.70f).coerceIn(0f, 1f)
+                                        }
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "Close",
+                                        tint = secondaryTextColor,
+                                        modifier = Modifier.size(14.dp)
+                                    )
                                 }
                             }
                         }
@@ -618,16 +630,14 @@ fun AnimeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    LiquidSegmentedControl(
+                    LiquidGlassSegmentedTabs(
                         selectedIndex = filterStatus,
                         onOptionSelected = { viewModel.setFilterStatus(it) },
                         options = listOf("全部", "在看", "已看完"),
                         backdrop = animeBackdrop,
                         fontSize = 12.5.sp,
-                        accentColor = themeAccent,
-                        modifier = Modifier
-                            .width(220.dp)
-                            .height(36.dp)
+                        themeAccent = themeAccent,
+                        isDark = isDark
                     )
 
                     Text(
@@ -953,18 +963,56 @@ fun AnimeScreen(
                 val screenHeightPx = constraints.maxHeight.toFloat()
                 val progress = seriesExpandProgress
                 val boundedProgress = progress.coerceIn(0f, 1f)
-                val liftOffsetPx = kotlin.math.sin(boundedProgress * Math.PI.toFloat()) * with(density) { 24.dp.toPx() }
-                val popScale = 1f + kotlin.math.sin(boundedProgress * Math.PI.toFloat()) * 0.025f
 
                 val expandedWidthPx = minOf(screenWidthPx * 0.90f, with(density) { 460.dp.toPx() })
                 val expandedHeightPx = minOf(screenHeightPx * 0.76f, with(density) { 580.dp.toPx() })
                 val targetLeft = (screenWidthPx - expandedWidthPx) / 2f
                 val targetTop = (screenHeightPx - expandedHeightPx) / 2f
 
-                val currentLeft = lerp(sourceBounds.left, targetLeft, progress)
-                val currentTop = lerp(sourceBounds.top, targetTop, progress) - liftOffsetPx
-                val currentWidth = lerp(sourceBounds.width, expandedWidthPx, progress).coerceAtLeast(1f)
-                val currentHeight = lerp(sourceBounds.height, expandedHeightPx, progress).coerceAtLeast(1f)
+                val sourceCenterX = sourceBounds.left + sourceBounds.width / 2f
+                val sourceCenterY = sourceBounds.top + sourceBounds.height / 2f
+                val targetCenterX = targetLeft + expandedWidthPx / 2f
+                val targetCenterY = targetTop + expandedHeightPx / 2f
+
+                // 1. True 3D Depth Recoil: Sinks back into Z-space (scales down to 0.78x) before blooming forward
+                val spatialDepthScale = if (boundedProgress < 0.32f) {
+                    val pIn = boundedProgress / 0.32f
+                    androidx.compose.ui.util.lerp(1f, 0.78f, kotlin.math.sin(pIn * Math.PI.toFloat() / 2f))
+                } else {
+                    val pOut = (boundedProgress - 0.32f) / 0.68f
+                    androidx.compose.ui.util.lerp(0.78f, 1f, pOut)
+                } * (1f + (progress - boundedProgress) * 0.20f) // Subtle restrained micro-overshoot
+
+                // 2. Center-Seeking Trajectory: Moves to screen center in initial phase
+                val centerTravelProgress = kotlin.math.sin(boundedProgress * Math.PI.toFloat() / 2f)
+                val currentCenterX = androidx.compose.ui.util.lerp(sourceCenterX, targetCenterX, if (progress <= 1f) centerTravelProgress else progress)
+                val currentCenterY = androidx.compose.ui.util.lerp(sourceCenterY, targetCenterY, if (progress <= 1f) centerTravelProgress else progress)
+                val currentWidth = androidx.compose.ui.util.lerp(sourceBounds.width, expandedWidthPx, progress).coerceAtLeast(1f)
+                val currentHeight = androidx.compose.ui.util.lerp(sourceBounds.height, expandedHeightPx, progress).coerceAtLeast(1f)
+
+                // 3. 3D Camera Tilt Angles based on flight trajectory from click origin to center
+                val deltaNormX = ((targetCenterX - sourceCenterX) / screenWidthPx).coerceIn(-1f, 1f)
+                val deltaNormY = ((targetCenterY - sourceCenterY) / screenHeightPx).coerceIn(-1f, 1f)
+                val tiltFlight = kotlin.math.sin(boundedProgress * Math.PI.toFloat())
+                val dynamicRotationX = deltaNormY * tiltFlight * 18f
+                val dynamicRotationY = -deltaNormX * tiltFlight * 18f
+                
+                // Shared Element Poster Coordinates (Seamless continuous transition without disappearing)
+                val startCoverWidthPx = if (isGridView) sourceBounds.width else with(density) { 64.dp.toPx() }
+                val startCoverHeightPx = startCoverWidthPx / 0.72f
+                val startCoverLeftPx = if (isGridView) 0f else with(density) { 10.dp.toPx() }
+                val startCoverTopPx = if (isGridView) 0f else with(density) { 10.dp.toPx() }
+
+                val targetCoverWidthPx = with(density) { 96.dp.toPx() }
+                val targetCoverHeightPx = targetCoverWidthPx / 0.72f
+                val targetCoverLeftPx = with(density) { 18.dp.toPx() }
+                val targetCoverTopPx = with(density) { 18.dp.toPx() }
+
+                val currentCoverWidthPx = androidx.compose.ui.util.lerp(startCoverWidthPx, targetCoverWidthPx, boundedProgress)
+                val currentCoverHeightPx = currentCoverWidthPx / 0.72f
+                val currentCoverLeftPx = androidx.compose.ui.util.lerp(startCoverLeftPx, targetCoverLeftPx, boundedProgress)
+                val currentCoverTopPx = androidx.compose.ui.util.lerp(startCoverTopPx, targetCoverTopPx, boundedProgress)
+                val currentCoverCornerPx = androidx.compose.ui.util.lerp(if (isGridView) 18f else 12f, 14f, boundedProgress)
 
                 // Scrim
                 Box(
@@ -981,7 +1029,7 @@ fun AnimeScreen(
                         }
                 )
 
-                // Morphing Glass Container (Exact Settings Styling)
+                // Morphing Glass Container (3D Depth Recoil & Bloom Expansion)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -995,14 +1043,17 @@ fun AnimeScreen(
                                 height = with(density) { currentHeight.toDp() }
                             )
                             .offset {
-                                IntOffset(currentLeft.roundToInt(), currentTop.roundToInt())
+                                IntOffset(
+                                    (currentCenterX - currentWidth / 2f).roundToInt(),
+                                    (currentCenterY - currentHeight / 2f).roundToInt()
+                                )
                             }
                             .graphicsLayer {
-                                scaleX = popScale
-                                scaleY = popScale
-                                cameraDistance = 18f * density.density
-                                val normalizedSourceY = ((sourceBounds.top - screenHeightPx / 2f) / screenHeightPx).coerceIn(-1f, 1f)
-                                rotationX = normalizedSourceY * (1f - progress) * 4f
+                                scaleX = spatialDepthScale
+                                scaleY = spatialDepthScale
+                                cameraDistance = 16f * density.density
+                                rotationX = dynamicRotationX
+                                rotationY = dynamicRotationY
                             }
                             .drawBackdrop(
                                 backdrop = animeBackdrop,
@@ -1043,28 +1094,95 @@ fun AnimeScreen(
                             ) { },
                         contentAlignment = Alignment.TopStart
                     ) {
-                            // Collapsed Card fading out (Zero padding to match sourceBounds exactly)
-                            Box(
-                                modifier = Modifier
-                                    .requiredSize(with(density) { sourceBounds.width.toDp() }, with(density) { sourceBounds.height.toDp() })
-                                    .graphicsLayer {
-                                        alpha = (1f - progress * 2.8f).coerceIn(0f, 1f)
-                                    },
-                                contentAlignment = Alignment.TopStart
-                            ) {
-                                AnimeCardContent(
-                                    anime = anime,
-                                    isGridView = isGridView,
-                                    isDark = isDark,
-                                    themeAccent = themeAccent,
-                                    primaryTextColor = primaryTextColor,
-                                    secondaryTextColor = secondaryTextColor
-                                )
+                            // 1. Collapsed Card Content (100% pixel-perfect match to list/grid card, with full title, ep count & watch status)
+                            if (boundedProgress < 0.40f) {
+                                val cardAlpha = (1f - (boundedProgress / 0.35f)).coerceIn(0f, 1f)
+                                Box(
+                                    modifier = Modifier
+                                        .requiredSize(with(density) { sourceBounds.width.toDp() }, with(density) { sourceBounds.height.toDp() })
+                                        .graphicsLayer { alpha = cardAlpha },
+                                    contentAlignment = Alignment.TopStart
+                                ) {
+                                    AnimeCardContent(
+                                        anime = anime,
+                                        isGridView = isGridView,
+                                        isDark = isDark,
+                                        themeAccent = themeAccent,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor
+                                    )
+                                }
                             }
 
-                            // Expanded Dialog fading in (Matching user wireframe with upward drift)
-                            if (seriesExpandProgress > 0.15f) {
-                                val contentAlpha = ((progress - 0.18f) / 0.82f).coerceIn(0f, 1f)
+                            // 2. Persistent Shared Poster (Takes over smoothly during mid-air flight and locks into header)
+                            if (boundedProgress >= 0.08f) {
+                                val posterAlpha = ((boundedProgress - 0.08f) / 0.22f).coerceIn(0f, 1f)
+                                Box(
+                                    modifier = Modifier
+                                        .offset { IntOffset(currentCoverLeftPx.roundToInt(), currentCoverTopPx.roundToInt()) }
+                                        .requiredSize(
+                                            width = with(density) { currentCoverWidthPx.toDp() },
+                                            height = with(density) { currentCoverHeightPx.toDp() }
+                                        )
+                                        .graphicsLayer { alpha = posterAlpha }
+                                        .clip(RoundedCornerShape(with(density) { currentCoverCornerPx.dp.toPx().toDp() }))
+                                        .background(Color.White.copy(alpha = if (isDark) 0.08f else 0.20f))
+                                        .border(
+                                            width = lerp(0.6f, 0.8f, boundedProgress).dp,
+                                            color = Color.White.copy(alpha = if (isDark) lerp(0.20f, 0.35f, boundedProgress) else lerp(0.35f, 0.50f, boundedProgress)),
+                                            shape = RoundedCornerShape(with(density) { currentCoverCornerPx.dp.toPx().toDp() })
+                                        )
+                                ) {
+                                    val coverFile = if (!anime.localCoverPath.isNullOrBlank()) File(anime.localCoverPath) else null
+                                    if (coverFile?.exists() == true || !anime.coverUrl.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(LocalContext.current)
+                                                .data(if (coverFile?.exists() == true) coverFile else anime.coverUrl)
+                                                .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                                                .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                                                .crossfade(false)
+                                                .build(),
+                                            contentDescription = "Cover",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Tv,
+                                                contentDescription = null,
+                                                tint = secondaryTextColor.copy(alpha = 0.4f),
+                                                modifier = Modifier.size(32.dp)
+                                            )
+                                        }
+                                    }
+
+                                    if (anime.score > 0f) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.TopStart)
+                                                .padding(6.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(Color.Black.copy(alpha = 0.70f))
+                                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "★ ${String.format("%.1f", anime.score)}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFFFFD60A)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 3. Expanded Dialog fading in (Matching user wireframe with upward drift)
+                            if (seriesExpandProgress > 0.12f) {
+                                val contentAlpha = ((boundedProgress - 0.15f) / 0.85f).coerceIn(0f, 1f)
                                 val contentScale = lerp(0.94f, 1f, contentAlpha)
                                 val contentSlideY = lerp(16f, 0f, contentAlpha)
                                 val childBackdrop = backdrop
@@ -1081,68 +1199,18 @@ fun AnimeScreen(
                                         }
                                         .padding(18.dp)
                                 ) {
-                                    // 1. Top Section: Poster (Left) + Title & Summary (Right)
+                                    // 1. Top Section: Poster Placeholder (Left) + Title & Summary (Right)
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                                         verticalAlignment = Alignment.Top
                                     ) {
-                                        // Poster Thumbnail (Left)
-                                        Box(
+                                        // Invisible Spacer for Persistent Shared Poster (96dp x 133.3dp)
+                                        Spacer(
                                             modifier = Modifier
                                                 .width(96.dp)
                                                 .aspectRatio(0.72f)
-                                                .clip(RoundedCornerShape(14.dp))
-                                                .background(Color.White.copy(alpha = if (isDark) 0.08f else 0.20f))
-                                                .border(
-                                                    0.8.dp,
-                                                    Color.White.copy(alpha = if (isDark) 0.35f else 0.50f),
-                                                    RoundedCornerShape(14.dp)
-                                                )
-                                        ) {
-                                            val coverFile = if (!anime.localCoverPath.isNullOrBlank()) File(anime.localCoverPath) else null
-                                            if (coverFile?.exists() == true || !anime.coverUrl.isNullOrBlank()) {
-                                                AsyncImage(
-                                                    model = ImageRequest.Builder(LocalContext.current)
-                                                        .data(if (coverFile?.exists() == true) coverFile else anime.coverUrl)
-                                                        .crossfade(true)
-                                                        .build(),
-                                                    contentDescription = "Cover",
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier.fillMaxSize()
-                                                )
-                                            } else {
-                                                Box(
-                                                    modifier = Modifier.fillMaxSize(),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        Icons.Filled.Tv,
-                                                        contentDescription = null,
-                                                        tint = secondaryTextColor.copy(alpha = 0.4f),
-                                                        modifier = Modifier.size(32.dp)
-                                                    )
-                                                }
-                                            }
-
-                                            if (anime.score > 0f) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .align(Alignment.TopStart)
-                                                        .padding(6.dp)
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .background(Color.Black.copy(alpha = 0.70f))
-                                                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text(
-                                                        text = "★ ${String.format("%.1f", anime.score)}",
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Color(0xFFFFD60A)
-                                                    )
-                                                }
-                                            }
-                                        }
+                                        )
 
                                         // Title, Info & Summary (Right)
                                         Column(
@@ -1525,212 +1593,248 @@ fun AnimeScreen(
             }
         }
 
-        // --- 3. Long-Press Frosted Glass Context Modal ---
-        selectedAnimeForAction?.let { anime ->
-            val actionDialogBackdrop = rememberLayerBackdrop()
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.40f))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) { selectedAnimeForAction = null },
-                contentAlignment = Alignment.Center
-            ) {
+        // --- 3. Long-Press Frosted Glass Context Modal with Spring Animation ---
+        var activeAnimeForAction by remember { mutableStateOf<AnimeEntity?>(null) }
+        LaunchedEffect(selectedAnimeForAction) {
+            if (selectedAnimeForAction != null) {
+                activeAnimeForAction = selectedAnimeForAction
+            }
+        }
+        val isActionModalOpen = selectedAnimeForAction != null
+        val actionModalTransition = updateTransition(targetState = isActionModalOpen, label = "AnimeActionModalTransition")
+        val actionModalProgress by actionModalTransition.animateFloat(
+            transitionSpec = {
+                if (targetState) {
+                    spring(dampingRatio = 0.78f, stiffness = 280f)
+                } else {
+                    spring(dampingRatio = 0.85f, stiffness = 320f)
+                }
+            },
+            label = "actionModalProgress"
+        ) { if (it) 1f else 0f }
+
+        LaunchedEffect(actionModalProgress) {
+            if (actionModalProgress <= 0.001f && selectedAnimeForAction == null) {
+                activeAnimeForAction = null
+            }
+        }
+
+        if (actionModalProgress > 0.001f || isActionModalOpen) {
+            activeAnimeForAction?.let { anime ->
+                val actionDialogBackdrop = rememberLayerBackdrop()
                 Box(
                     modifier = Modifier
-                        .width(320.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .drawBackdrop(
-                            backdrop = animeBackdrop,
-                            shape = { RoundedCornerShape(24.dp) },
-                            effects = {
-                                vibrancy()
-                                blur(8.dp.toPx())
-                                lens(
-                                    refractionHeight = 20.dp.toPx(),
-                                    refractionAmount = 36.dp.toPx(),
-                                    chromaticAberration = true
-                                )
-                            },
-                            highlight = { Highlight.Plain },
-                            shadow = {
-                                Shadow(
-                                    radius = 24.dp,
-                                    color = Color.Black.copy(alpha = if (isDark) 0.40f else 0.20f)
-                                )
-                            },
-                            onDrawSurface = {
-                                drawRect(Color.White.copy(alpha = if (isDark) 0.10f else 0.16f))
-                            },
-                            exportedBackdrop = actionDialogBackdrop
-                        )
-                        .border(
-                            0.8.dp,
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.White.copy(alpha = 0.65f),
-                                    Color.White.copy(alpha = 0.20f)
-                                )
-                            ),
-                            RoundedCornerShape(24.dp)
-                        )
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = actionModalProgress }
+                        .background(Color.Black.copy(alpha = 0.40f))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
-                        ) { /* prevent dismissal */ }
-                        .padding(20.dp)
+                        ) { selectedAnimeForAction = null },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    Box(
+                        modifier = Modifier
+                            .width(320.dp)
+                            .graphicsLayer {
+                                val contentAlpha = ((actionModalProgress - 0.05f) / 0.95f).coerceIn(0f, 1f)
+                                alpha = contentAlpha
+                                val scale = androidx.compose.ui.util.lerp(0.85f, 1.0f, actionModalProgress)
+                                scaleX = scale
+                                scaleY = scale
+                                translationY = androidx.compose.ui.util.lerp(24f, 0f, actionModalProgress) * density.density
+                            }
+                            .clip(RoundedCornerShape(24.dp))
+                            .drawBackdrop(
+                                backdrop = animeBackdrop,
+                                shape = { RoundedCornerShape(24.dp) },
+                                effects = {
+                                    vibrancy()
+                                    blur(8.dp.toPx())
+                                    lens(
+                                        refractionHeight = 20.dp.toPx(),
+                                        refractionAmount = 36.dp.toPx(),
+                                        chromaticAberration = true
+                                    )
+                                },
+                                highlight = { Highlight.Plain },
+                                shadow = {
+                                    Shadow(
+                                        radius = 24.dp,
+                                        color = Color.Black.copy(alpha = if (isDark) 0.40f else 0.20f)
+                                    )
+                                },
+                                onDrawSurface = {
+                                    drawRect(Color.White.copy(alpha = if (isDark) 0.10f else 0.16f))
+                                },
+                                exportedBackdrop = actionDialogBackdrop
+                            )
+                            .border(
+                                0.8.dp,
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = 0.65f),
+                                        Color.White.copy(alpha = 0.20f)
+                                    )
+                                ),
+                                RoundedCornerShape(24.dp)
+                            )
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { /* prevent dismissal */ }
+                            .padding(20.dp)
                     ) {
-                        // Header: Cover + Title + Details
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(54.dp, 72.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color.Black.copy(alpha = 0.25f))
-                            ) {
-                                val coverImage = anime.localCoverPath ?: anime.coverUrl
-                                if (!coverImage.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
-                                            .data(coverImage)
-                                            .crossfade(true)
-                                            .build(),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Filled.Tv,
-                                        contentDescription = null,
-                                        tint = secondaryTextColor.copy(alpha = 0.4f),
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .align(Alignment.Center)
-                                    )
-                                }
-                            }
-
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                Text(
-                                    text = anime.title,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryTextColor,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "共 ${anime.totalEpisodes} 集 · ${if (anime.seasonCount > 1) "${anime.seasonCount} 季全套" else "单季"}",
-                                    fontSize = 11.5.sp,
-                                    color = secondaryTextColor
-                                )
-                                val cleanActionPath = remember(anime.webdavPath) {
-                                    val raw = if (anime.webdavPath.isNotBlank() && anime.webdavPath != "root") anime.webdavPath else "根目录"
-                                    val decoded = try { java.net.URLDecoder.decode(raw, "UTF-8") } catch (e: Exception) { raw }
-                                    decoded.replace(Regex("^https?://[^/]+"), "").ifBlank { decoded }
-                                }
-                                Text(
-                                    text = "来源: $cleanActionPath",
-                                    fontSize = 10.5.sp,
-                                    color = secondaryTextColor.copy(alpha = 0.80f),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
-                        HorizontalDivider(
-                            color = Color.White.copy(alpha = if (isDark) 0.12f else 0.25f),
-                            thickness = 0.6.dp
-                        )
-
-                        // Action Buttons
                         Column(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            // 1. Single Anime Sync / Refresh
-                            LiquidButton(
-                                onClick = {
-                                    val client = webDavClient
-                                    val targetId = anime.id
-                                    selectedAnimeForAction = null
-                                    if (client != null) {
-                                        viewModel.refreshSingleAnime(targetId, client)
+                            // Header: Cover + Title + Details
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(54.dp, 72.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Color.Black.copy(alpha = 0.25f))
+                                ) {
+                                    val coverImage = anime.localCoverPath ?: anime.coverUrl
+                                    if (!coverImage.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(LocalContext.current)
+                                                .data(coverImage)
+                                                .crossfade(true)
+                                                .build(),
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
                                     } else {
-                                        GlobalToastManager.show("WebDAV 未连接", ToastType.Error)
+                                        Icon(
+                                            Icons.Filled.Tv,
+                                            contentDescription = null,
+                                            tint = secondaryTextColor.copy(alpha = 0.4f),
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .align(Alignment.Center)
+                                        )
                                     }
-                                },
-                                backdrop = actionDialogBackdrop,
-                                surfaceColor = Color.White.copy(alpha = 0.12f),
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.fillMaxWidth().height(42.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                }
+
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
-                                    Icon(Icons.Filled.Refresh, contentDescription = null, tint = themeAccent, modifier = Modifier.size(18.dp))
-                                    Text("单独刷新同步 (WebDAV)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
+                                    Text(
+                                        text = anime.title,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = primaryTextColor,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "共 ${anime.totalEpisodes} 集 · ${if (anime.seasonCount > 1) "${anime.seasonCount} 季全套" else "单季"}",
+                                        fontSize = 11.5.sp,
+                                        color = secondaryTextColor
+                                    )
+                                    val cleanActionPath = remember(anime.webdavPath) {
+                                        val raw = if (anime.webdavPath.isNotBlank() && anime.webdavPath != "root") anime.webdavPath else "根目录"
+                                        val decoded = try { java.net.URLDecoder.decode(raw, "UTF-8") } catch (e: Exception) { raw }
+                                        decoded.replace(Regex("^https?://[^/]+"), "").ifBlank { decoded }
+                                    }
+                                    Text(
+                                        text = "来源: $cleanActionPath",
+                                        fontSize = 10.5.sp,
+                                        color = secondaryTextColor.copy(alpha = 0.80f),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
 
-                            // 2. Re-Scrape Metadata
-                            LiquidButton(
-                                onClick = {
-                                    rematchKeyword = anime.title
-                                    showRematchDialog = true
-                                    selectedAnimeForAction = null
-                                },
-                                backdrop = actionDialogBackdrop,
-                                surfaceColor = Color.White.copy(alpha = 0.12f),
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.fillMaxWidth().height(42.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Icon(Icons.Filled.Search, contentDescription = null, tint = themeAccent, modifier = Modifier.size(18.dp))
-                                    Text("重新匹配元数据 (Bangumi/豆瓣)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
-                                }
-                            }
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = if (isDark) 0.12f else 0.25f),
+                                thickness = 0.6.dp
+                            )
 
-                            // 3. Remove from Database
-                            LiquidButton(
-                                onClick = {
-                                    viewModel.deleteAnime(anime.id)
-                                    selectedAnimeForAction = null
-                                    GlobalToastManager.show("已从番剧库移除", ToastType.Success)
-                                },
-                                backdrop = actionDialogBackdrop,
-                                surfaceColor = Color(0xFFFF453A).copy(alpha = 0.14f),
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.fillMaxWidth().height(42.dp)
+                            // Action Buttons
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                // 1. Single Anime Sync / Refresh
+                                LiquidButton(
+                                    onClick = {
+                                        val client = webDavClient
+                                        val targetId = anime.id
+                                        selectedAnimeForAction = null
+                                        if (client != null) {
+                                            viewModel.refreshSingleAnime(targetId, client)
+                                        } else {
+                                            GlobalToastManager.show("WebDAV 未连接", ToastType.Error)
+                                        }
+                                    },
+                                    backdrop = actionDialogBackdrop,
+                                    surfaceColor = Color.White.copy(alpha = 0.12f),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.fillMaxWidth().height(42.dp)
                                 ) {
-                                    Icon(Icons.Filled.DeleteOutline, contentDescription = null, tint = Color(0xFFFF453A), modifier = Modifier.size(18.dp))
-                                    Text("从番剧库移除", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF453A))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Refresh, contentDescription = null, tint = themeAccent, modifier = Modifier.size(18.dp))
+                                        Text("单独刷新同步 (WebDAV)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
+                                    }
+                                }
+
+                                // 2. Re-Scrape Metadata
+                                LiquidButton(
+                                    onClick = {
+                                        rematchKeyword = anime.title
+                                        showRematchDialog = true
+                                        selectedAnimeForAction = null
+                                    },
+                                    backdrop = actionDialogBackdrop,
+                                    surfaceColor = Color.White.copy(alpha = 0.12f),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.fillMaxWidth().height(42.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Search, contentDescription = null, tint = themeAccent, modifier = Modifier.size(18.dp))
+                                        Text("重新匹配元数据 (Bangumi/豆瓣)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
+                                    }
+                                }
+
+                                // 3. Remove from Database
+                                LiquidButton(
+                                    onClick = {
+                                        viewModel.deleteAnime(anime.id)
+                                        selectedAnimeForAction = null
+                                        GlobalToastManager.show("已从番剧库移除", ToastType.Success)
+                                    },
+                                    backdrop = actionDialogBackdrop,
+                                    surfaceColor = Color(0xFFFF453A).copy(alpha = 0.14f),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.fillMaxWidth().height(42.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Icon(Icons.Filled.DeleteOutline, contentDescription = null, tint = Color(0xFFFF453A), modifier = Modifier.size(18.dp))
+                                        Text("从番剧库移除", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF453A))
+                                    }
                                 }
                             }
                         }

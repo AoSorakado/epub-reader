@@ -100,6 +100,8 @@ fun LiquidBottomTabs(
         val currentConstraints by rememberUpdatedState(constraints)
         val currentIsLtr by rememberUpdatedState(isLtr)
 
+        var highlightTrigger by remember { mutableStateOf<InteractiveHighlight?>(null) }
+
         val dampedDragAnimation = remember(animationScope, tabsCount) {
             DampedDragAnimation(
                 animationScope = animationScope,
@@ -109,12 +111,14 @@ fun LiquidBottomTabs(
                 initialScale = 1f,
                 pressedScale = 78f / 56f,
                 onDragStarted = { position ->
-                    val tw = currentTabWidth.coerceAtLeast(1f)
+                    highlightTrigger?.press()
                     val touchX = if (currentIsLtr) position.x else currentConstraints.maxWidth.toFloat() - position.x
-                    val newIndex = ((touchX - tw / 2f) / tw).fastCoerceIn(0f, (tabsCount - 1).toFloat())
-                    snapToValue(newIndex)
+                    val slotWidth = (currentConstraints.maxWidth.toFloat() / tabsCount.coerceAtLeast(1)).coerceAtLeast(1f)
+                    val targetTab = (touchX / slotWidth).toInt().fastCoerceIn(0, tabsCount - 1).toFloat()
+                    updateValue(targetTab)
                 },
                 onDragStopped = {
+                    highlightTrigger?.release()
                     val targetIndex = targetValue.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
                     animateToValue(targetIndex.toFloat())
                     animationScope.launch {
@@ -126,16 +130,38 @@ fun LiquidBottomTabs(
                     currentOnTabSelected(targetIndex)
                 },
                 onDrag = { _, dragAmount ->
-                    val tw = currentTabWidth.coerceAtLeast(1f)
-                    snapToValue(
-                        (targetValue + dragAmount.x / tw * if (currentIsLtr) 1f else -1f)
-                            .fastCoerceIn(0f, (tabsCount - 1).toFloat())
-                    )
-                    animationScope.launch {
-                        offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x)
+                    if (dragAmount.x != 0f) {
+                        val tw = currentTabWidth.coerceAtLeast(1f)
+                        val delta = dragAmount.x / tw * if (currentIsLtr) 1f else -1f
+                        snapToValue(
+                            (value + delta).fastCoerceIn(0f, (tabsCount - 1).toFloat())
+                        )
+                        animationScope.launch {
+                            offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x)
+                        }
                     }
                 }
             )
+        }
+
+        val interactiveHighlight = remember(animationScope, dampedDragAnimation, tabsCount) {
+            InteractiveHighlight(
+                animationScope = animationScope,
+                position = { size, _ ->
+                    val animVal = dampedDragAnimation.value
+                    val slotWidth = size.width / tabsCount.coerceAtLeast(1).toFloat()
+                    val centerX = if (isLtr) {
+                        (animVal + 0.5f) * slotWidth
+                    } else {
+                        size.width - (animVal + 0.5f) * slotWidth
+                    }
+                    Offset(centerX, size.height / 2f)
+                }
+            )
+        }
+
+        LaunchedEffect(interactiveHighlight) {
+            highlightTrigger = interactiveHighlight
         }
 
         // Sync when selectedIndex changes externally or on return from other screens
@@ -143,19 +169,6 @@ fun LiquidBottomTabs(
             if (abs(dampedDragAnimation.targetValue - selectedIndex.toFloat()) > 0.01f) {
                 dampedDragAnimation.animateToValue(selectedIndex.toFloat())
             }
-        }
-
-        val interactiveHighlight = remember(animationScope) {
-            InteractiveHighlight(
-                animationScope = animationScope,
-                position = { size, offset ->
-                    Offset(
-                        if (isLtr) (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset
-                        else size.width - (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset,
-                        size.height / 2f
-                    )
-                }
-            )
         }
 
         // Row 1: The main Glass Bottom Bar container - strong blur and lens refraction
@@ -230,8 +243,6 @@ fun LiquidBottomTabs(
                         placeable.place(x, 0)
                     }
                 }
-                .then(interactiveHighlight.gestureModifier)
-                .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(barBackdrop, tabsBackdrop),
                     shape = { CircleShape },
@@ -271,11 +282,10 @@ fun LiquidBottomTabs(
                 .fillMaxWidth(1f / tabsCount.coerceAtLeast(1))
         )
 
-        // Box 4: Global Touch & Drag Interceptor (reacts immediately to press anywhere on the bar)
+        // Touch & Drag Overlay (Spans entire bar so touching ANY tab immediately summons and drags thumb)
         Box(
             Modifier
                 .matchParentSize()
-                .then(interactiveHighlight.gestureModifier)
                 .then(dampedDragAnimation.modifier)
         )
     }

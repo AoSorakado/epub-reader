@@ -91,13 +91,14 @@ fun AnimeRescrapeDialog(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onDismiss
-            ),
+            )
+            .padding(top = 44.dp, bottom = 96.dp, start = 14.dp, end = 14.dp),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .fillMaxHeight(0.82f)
+                .fillMaxWidth()
+                .fillMaxHeight()
                 .clip(RoundedCornerShape(26.dp))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -156,12 +157,12 @@ fun AnimeRescrapeDialog(
                             text = "联网刮削番剧信息",
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = primaryTextColor
                         )
                         Text(
                             text = "聚合检索 Bangumi & 豆瓣 多条结果，点击即可应用",
                             fontSize = 11.5.sp,
-                            color = Color.White.copy(alpha = 0.7f)
+                            color = secondaryTextColor
                         )
                     }
 
@@ -174,7 +175,7 @@ fun AnimeRescrapeDialog(
                         Icon(
                             Icons.Filled.Close,
                             contentDescription = "Close",
-                            tint = Color.White,
+                            tint = primaryTextColor,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -193,18 +194,18 @@ fun AnimeRescrapeDialog(
                             Text(
                                 "输入准确番剧名称或日文原名...",
                                 fontSize = 13.sp,
-                                color = Color.White.copy(alpha = 0.45f)
+                                color = secondaryTextColor.copy(alpha = 0.6f)
                             )
                         },
                         singleLine = true,
                         shape = RoundedCornerShape(14.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedContainerColor = Color.White.copy(alpha = 0.08f),
-                            unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            focusedTextColor = primaryTextColor,
+                            unfocusedTextColor = primaryTextColor,
+                            focusedContainerColor = Color.White.copy(alpha = if (isDark) 0.08f else 0.15f),
+                            unfocusedContainerColor = Color.White.copy(alpha = if (isDark) 0.05f else 0.10f),
                             focusedBorderColor = themeAccent,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.20f),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.25f),
                             cursorColor = themeAccent
                         ),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -251,7 +252,7 @@ fun AnimeRescrapeDialog(
                                 Text(
                                     text = "正在联网检索 Bangumi & 豆瓣...",
                                     fontSize = 12.5.sp,
-                                    color = Color.White.copy(alpha = 0.75f)
+                                    color = secondaryTextColor
                                 )
                             }
                         }
@@ -263,19 +264,19 @@ fun AnimeRescrapeDialog(
                                 Icon(
                                     Icons.Filled.SearchOff,
                                     contentDescription = null,
-                                    tint = Color.White.copy(alpha = 0.4f),
+                                    tint = secondaryTextColor.copy(alpha = 0.5f),
                                     modifier = Modifier.size(40.dp)
                                 )
                                 Text(
                                     text = "未找到相关番剧信息",
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = Color.White.copy(alpha = 0.85f)
+                                    color = primaryTextColor
                                 )
                                 Text(
                                     text = "请尝试更换更简短的中文名或日文原名搜索",
                                     fontSize = 12.sp,
-                                    color = Color.White.copy(alpha = 0.5f)
+                                    color = secondaryTextColor
                                 )
                             }
                         }
@@ -289,6 +290,9 @@ fun AnimeRescrapeDialog(
                                     ScrapedCandidateItem(
                                         candidate = candidate,
                                         backdrop = backdrop,
+                                        isDark = isDark,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
                                         themeAccent = themeAccent,
                                         onSelect = { onSelectCandidate(candidate) }
                                     )
@@ -306,6 +310,9 @@ fun AnimeRescrapeDialog(
 private fun ScrapedCandidateItem(
     candidate: ScrapedAnimeInfo,
     backdrop: Backdrop,
+    isDark: Boolean,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
     themeAccent: Color,
     onSelect: () -> Unit
 ) {
@@ -342,7 +349,7 @@ private fun ScrapedCandidateItem(
                     )
                 } else {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.Tv, contentDescription = null, tint = Color.White.copy(0.4f), modifier = Modifier.size(22.dp))
+                        Icon(Icons.Filled.Tv, contentDescription = null, tint = secondaryTextColor.copy(0.4f), modifier = Modifier.size(22.dp))
                     }
                 }
             }
@@ -357,7 +364,7 @@ private fun ScrapedCandidateItem(
                     text = candidate.title,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = primaryTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -367,7 +374,7 @@ private fun ScrapedCandidateItem(
                     Text(
                         text = candidate.originalTitle,
                         fontSize = 11.5.sp,
-                        color = Color.White.copy(alpha = 0.65f),
+                        color = secondaryTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -398,7 +405,7 @@ private fun ScrapedCandidateItem(
                         Text(
                             text = candidate.airDate.take(4) + "年",
                             fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.7f)
+                            color = secondaryTextColor
                         )
                     }
 
@@ -406,7 +413,7 @@ private fun ScrapedCandidateItem(
                         Text(
                             text = "全${candidate.totalEpisodes}话",
                             fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.7f)
+                            color = secondaryTextColor
                         )
                     }
 
@@ -425,7 +432,7 @@ private fun ScrapedCandidateItem(
                     Text(
                         text = candidate.summary,
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.55f),
+                        color = secondaryTextColor.copy(alpha = 0.80f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -444,7 +451,7 @@ private fun ScrapedCandidateItem(
                 Icon(
                     Icons.Filled.Check,
                     contentDescription = "Select",
-                    tint = Color.White,
+                    tint = themeAccent,
                     modifier = Modifier.size(16.dp)
                 )
             }

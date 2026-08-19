@@ -53,6 +53,7 @@ import com.kyant.backdrop.shadow.Shadow
 import com.example.epubreader.data.db.AppDatabase
 import com.example.epubreader.data.model.AnimeEntity
 import com.example.epubreader.data.model.BookEntity
+import com.example.epubreader.ui.components.liquid.LiquidGlassSegmentedTabs
 import com.example.epubreader.ui.components.liquid.LiquidSegmentedControl
 import com.example.epubreader.ui.theme.getThemeAccentColor
 import java.text.SimpleDateFormat
@@ -139,17 +140,15 @@ fun StatsScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Novel vs Anime Segmented Switcher (Matching AnimeScreen LiquidSegmentedControl styling)
-                LiquidSegmentedControl(
+                // Novel vs Anime Segmented Switcher (Modern Liquid Glass Segmented Tabs)
+                LiquidGlassSegmentedTabs(
                     selectedIndex = statsCategory,
                     onOptionSelected = { statsCategory = it },
                     options = listOf("小说", "番剧"),
                     backdrop = globalBackdrop,
-                    fontSize = 12.5.sp,
-                    accentColor = themeAccent,
-                    modifier = Modifier
-                        .width(150.dp)
-                        .height(36.dp)
+                    fontSize = 13.sp,
+                    themeAccent = themeAccent,
+                    isDark = isDark
                 )
             }
 
