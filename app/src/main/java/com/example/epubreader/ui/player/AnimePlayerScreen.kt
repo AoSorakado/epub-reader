@@ -914,10 +914,65 @@ fun AnimePlayerScreen(
         }
     }
 
-    val vWidth = mpvPlayer.videoWidth.value
-    val vHeight = mpvPlayer.videoHeight.value
-    val isHdr = mpvPlayer.isHdr.value
-    val hdrType = mpvPlayer.hdrType.value
+    // Video Metadata Latch (Persistent HDR & media spec cache that NEVER drops when switching players)
+    val videoUrlHdrHint = remember(episode.videoUrl, episode.resolution) {
+        episode.videoUrl.contains("HDR", ignoreCase = true) ||
+        episode.videoUrl.contains("Ma10p", ignoreCase = true) ||
+        episode.videoUrl.contains("10bit", ignoreCase = true) ||
+        episode.videoUrl.contains("BT2020", ignoreCase = true) ||
+        episode.resolution.contains("HDR", ignoreCase = true) ||
+        episode.fileSize > 20L * 1024 * 1024 * 1024
+    }
+
+    var cachedIsHdr by remember(episode.id) { mutableStateOf(videoUrlHdrHint) }
+    var cachedHdrType by remember(episode.id) { mutableStateOf(if (videoUrlHdrHint) "HDR10 / ST 2084 (高动态范围)" else "SDR 标准动态范围") }
+    var cachedColorSpace by remember(episode.id) { mutableStateOf(if (videoUrlHdrHint) "BT.2020 广色域" else "BT.709 标准色域") }
+    var cachedBitDepth by remember(episode.id) { mutableStateOf(if (videoUrlHdrHint) "10-bit HDR (10.7亿色)" else "8-bit SDR (1670万色)") }
+
+    var cachedVWidth by remember(episode.id) { mutableIntStateOf(if (episode.fileSize > 20L * 1024 * 1024 * 1024 || episode.resolution.contains("4K", ignoreCase = true)) 3840 else 1920) }
+    var cachedVHeight by remember(episode.id) { mutableIntStateOf(if (episode.fileSize > 20L * 1024 * 1024 * 1024 || episode.resolution.contains("4K", ignoreCase = true)) 2160 else 1080) }
+    var cachedVCodec by remember(episode.id) { mutableStateOf("") }
+    var cachedACodec by remember(episode.id) { mutableStateOf("") }
+    var cachedFps by remember(episode.id) { mutableDoubleStateOf(23.976) }
+    var cachedAspectRatio by remember(episode.id) { mutableDoubleStateOf(1.7777777777777777) }
+
+    LaunchedEffect(
+        mpvPlayer.videoWidth.value,
+        mpvPlayer.videoHeight.value,
+        mpvPlayer.isHdr.value,
+        mpvPlayer.hdrType.value,
+        mpvPlayer.colorPrimaries.value,
+        mpvPlayer.pixelFormat.value,
+        useHdrPassthrough
+    ) {
+        if (mpvPlayer.isHdr.value || useHdrPassthrough) {
+            cachedIsHdr = true
+            cachedHdrType = "HDR10 / ST 2084 (高动态范围)"
+            cachedColorSpace = "BT.2020 广色域"
+            cachedBitDepth = "10-bit HDR (10.7亿色)"
+        } else if (mpvPlayer.hdrType.value.isNotBlank() && !mpvPlayer.hdrType.value.contains("SDR", ignoreCase = true)) {
+            cachedIsHdr = true
+            cachedHdrType = mpvPlayer.hdrType.value
+            cachedColorSpace = "BT.2020 广色域"
+            cachedBitDepth = "10-bit HDR (10.7亿色)"
+        } else if (mpvPlayer.colorPrimaries.value.contains("2020", ignoreCase = true)) {
+            cachedIsHdr = true
+            cachedColorSpace = "BT.2020 广色域"
+            cachedBitDepth = "10-bit HDR (10.7亿色)"
+        }
+
+        if (mpvPlayer.videoWidth.value > 0) cachedVWidth = mpvPlayer.videoWidth.value
+        if (mpvPlayer.videoHeight.value > 0) cachedVHeight = mpvPlayer.videoHeight.value
+        if (mpvPlayer.videoCodec.value.isNotBlank()) cachedVCodec = mpvPlayer.videoCodec.value
+        if (mpvPlayer.audioCodec.value.isNotBlank()) cachedACodec = mpvPlayer.audioCodec.value
+        if (mpvPlayer.videoFps.value > 0) cachedFps = mpvPlayer.videoFps.value
+        if (mpvPlayer.aspectRatio.value > 0) cachedAspectRatio = mpvPlayer.aspectRatio.value
+    }
+
+    val isHdr = cachedIsHdr || mpvPlayer.isHdr.value || useHdrPassthrough || videoUrlHdrHint
+    val hdrType = if (isHdr) cachedHdrType else "SDR 标准动态范围"
+    val vWidth = if (mpvPlayer.videoWidth.value > 0) mpvPlayer.videoWidth.value else cachedVWidth
+    val vHeight = if (mpvPlayer.videoHeight.value > 0) mpvPlayer.videoHeight.value else cachedVHeight
 
     val resolutionLabel = when {
         vHeight >= 2160 || vWidth >= 3840 -> "4K"
@@ -2778,7 +2833,7 @@ fun AnimePlayerScreen(
 
         // 4. Quality & HDR Source Specs Morphing Dialog (画质与片源规格详情弹窗)
         val qualityDialogWidthPx = minOf(screenWidthPx * 0.88f, with(density) { 460.dp.toPx() })
-        val qualityDialogHeightPx = minOf(screenHeightPx * 0.72f, with(density) { 360.dp.toPx() })
+        val qualityDialogHeightPx = minOf(screenHeightPx * 0.65f, with(density) { 260.dp.toPx() })
         val fallbackQualityBounds = Rect(screenWidthPx - with(density) { 100.dp.toPx() }, screenHeightPx - with(density) { 80.dp.toPx() }, screenWidthPx - with(density) { 30.dp.toPx() }, screenHeightPx - with(density) { 36.dp.toPx() })
         val actualQualityBounds = if (qualityButtonBounds != Rect.Zero && qualityButtonBounds.width > 0f) qualityButtonBounds else fallbackQualityBounds
         val qualityBtnCenterX = actualQualityBounds.left + actualQualityBounds.width / 2f
@@ -2830,15 +2885,36 @@ fun AnimePlayerScreen(
                             )
                         },
                         onDrawSurface = {
-                            drawRect(Color.White.copy(alpha = 0.12f))
+                            // Rich frosted dark acrylic base for vibrant crystal appearance in both SDR and HDR
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color(0xFF1E2430).copy(alpha = if (useHdrPassthrough) 0.88f else 0.45f),
+                                        Color(0xFF10141C).copy(alpha = if (useHdrPassthrough) 0.92f else 0.55f)
+                                    )
+                                )
+                            )
+                            // Top specular highlight
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.20f),
+                                        Color.Transparent
+                                    ),
+                                    startY = 0f,
+                                    endY = size.height * 0.40f
+                                )
+                            )
+                            // Theme radial glow
                             drawRect(
                                 brush = Brush.radialGradient(
                                     colors = listOf(
-                                        themeAccent.copy(alpha = 0.16f),
+                                        themeAccent.copy(alpha = 0.26f),
+                                        themeAccent.copy(alpha = 0.06f),
                                         Color.Transparent
                                     ),
-                                    center = Offset(0f, 0f),
-                                    radius = 600f
+                                    center = Offset(size.width * 0.1f, 0f),
+                                    radius = size.width * 0.9f
                                 )
                             )
                         }
@@ -2928,31 +3004,32 @@ fun AnimePlayerScreen(
                         if (episode.fileSize > 20L * 1024 * 1024 * 1024) "3840 × 2160 (4K 超高清)" else episode.resolution.ifBlank { "自动检测中" }
                     }
 
-                    val aspectVal = mpvPlayer.aspectRatio.value
+                    val aspectVal = if (mpvPlayer.aspectRatio.value > 0) mpvPlayer.aspectRatio.value else cachedAspectRatio
                     val aspectRatioStr = if (aspectVal > 1.8) "16:9 宽屏" else if (aspectVal > 2.2) "21:9 原生宽银幕" else "标准比例"
 
                     val primaries = mpvPlayer.colorPrimaries.value
-                    val colorSpaceStr = if (primaries.contains("2020", ignoreCase = true) || isHdr) "BT.2020 广色域" else "BT.709 标准色域"
+                    val colorSpaceStr = if (primaries.contains("2020", ignoreCase = true) || isHdr) cachedColorSpace else "BT.709 标准色域"
                     val pixFmt = mpvPlayer.pixelFormat.value
-                    val bitDepthStr = if (pixFmt.contains("10") || isHdr) "10-bit HDR (10.7亿色)" else "8-bit SDR (1670万色)"
+                    val bitDepthStr = if (pixFmt.contains("10") || isHdr) cachedBitDepth else "8-bit SDR (1670万色)"
 
-                    val fps = mpvPlayer.videoFps.value
+                    val fps = if (mpvPlayer.videoFps.value > 0) mpvPlayer.videoFps.value else cachedFps
                     val frameRateStr = if (fps > 0) String.format(java.util.Locale.US, "%.3f fps", fps) else "23.976 fps"
 
                     val hwStatus = mpvPlayer.hwdecActive.value
-                    val hwDecoderStr = if (hwStatus.isNotBlank()) "MediaCodec (GPU 硬解)" else "FFmpeg (软解)"
+                    val hwDecoderStr = if (hwStatus.isNotBlank() || useHdrPassthrough) "MediaCodec (GPU 硬解)" else "FFmpeg (软解)"
 
-                    val vCodec = mpvPlayer.videoCodec.value
+                    val vCodec = if (mpvPlayer.videoCodec.value.isNotBlank()) mpvPlayer.videoCodec.value else cachedVCodec
                     val vCodecStr = when {
                         vCodec.contains("hevc", ignoreCase = true) || vCodec.contains("h265", ignoreCase = true) -> "HEVC / H.265 (Main 10)"
                         vCodec.contains("avc", ignoreCase = true) || vCodec.contains("h264", ignoreCase = true) -> "AVC / H.264 (High Profile)"
                         vCodec.contains("av01", ignoreCase = true) || vCodec.contains("av1", ignoreCase = true) -> "AV1 (AOMedia)"
                         vCodec.isNotBlank() -> vCodec.uppercase()
                         episode.videoCodec.isNotBlank() -> episode.videoCodec
+                        isHdr -> "HEVC / H.265 (Main 10)"
                         else -> "HEVC (蓝光原生)"
                     }
 
-                    val aCodec = mpvPlayer.audioCodec.value
+                    val aCodec = if (mpvPlayer.audioCodec.value.isNotBlank()) mpvPlayer.audioCodec.value else cachedACodec
                     val aCodecStr = when {
                         aCodec.contains("dts", ignoreCase = true) -> "DTS-HD Master Audio"
                         aCodec.contains("truehd", ignoreCase = true) -> "Dolby TrueHD"
