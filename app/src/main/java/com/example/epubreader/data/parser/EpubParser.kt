@@ -421,6 +421,13 @@ object EpubParser {
     private fun extractTitleFromHtml(html: String, bookTitle: String, fallbackChapterIndex: Int): String {
         try {
             val doc = Jsoup.parse(html)
+
+            // If page is purely an image/illustration/cover page with minimal text, do not force a chapter title
+            val hasImage = doc.select("img, image, svg").isNotEmpty()
+            val textLen = doc.body()?.text()?.trim()?.length ?: 0
+            if (hasImage && textLen < 20) {
+                return ""
+            }
             
             // 1. Look for explicit headers: h1, h2, h3, h4
             val headings = doc.select("h1, h2, h3, h4, .chapter-title, .title, .chapter_title, .chapterName, .chapterhead, #title")
@@ -462,7 +469,7 @@ object EpubParser {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return "第 $fallbackChapterIndex 章"
+        return ""
     }
 
     /**

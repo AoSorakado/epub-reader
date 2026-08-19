@@ -267,6 +267,29 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 val client = WebDavClient(url, user, pass)
                 val bookDao = AppDatabase.getDatabase(getApplication()).bookDao()
                 
+                // 1. Auto-cleanup any already duplicated books in local DB
+                try {
+                    val allBooksInDb = bookDao.getAllBooksList()
+                    val grouped = allBooksInDb.groupBy { 
+                        "${it.title.trim().lowercase()}_${it.seriesName?.trim()?.lowercase() ?: ""}" 
+                    }
+                    for ((_, booksWithSameTitle) in grouped) {
+                        if (booksWithSameTitle.size > 1) {
+                            // Keep the book with highest reading progress, then latest read, then smallest id
+                            val sorted = booksWithSameTitle.sortedWith(
+                                compareByDescending<BookEntity> { it.totalProgress }
+                                    .thenByDescending { it.lastReadTime }
+                                    .thenBy { it.id }
+                            )
+                            for (dup in sorted.drop(1)) {
+                                bookDao.deleteBook(dup)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
                 var foundCount = 0
 
                 // Recursive scan function
@@ -275,17 +298,36 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     _syncMessage.value = "正在扫描 $folderLabel..."
                     com.example.epubreader.ui.components.toast.GlobalToastManager.showSyncing("WebDAV 扫描中: $folderLabel...")
                     val resources = client.listFiles(path)
+                    val allExistingBooks = bookDao.getAllBooksList()
+
                     for (res in resources) {
                         if (res.isDirectory) {
                             // The folder name is the res.name
                             scanDirectory(res.path, res.name)
                         } else if (res.name.endsWith(".epub", ignoreCase = true)) {
                             val seriesName = currentFolderName
-                            
-                            // Check if already in DB
-                            val existingBook = bookDao.getBookByFilePath(res.path)
+                            val cleanTitle = res.name.removeSuffix(".epub").replace("-", " ").replace("_", " ").trim()
+                            val cleanResPath = res.path.trimEnd('/')
+                            val decodedResPath = try { java.net.URLDecoder.decode(cleanResPath, "UTF-8") } catch (e: Exception) { cleanResPath }
+                            val resFilename = java.io.File(decodedResPath).name
+
+                            // Comprehensive Check if already in DB (by URL, decoded URL, filename, or title+series)
+                            val existingBook = allExistingBooks.firstOrNull { existing ->
+                                val cleanExistingPath = existing.filePath.trimEnd('/')
+                                val decodedExistingPath = try { java.net.URLDecoder.decode(cleanExistingPath, "UTF-8") } catch (e: Exception) { cleanExistingPath }
+                                val existingFilename = java.io.File(decodedExistingPath).name
+
+                                cleanExistingPath == cleanResPath ||
+                                decodedExistingPath == decodedResPath ||
+                                (existing.isWebDav && existingFilename.equals(resFilename, ignoreCase = true)) ||
+                                existing.title.trim().equals(cleanTitle, ignoreCase = true)
+                            }
+
                             if (existingBook != null) {
-                                // Skip to avoid duplicates
+                                // Already exists, update seriesName if missing but do not duplicate
+                                if (seriesName != null && existingBook.seriesName != seriesName) {
+                                    bookDao.updateBook(existingBook.copy(seriesName = seriesName))
+                                }
                                 continue
                             }
 
@@ -307,7 +349,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             }
 
                             val book = BookEntity(
-                                title = res.name.removeSuffix(".epub").replace("-", " ").replace("_", " "),
+                                title = cleanTitle,
                                 author = "Unknown",
                                 coverImage = coverImagePath,
                                 filePath = res.path,

@@ -3,8 +3,6 @@ package com.example.epubreader.ui.components.liquid
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,8 +17,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -33,8 +29,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -69,8 +63,11 @@ fun LiquidBottomTabs(
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = !isSystemInDarkTheme()
+    val containerColor =
+        if (isLightTheme) Color(0xFFFAFAFA).copy(0.40f)
+        else Color(0xFF121212).copy(0.40f)
+
     val tabsBackdrop = rememberLayerBackdrop()
-    val barBackdrop = rememberLayerBackdrop()
 
     BoxWithConstraints(
         modifier,
@@ -95,7 +92,6 @@ fun LiquidBottomTabs(
         }
 
         val currentOnTabSelected by rememberUpdatedState(onTabSelected)
-
         val currentTabWidth by rememberUpdatedState(tabWidth)
         val currentConstraints by rememberUpdatedState(constraints)
         val currentIsLtr by rememberUpdatedState(isLtr)
@@ -115,11 +111,11 @@ fun LiquidBottomTabs(
                     val touchX = if (currentIsLtr) position.x else currentConstraints.maxWidth.toFloat() - position.x
                     val slotWidth = (currentConstraints.maxWidth.toFloat() / tabsCount.coerceAtLeast(1)).coerceAtLeast(1f)
                     val targetTab = (touchX / slotWidth).toInt().fastCoerceIn(0, tabsCount - 1).toFloat()
-                    updateValue(targetTab)
+                    snapToValue(targetTab)
                 },
                 onDragStopped = {
                     highlightTrigger?.release()
-                    val targetIndex = targetValue.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
+                    val targetIndex = value.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
                     animateToValue(targetIndex.toFloat())
                     animationScope.launch {
                         offsetAnimation.animateTo(
@@ -171,7 +167,7 @@ fun LiquidBottomTabs(
             }
         }
 
-        // Row 1: The main Glass Bottom Bar container - strong blur and lens refraction
+        // Row 1: Outer Glass Bottom Bar Container
         Row(
             Modifier
                 .graphicsLayer {
@@ -182,11 +178,10 @@ fun LiquidBottomTabs(
                     shape = { CircleShape },
                     effects = {
                         vibrancy()
-                        blur(20f.dp.toPx())
+                        blur(16f.dp.toPx())
                         lens(
-                            refractionHeight = 18f.dp.toPx(),
-                            refractionAmount = 36f.dp.toPx(),
-                            depthEffect = true
+                            24f.dp.toPx(),
+                            24f.dp.toPx()
                         )
                     },
                     layerBlock = {
@@ -195,7 +190,9 @@ fun LiquidBottomTabs(
                         scaleX = scale
                         scaleY = scale
                     },
-                    exportedBackdrop = barBackdrop
+                    onDrawSurface = {
+                        drawRect(containerColor)
+                    }
                 )
                 .then(interactiveHighlight.modifier)
                 .height(64f.dp)
@@ -205,7 +202,7 @@ fun LiquidBottomTabs(
             content = content
         )
 
-        // Row 2: Hidden layer that captures ONLY the tab icons/text for crisp chromatic tinting
+        // Row 2: Hidden capture layer (draws frosted background + crisp accent-colored icons into tabsBackdrop)
         CompositionLocalProvider(
             LocalLiquidBottomTabScale provides {
                 lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
@@ -219,6 +216,25 @@ fun LiquidBottomTabs(
                     .graphicsLayer {
                         translationX = panelOffset
                     }
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { CircleShape },
+                        effects = {
+                            val progress = dampedDragAnimation.pressProgress
+                            vibrancy()
+                            blur(16f.dp.toPx())
+                            lens(
+                                24f.dp.toPx() * progress,
+                                24f.dp.toPx() * progress
+                            )
+                        },
+                        highlight = {
+                            val progress = dampedDragAnimation.pressProgress
+                            Highlight.Default.copy(alpha = progress)
+                        },
+                        onDrawSurface = { drawRect(containerColor) }
+                    )
+                    .then(interactiveHighlight.modifier)
                     .height(56f.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 4f.dp)
@@ -228,36 +244,25 @@ fun LiquidBottomTabs(
             )
         }
 
-        // Box 3: The Glass Slider (sliding thumb)
+        // Box 3: Glass Slider Thumb (crisply refracts tabsBackdrop with chromatic dispersion & velocity stretch)
         Box(
             Modifier
                 .padding(horizontal = 4f.dp)
-                .layout { measurable, constraints ->
-                    val placeable = measurable.measure(constraints)
-                    val x = if (isLtr) {
-                        (dampedDragAnimation.value * tabWidth + panelOffset).fastRoundToInt()
-                    } else {
-                        (constraints.maxWidth - (dampedDragAnimation.value + 1f) * tabWidth + panelOffset).fastRoundToInt()
-                    }
-                    layout(placeable.width, placeable.height) {
-                        placeable.place(x, 0)
-                    }
+                .graphicsLayer {
+                    translationX =
+                        if (isLtr) dampedDragAnimation.value * tabWidth + panelOffset
+                        else size.width - (dampedDragAnimation.value + 1f) * tabWidth + panelOffset
                 }
                 .drawBackdrop(
-                    backdrop = rememberCombinedBackdrop(barBackdrop, tabsBackdrop),
+                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
                     shape = { CircleShape },
                     effects = {
                         val progress = dampedDragAnimation.pressProgress
-                        vibrancy()
                         lens(
-                            refractionHeight = lerp(8f.dp.toPx(), 14f.dp.toPx(), progress),
-                            refractionAmount = lerp(12f.dp.toPx(), 20f.dp.toPx(), progress),
-                            depthEffect = true
+                            10f.dp.toPx() * progress,
+                            14f.dp.toPx() * progress,
+                            chromaticAberration = true
                         )
-                    },
-                    layerBlock = {
-                        scaleX = dampedDragAnimation.scaleX
-                        scaleY = dampedDragAnimation.scaleY
                     },
                     highlight = {
                         val progress = dampedDragAnimation.pressProgress
@@ -274,15 +279,28 @@ fun LiquidBottomTabs(
                             alpha = progress
                         )
                     },
+                    layerBlock = {
+                        scaleX = dampedDragAnimation.scaleX
+                        scaleY = dampedDragAnimation.scaleY
+                        val velocity = dampedDragAnimation.velocity / 10f
+                        scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                        scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                    },
                     onDrawSurface = {
-                        drawRect(accentColor.copy(alpha = if (!isLightTheme) 0.28f else 0.18f))
+                        val progress = dampedDragAnimation.pressProgress
+                        drawRect(
+                            if (isLightTheme) Color.Black.copy(0.1f)
+                            else Color.White.copy(0.1f),
+                            alpha = 1f - progress
+                        )
+                        drawRect(Color.Black.copy(alpha = 0.03f * progress))
                     }
                 )
                 .height(56f.dp)
                 .fillMaxWidth(1f / tabsCount.coerceAtLeast(1))
         )
 
-        // Touch & Drag Overlay (Spans entire bar so touching ANY tab immediately summons and drags thumb)
+        // Touch & Drag Overlay (Spans entire bar so touching ANY tab immediately summons and smoothly drags thumb)
         Box(
             Modifier
                 .matchParentSize()

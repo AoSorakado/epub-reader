@@ -134,7 +134,8 @@ fun MainScaffold(navController: NavHostController) {
     }
 
     val isReaderRoute = currentRoute?.startsWith("reader") == true
-    val showBottomBar = !isReaderActive && !isReaderRoute && activePlayingPair == null && !isHanimePlaying
+    val isNoveliaRoute = currentRoute == "novelia"
+    val showBottomBar = !isReaderActive && !isReaderRoute && !isNoveliaRoute && activePlayingPair == null && !isHanimePlaying
 
     var selectedTabIndex by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
 
@@ -154,8 +155,9 @@ fun MainScaffold(navController: NavHostController) {
                 .layerBackdrop(contentBackdrop)
         ) {
             // Tab 0: Bookshelf (Preloaded)
+            val isBookshelfVisible = selectedTabIndex == 0 && !isReaderRoute && !isNoveliaRoute
             val bookshelfAlpha by androidx.compose.animation.core.animateFloatAsState(
-                targetValue = if (selectedTabIndex == 0 && !isReaderRoute) 1f else 0f,
+                targetValue = if (isBookshelfVisible) 1f else 0f,
                 animationSpec = androidx.compose.animation.core.tween(150),
                 label = "bookshelfAlpha"
             )
@@ -164,7 +166,7 @@ fun MainScaffold(navController: NavHostController) {
                     .fillMaxSize()
                     .graphicsLayer {
                         alpha = bookshelfAlpha
-                        translationX = if (selectedTabIndex == 0 && !isReaderRoute) 0f else -10000f
+                        translationX = if (isBookshelfVisible) 0f else -10000f
                     }
             ) {
                 BookshelfScreen(
@@ -176,8 +178,9 @@ fun MainScaffold(navController: NavHostController) {
             }
 
             // Tab 1: Anime (Preloaded)
+            val isAnimeVisible = selectedTabIndex == 1 && !isReaderRoute && !isNoveliaRoute
             val animeAlpha by androidx.compose.animation.core.animateFloatAsState(
-                targetValue = if (selectedTabIndex == 1 && !isReaderRoute) 1f else 0f,
+                targetValue = if (isAnimeVisible) 1f else 0f,
                 animationSpec = androidx.compose.animation.core.tween(150),
                 label = "animeAlpha"
             )
@@ -186,7 +189,7 @@ fun MainScaffold(navController: NavHostController) {
                     .fillMaxSize()
                     .graphicsLayer {
                         alpha = animeAlpha
-                        translationX = if (selectedTabIndex == 1 && !isReaderRoute) 0f else -10000f
+                        translationX = if (isAnimeVisible) 0f else -10000f
                     }
             ) {
                 val animeWebDavClient = settingsViewModel.getEffectiveAnimeWebDavClient()
@@ -207,7 +210,7 @@ fun MainScaffold(navController: NavHostController) {
             }
 
             // Tab 2: Stats (Preloaded)
-            val isStatsVisible = selectedTabIndex == 2 && !isReaderRoute
+            val isStatsVisible = selectedTabIndex == 2 && !isReaderRoute && !isNoveliaRoute
             val statsAlpha by androidx.compose.animation.core.animateFloatAsState(
                 targetValue = if (isStatsVisible) 1f else 0f,
                 animationSpec = androidx.compose.animation.core.tween(150),
@@ -230,8 +233,9 @@ fun MainScaffold(navController: NavHostController) {
             }
 
             // Tab 3: Settings (Preloaded)
+            val isSettingsVisible = selectedTabIndex == 3 && !isReaderRoute && !isNoveliaRoute
             val settingsAlpha by androidx.compose.animation.core.animateFloatAsState(
-                targetValue = if (selectedTabIndex == 3 && !isReaderRoute) 1f else 0f,
+                targetValue = if (isSettingsVisible) 1f else 0f,
                 animationSpec = androidx.compose.animation.core.tween(150),
                 label = "settingsAlpha"
             )
@@ -240,7 +244,7 @@ fun MainScaffold(navController: NavHostController) {
                     .fillMaxSize()
                     .graphicsLayer {
                         alpha = settingsAlpha
-                        translationX = if (selectedTabIndex == 3 && !isReaderRoute) 0f else -10000f
+                        translationX = if (isSettingsVisible) 0f else -10000f
                     }
             ) {
                 SettingsScreen(
@@ -285,6 +289,25 @@ fun MainScaffold(navController: NavHostController) {
                         bookId = bookId,
                         settingsViewModel = settingsViewModel,
                         backgroundBackdrop = backgroundBackdrop
+                    )
+                }
+                composable(
+                    route = "novelia",
+                    enterTransition = {
+                        androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(220))
+                    },
+                    exitTransition = {
+                        androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(150))
+                    },
+                    popEnterTransition = {
+                        androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(150))
+                    },
+                    popExitTransition = {
+                        androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(120))
+                    }
+                ) {
+                    com.example.epubreader.ui.novelia.NoveliaScreen(
+                        onNavigateBack = { navController.popBackStack() }
                     )
                 }
             }

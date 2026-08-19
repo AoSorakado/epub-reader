@@ -265,6 +265,52 @@ class WebDavClient(
         }
     }
 
+    suspend fun uploadFile(
+        localFile: File,
+        remotePath: String,
+        onProgress: (Float) -> Unit = {}
+    ): Boolean = withContext(Dispatchers.IO) {
+        val url = resolveUrl(remotePath)
+        val mediaType = when {
+            remotePath.endsWith(".epub", ignoreCase = true) -> "application/epub+zip".toMediaType()
+            remotePath.endsWith(".txt", ignoreCase = true) -> "text/plain; charset=utf-8".toMediaType()
+            else -> "application/octet-stream".toMediaType()
+        }
+
+        val totalLength = localFile.length()
+        val requestBody = object : okhttp3.RequestBody() {
+            override fun contentType() = mediaType
+            override fun contentLength() = totalLength
+            override fun writeTo(sink: okio.BufferedSink) {
+                val buffer = ByteArray(32 * 1024)
+                var uploaded = 0L
+                localFile.inputStream().use { input ->
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                        sink.write(buffer, 0, read)
+                        uploaded += read
+                        if (totalLength > 0) {
+                            onProgress(uploaded.toFloat() / totalLength.toFloat())
+                        }
+                    }
+                }
+            }
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .put(requestBody)
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful || response.code in 200..299
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     suspend fun getTextFile(path: String): String? = withContext(Dispatchers.IO) {
         val url = resolveUrl(path)
         val request = Request.Builder().url(url).get().build()

@@ -501,6 +501,7 @@ fun BookshelfScreen(
     }
 
     val layoutMethod by viewModel.layoutMethod.collectAsState()
+    var topHeaderHeightDp by remember { mutableStateOf(80.dp) }
 
     Box(modifier = Modifier
         .fillMaxSize()
@@ -510,98 +511,23 @@ fun BookshelfScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(bookshelfGradient)
-                .layerBackdrop(bookshelfBackdrop)
         ) {
-            Scaffold(
-                containerColor = Color.Transparent,
-                contentColor = primaryTextColor,
-                topBar = {
-                    TopAppBar(
-                        title = { 
-                            Text(
-                                "我的书架", 
-                                fontWeight = FontWeight.ExtraBold, 
-                                fontSize = 24.sp,
-                                color = primaryTextColor
-                            ) 
-                        },
-                        actions = {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(end = 8.dp)
-                            ) {
-                                LiquidButton(
-                                    onClick = {
-                                        localImportLauncher.launch(arrayOf("application/epub+zip", "text/plain", "application/octet-stream", "*/*"))
-                                    },
-                                    backdrop = globalBackdrop,
-                                    modifier = Modifier.size(44.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Add,
-                                        contentDescription = "导入书籍",
-                                        tint = primaryTextColor,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-
-                                LiquidButton(
-                                    onClick = { viewModel.setLayoutMethod(if (layoutMethod == 0) 1 else 0) },
-                                    backdrop = globalBackdrop,
-                                    modifier = Modifier.size(44.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (layoutMethod == 0) Icons.Filled.ViewList else Icons.Filled.GridView,
-                                        contentDescription = "切换布局",
-                                        tint = primaryTextColor,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-
-                                LiquidButton(
-                                    onClick = { showSortMenu = true },
-                                    backdrop = globalBackdrop,
-                                    shape = CircleShape,
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .onGloballyPositioned { coords ->
-                                            rootCoords?.let { root ->
-                                                sortButtonBounds = root.localBoundingBoxOf(coords, clipBounds = false)
-                                            }
-                                        }
-                                        .graphicsLayer {
-                                            alpha = if (morphProgress > 0.001f) 0f else 1f
-                                        }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Sort, 
-                                        contentDescription = "排序",
-                                        tint = primaryTextColor,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent,
-                            titleContentColor = primaryTextColor,
-                            actionIconContentColor = primaryTextColor
-                        )
+            // Layer 1: Full-Screen Scrolling Bookshelf Grid (Captured by bookshelfBackdrop so top bar & dialogs can refract books)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(bookshelfBackdrop)
+            ) {
+                LazyVerticalGrid(
+                    columns = if (layoutMethod == 0) GridCells.Fixed(3) else GridCells.Fixed(1),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        top = topHeaderHeightDp + 6.dp,
+                        bottom = 100.dp,
+                        start = 10.dp,
+                        end = 10.dp
                     )
-                }
-            ) { paddingValues ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues)
-                        .padding(horizontal = 8.dp)
                 ) {
-                    LazyVerticalGrid(
-                        columns = if (layoutMethod == 0) GridCells.Fixed(3) else GridCells.Fixed(1),
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 80.dp)
-                    ) {
                         items(groupedItems) { item ->
                             when (item) {
                                 is BookEntity -> {
@@ -680,9 +606,127 @@ fun BookshelfScreen(
                             }
                         }
                         if (groupedItems.isEmpty()) {
-                            item {
-                                Text("书架空空如也，点击右上角导入书籍，或者前往配置页同步 WebDAV", modifier = Modifier.padding(16.dp))
+                            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(if (layoutMethod == 0) 3 else 1) }) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 40.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "书架空空如也，点击右上角导入书籍，或者前往配置页同步 WebDAV",
+                                        color = secondaryTextColor,
+                                        fontSize = 14.sp
+                                    )
+                                }
                             }
+                        }
+                    }
+            }
+
+            // Layer 2: Floating Transparent Top Header with Liquid Glass Buttons (Matching AnimeScreen)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .onGloballyPositioned { coords ->
+                        topHeaderHeightDp = with(density) { coords.size.height.toDp() }
+                    }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "我的书架",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 24.sp,
+                        color = primaryTextColor
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        LiquidButton(
+                            onClick = {
+                                navController.navigate("novelia")
+                            },
+                            backdrop = bookshelfBackdrop,
+                            shape = CircleShape,
+                            isDark = isDark,
+                            themeAccent = themeAccent,
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AutoStories,
+                                contentDescription = "Novelia 轻小说",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        LiquidButton(
+                            onClick = {
+                                localImportLauncher.launch(arrayOf("application/epub+zip", "text/plain", "application/octet-stream", "*/*"))
+                            },
+                            backdrop = bookshelfBackdrop,
+                            shape = CircleShape,
+                            isDark = isDark,
+                            themeAccent = themeAccent,
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Add,
+                                contentDescription = "导入书籍",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        LiquidButton(
+                            onClick = { viewModel.setLayoutMethod(if (layoutMethod == 0) 1 else 0) },
+                            backdrop = bookshelfBackdrop,
+                            shape = CircleShape,
+                            isDark = isDark,
+                            themeAccent = themeAccent,
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (layoutMethod == 0) Icons.Filled.ViewList else Icons.Filled.GridView,
+                                contentDescription = "切换布局",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        LiquidButton(
+                            onClick = { showSortMenu = true },
+                            backdrop = bookshelfBackdrop,
+                            shape = CircleShape,
+                            isDark = isDark,
+                            themeAccent = themeAccent,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .onGloballyPositioned { coords ->
+                                    rootCoords?.let { root ->
+                                        sortButtonBounds = root.localBoundingBoxOf(coords, clipBounds = false)
+                                    }
+                                }
+                                .graphicsLayer {
+                                    alpha = if (morphProgress > 0.001f) 0f else 1f
+                                }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Sort, 
+                                contentDescription = "排序",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 }
@@ -2022,9 +2066,9 @@ fun BookshelfScreen(
                 }
             }
         }
-        
     } // Close root Box
 } // Close BookshelfScreen
+
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
