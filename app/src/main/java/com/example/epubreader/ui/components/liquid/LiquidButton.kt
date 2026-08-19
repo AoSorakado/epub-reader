@@ -112,33 +112,22 @@ fun LiquidButton(
             } else null,
             onDrawSurface = {
                 if (isCrystal && themeAccent.isSpecified) {
-                    // Rich frosted dark acrylic base
                     drawRect(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                Color(0xFF1E2430).copy(alpha = 0.55f),
-                                Color(0xFF10141C).copy(alpha = 0.70f)
+                                Color.White.copy(alpha = if (isDark) 0.16f else 0.24f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.08f)
                             )
                         )
                     )
-                    // Top specular highlight
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = if (isDark) 0.22f else 0.30f),
-                                Color.White.copy(alpha = if (isDark) 0.05f else 0.10f)
-                            )
-                        )
-                    )
-                    // Vibrant theme accent radial glow
                     drawRect(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                themeAccent.copy(alpha = if (isDark) 0.32f else 0.38f),
-                                themeAccent.copy(alpha = if (isDark) 0.08f else 0.12f),
+                                themeAccent.copy(alpha = if (isDark) 0.18f else 0.22f),
+                                themeAccent.copy(alpha = if (isDark) 0.04f else 0.06f),
                                 Color.Transparent
                             ),
-                            center = Offset(size.width * 0.2f, 0f),
+                            center = Offset(size.width * 0.15f, 0f),
                             radius = size.width * 0.95f
                         )
                     )
