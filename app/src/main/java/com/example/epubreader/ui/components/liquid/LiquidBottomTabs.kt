@@ -64,8 +64,8 @@ fun LiquidBottomTabs(
 ) {
     val isLightTheme = !isSystemInDarkTheme()
     val containerColor =
-        if (isLightTheme) Color(0xFFFAFAFA).copy(0.40f)
-        else Color(0xFF121212).copy(0.40f)
+        if (isLightTheme) Color(0xFFFAFAFA).copy(0.18f)
+        else Color(0xFF141820).copy(0.22f)
 
     val tabsBackdrop = rememberLayerBackdrop()
 
@@ -97,7 +97,6 @@ fun LiquidBottomTabs(
         val currentIsLtr by rememberUpdatedState(isLtr)
 
         var highlightTrigger by remember { mutableStateOf<InteractiveHighlight?>(null) }
-
         var didDrag by remember { mutableStateOf(false) }
         var dragStartOffset by remember { mutableStateOf(Offset.Zero) }
 
@@ -149,6 +148,7 @@ fun LiquidBottomTabs(
                         snapToValue(
                             (value + delta).fastCoerceIn(0f, (tabsCount - 1).toFloat())
                         )
+                        val maxOffset = with(density) { 16f.dp.toPx() }
                         animationScope.launch {
                             offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x)
                         }
@@ -219,7 +219,7 @@ fun LiquidBottomTabs(
             content = content
         )
 
-        // Row 2: Hidden capture layer (draws frosted background + crisp accent-colored icons into tabsBackdrop)
+        // Row 2: Hidden capture layer (draws crisp accent-colored icons into tabsBackdrop)
         CompositionLocalProvider(
             LocalLiquidBottomTabScale provides {
                 lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
@@ -233,25 +233,6 @@ fun LiquidBottomTabs(
                     .graphicsLayer {
                         translationX = panelOffset
                     }
-                    .drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { CircleShape },
-                        effects = {
-                            val progress = dampedDragAnimation.pressProgress
-                            vibrancy()
-                            blur(16f.dp.toPx())
-                            lens(
-                                24f.dp.toPx() * progress,
-                                24f.dp.toPx() * progress
-                            )
-                        },
-                        highlight = {
-                            val progress = dampedDragAnimation.pressProgress
-                            Highlight.Default.copy(alpha = progress)
-                        },
-                        onDrawSurface = { drawRect(containerColor) }
-                    )
-                    .then(interactiveHighlight.modifier)
                     .height(56f.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 4f.dp)
@@ -304,13 +285,7 @@ fun LiquidBottomTabs(
                         scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
                     },
                     onDrawSurface = {
-                        val progress = dampedDragAnimation.pressProgress
-                        drawRect(
-                            if (isLightTheme) Color.Black.copy(0.1f)
-                            else Color.White.copy(0.1f),
-                            alpha = 1f - progress
-                        )
-                        drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                        drawRect(accentColor.copy(alpha = if (!isLightTheme) 0.16f else 0.12f))
                     }
                 )
                 .height(56f.dp)

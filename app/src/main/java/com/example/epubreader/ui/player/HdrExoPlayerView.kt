@@ -288,16 +288,27 @@ fun HdrExoPlayerView(
     ) {
         AndroidView(
             factory = { ctx ->
-                TextureView(ctx).apply {
+                SurfaceView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    exoPlayer?.setVideoTextureView(this)
+                    setZOrderMediaOverlay(true)
+                    try {
+                        holder.setFormat(android.graphics.PixelFormat.RGBA_1010102)
+                    } catch (e: Throwable) {}
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        try {
+                            setDesiredHdrHeadroom(10.0f)
+                        } catch (e: Throwable) {}
+                    }
+                    currentSurfaceView = this
+                    exoPlayer?.setVideoSurfaceView(this)
                 }
             },
-            update = { textureView ->
-                exoPlayer?.setVideoTextureView(textureView)
+            update = { surfaceView ->
+                currentSurfaceView = surfaceView
+                exoPlayer?.setVideoSurfaceView(surfaceView)
             },
             modifier = when (resizeMode) {
                 MpvPlayerManager.ResizeMode.FIT -> Modifier
