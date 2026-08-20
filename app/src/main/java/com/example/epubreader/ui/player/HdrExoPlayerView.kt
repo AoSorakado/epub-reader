@@ -93,6 +93,7 @@ fun HdrExoPlayerView(
                 DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS or
                 DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM
             )
+            .setTextTrackTranscodingEnabled(true)
 
         val effectiveDataSourceFactory = if (videoUrl.contains(".m2ts", ignoreCase = true)) {
             BdavDataSource.Factory(dataSourceFactory)
@@ -114,11 +115,14 @@ fun HdrExoPlayerView(
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
-        // Track selector configured to pick supported AC3/AAC/EAC3 audio if DTS-HD is present
+        // Track selector configured to pick supported AC3/AAC/EAC3 audio and subtitle tracks
         val trackSelector = DefaultTrackSelector(context).apply {
             setParameters(
                 buildUponParameters()
                     .setPreferredAudioMimeTypes("audio/mp4a-latm", "audio/ac3", "audio/eac3", "audio/raw", "audio/flac", "audio/opus")
+                    .setPreferredTextLanguage("zh")
+                    .setSelectUndeterminedTextLanguage(true)
+                    .setRendererDisabled(C.TRACK_TYPE_TEXT, false)
                     .setExceedRendererCapabilitiesIfNecessary(true)
             )
         }
@@ -309,6 +313,39 @@ fun HdrExoPlayerView(
             update = { surfaceView ->
                 currentSurfaceView = surfaceView
                 exoPlayer?.setVideoSurfaceView(surfaceView)
+            },
+            modifier = when (resizeMode) {
+                MpvPlayerManager.ResizeMode.FIT -> Modifier
+                    .aspectRatio(videoAspectRatio, matchHeightConstraintsFirst = false)
+                    .fillMaxSize()
+                MpvPlayerManager.ResizeMode.ZOOM -> Modifier.fillMaxSize()
+                MpvPlayerManager.ResizeMode.FILL -> Modifier.fillMaxSize()
+            }
+        )
+
+        // Subtitle Overlay (Renders PGS Blu-ray bitmap subtitles, SRT, and VTT over HDR video)
+        AndroidView(
+            factory = { ctx ->
+                androidx.media3.ui.SubtitleView(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    setUserDefaultStyle()
+                    setUserDefaultTextSize()
+                    setApplyEmbeddedStyles(true)
+                    setApplyEmbeddedFontSizes(true)
+                    exoPlayer?.addListener(object : Player.Listener {
+                        override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+                            setCues(cueGroup.cues)
+                        }
+                    })
+                }
+            },
+            update = { subtitleView ->
+                exoPlayer?.currentCues?.let { cueGroup ->
+                    subtitleView.setCues(cueGroup.cues)
+                }
             },
             modifier = when (resizeMode) {
                 MpvPlayerManager.ResizeMode.FIT -> Modifier
