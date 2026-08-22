@@ -444,7 +444,7 @@ fun ReaderScreen(
     }
 
     val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = initialChapterIndex.coerceIn(0, (parsedChapters.size - 1).coerceAtLeast(0)),
+        initialFirstVisibleItemIndex = if (initialChapterIndex <= 0) 0 else (initialChapterIndex + 1).coerceIn(0, parsedChapters.size),
         initialFirstVisibleItemScrollOffset = initialOffset
     )
 
@@ -488,7 +488,8 @@ fun ReaderScreen(
             snapshotFlow { listState.firstVisibleItemIndex }
                 .distinctUntilChanged()
                 .collect { index ->
-                    viewModel.updateReadingPosition(index)
+                    val chIdx = if (index <= 0) 0 else (index - 1).coerceIn(0, (parsedChapters.size - 1).coerceAtLeast(0))
+                    viewModel.updateReadingPosition(chIdx)
                 }
         }
     }
@@ -527,8 +528,10 @@ fun ReaderScreen(
                 val observer = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
                         if (currentPageTurnModeRef.value == 0) {
+                            val curItemIdx = currentListStateRef.value.firstVisibleItemIndex
+                            val chIdx = if (curItemIdx <= 0) 0 else (curItemIdx - 1).coerceIn(0, (parsedChapters.size - 1).coerceAtLeast(0))
                             viewModel.saveProgress(
-                                chapterIndex = currentListStateRef.value.firstVisibleItemIndex,
+                                chapterIndex = chIdx,
                                 offset = currentListStateRef.value.firstVisibleItemScrollOffset,
                                 progressOverride = currentProgressRef.value
                             )
@@ -548,8 +551,10 @@ fun ReaderScreen(
                 onDispose {
                     lifecycleOwner.lifecycle.removeObserver(observer)
                     if (currentPageTurnModeRef.value == 0) {
+                        val curItemIdx = currentListStateRef.value.firstVisibleItemIndex
+                        val chIdx = if (curItemIdx <= 0) 0 else (curItemIdx - 1).coerceIn(0, (parsedChapters.size - 1).coerceAtLeast(0))
                         viewModel.saveProgress(
-                            chapterIndex = currentListStateRef.value.firstVisibleItemIndex,
+                            chapterIndex = chIdx,
                             offset = currentListStateRef.value.firstVisibleItemScrollOffset,
                             progressOverride = currentProgressRef.value
                         )
@@ -674,7 +679,7 @@ fun ReaderScreen(
                 val currentChapterIndex by remember(pageTurnMode, pagedCurrentIndex) {
                     derivedStateOf {
                         if (pageTurnMode == 0) {
-                            (listState.firstVisibleItemIndex - 1).coerceAtLeast(0)
+                            if (listState.firstVisibleItemIndex <= 0) 0 else (listState.firstVisibleItemIndex - 1).coerceIn(0, (parsedChapters.size - 1).coerceAtLeast(0))
                         } else {
                             pages.getOrNull(pagedCurrentIndex)?.chapterIndex ?: 0
                         }
@@ -896,7 +901,8 @@ fun ReaderScreen(
             val currentChapterName by remember(pageTurnMode, pagedCurrentIndex) {
                 derivedStateOf {
                     if (pageTurnMode == 0) {
-                        parsedChapters.getOrNull(listState.firstVisibleItemIndex)?.title ?: "正文"
+                        val chIdx = if (listState.firstVisibleItemIndex <= 0) 0 else (listState.firstVisibleItemIndex - 1).coerceIn(0, (parsedChapters.size - 1).coerceAtLeast(0))
+                        parsedChapters.getOrNull(chIdx)?.title ?: "正文"
                     } else {
                         pages.getOrNull(pagedCurrentIndex)?.chapterTitle ?: "正文"
                     }
@@ -1638,12 +1644,12 @@ fun ReaderScreen(
                     }
 
                                 // Current reading chapter for unique TOC selection
-                                val currentChapter = if (pageTurnMode == 0) {
-                                    parsedChapters.getOrNull(listState.firstVisibleItemIndex)
+                                val currentChIdx = if (pageTurnMode == 0) {
+                                    if (listState.firstVisibleItemIndex <= 0) 0 else (listState.firstVisibleItemIndex - 1).coerceIn(0, (parsedChapters.size - 1).coerceAtLeast(0))
                                 } else {
-                                    pages.getOrNull(pagedCurrentIndex)?.let { p -> parsedChapters.getOrNull(p.chapterIndex) }
+                                    pages.getOrNull(pagedCurrentIndex)?.chapterIndex ?: 0
                                 }
-                                val currentChIdx = if (pageTurnMode == 0) listState.firstVisibleItemIndex else (pages.getOrNull(pagedCurrentIndex)?.chapterIndex ?: 0)
+                                val currentChapter = parsedChapters.getOrNull(currentChIdx)
 
                                 val currentTocIndex = remember(tocList, currentChIdx, currentChapter, pagedCurrentIndex, pageTurnMode) {
                                     if (tocList.isEmpty()) -1
@@ -1703,7 +1709,7 @@ fun ReaderScreen(
                                                 }
                                                 if (matchedCh >= 0) {
                                                     if (pageTurnMode == 0) {
-                                                        coroutineScope.launch { listState.scrollToItem(matchedCh, 0) }
+                                                        coroutineScope.launch { listState.scrollToItem(matchedCh + 1, 0) }
                                                         viewModel.saveProgress(matchedCh, 0)
                                                     } else {
                                                         val targetPage = pages.indexOfFirst { it.chapterIndex == matchedCh }.coerceAtLeast(0)

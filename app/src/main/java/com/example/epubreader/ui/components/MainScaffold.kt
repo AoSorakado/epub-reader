@@ -395,6 +395,7 @@ fun MainScaffold(navController: NavHostController) {
                 },
                 backdrop = contentBackdrop,
                 tabsCount = bottomNavItems.size,
+                isDark = isDark,
                 accentColor = themeAccent,
                 modifier = Modifier
                     .navigationBarsPadding()

@@ -356,14 +356,149 @@ class NoveliaApiClient(context: Context) {
         }
     }
 
+    data class ParsedVolumeMeta(
+        val volumeNumber: Int?,
+        val specialNumber: Int?,
+        val subtitle: String,
+        val cleanName: String,
+        val isSpecial: Boolean
+    )
+
+    fun normalizeText(text: String): String {
+        if (text.isBlank()) return ""
+        val sb = StringBuilder()
+        for (ch in text) {
+            when {
+                ch == '\u3000' || ch == '\u00A0' -> sb.append(' ')
+                ch in '\uFF10'..'\uFF19' -> sb.append((ch.code - 0xFEE0).toChar())
+                else -> sb.append(ch)
+            }
+        }
+        return sb.toString().replace(Regex("\\s+"), " ").trim()
+    }
+
+    /**
+     * Extracts the core title from subtitles e.g. "やり直し公女の魔導革命～処刑された...～" -> "やり直し公女の魔導革命"
+     */
+    fun extractCoreSeriesTitle(title: String): String {
+        if (title.isBlank()) return ""
+        val t = normalizeText(title)
+        val m = Regex("^(.*?)\\s*[～~:：\\-]\\s*(.*?)(?:\\s*[～~])?\\s*$").find(t)
+        if (m != null && m.groupValues[1].trim().length >= 2) {
+            return m.groupValues[1].trim()
+        }
+        return t
+    }
+
+    /**
+     * Intelligently parses volume number and subtitle from raw volume names
+     */
+    fun parseVolumeMeta(
+        rawVolId: String,
+        seriesTitleZh: String,
+        seriesTitleJp: String,
+        publisher: String = "",
+        imprint: String = "",
+        zhSubtitlesMap: Map<Int, String> = emptyMap()
+    ): ParsedVolumeMeta {
+        var clean = rawVolId.replace(Regex("\\.epub$", RegexOption.IGNORE_CASE), "")
+        clean = normalizeText(clean)
+
+        // 1. Strip author brackets e.g. [二八乃端月], [天城ケイ]
+        clean = clean.replace(Regex("^\\[[^\\]]+\\]\\s*\\+*"), "")
+        clean = clean.replace(Regex("\\+*\\[[^\\]]+\\]$"), "")
+
+        // 2. Strip author suffixes e.g. "- 二八乃端月", "- 賀東 招二"
+        clean = clean.replace(Regex("\\s*-\\s*[^-_()（）\\[\\]【】]{2,25}(\\s*&\\s*[^-_()（）\\[\\]【】]{2,25})*$"), "")
+
+        // 3. Strip publisher / imprint / label brackets
+        if (publisher.isNotBlank()) {
+            clean = clean.replace("($publisher)", "").replace("（$publisher）", "")
+        }
+        if (imprint.isNotBlank()) {
+            clean = clean.replace("($imprint)", "").replace("（$imprint）", "")
+        }
+        clean = clean.replace(Regex("[\\(（][^\\)）]*(?:文庫|ノベル|ファンタジア|電撃|オーバーラップ|KADOKAWA|角川|MF|GA|小学館|集英社|限定|特典|サーガ|フォレスト|一二三|新文芸|ドラゴン|スニーカー|ビーズログ|ダッシュエックス|HJ|アース・スター|ブレイブ|ツギクル|TO|Mノベルス)[^\\)）]*[\\)）]"), "")
+        clean = clean.replace(Regex("【[^】]*】"), "")
+        clean = clean.replace("+", " ").trim()
+        clean = clean.replace(Regex("\\s+"), " ")
+
+        // 4. Strip series prefix (prefer core prefix so volume subtitles with common prefix aren't stripped)
+        val coreJp = extractCoreSeriesTitle(seriesTitleJp)
+        val coreZh = extractCoreSeriesTitle(seriesTitleZh)
+        val fullJp = normalizeText(seriesTitleJp)
+        val fullZh = normalizeText(seriesTitleZh)
+
+        var rest = clean
+        for (p in listOf(coreJp, coreZh, fullJp, fullZh)) {
+            if (p.isNotBlank() && rest.startsWith(p, ignoreCase = true)) {
+                rest = rest.substring(p.length).trim()
+                break
+            }
+        }
+        rest = rest.trim(' ', ':', '：', '-', '_', '~', '～')
+
+        val isSpecial = Regex("\\.txt$|第\\d+話|第\\d+话|Secret|SS|短篇|特典|外传|外傳|Bonus|Special|Side\\s*Story|Ex|ショートストーリー|限定書き下ろし|購入特典", RegexOption.IGNORE_CASE).containsMatchIn(rawVolId)
+        var volNum: Int? = null
+        var specialNum: Int? = null
+        var sub: String
+
+        if (isSpecial) {
+            sub = rest.replace(Regex("([a-zA-Z\u4e00-\u9fa5\u3040-\u30ff])(\\d+)"), "$1 $2").trim()
+            val sNumMatch = Regex("(\\d+)").find(sub)
+            specialNum = sNumMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
+        } else {
+            // Try leading number (e.g. "０ 王立学校編", "2 最強剣姫と新たな伝説をつくります", "16 世界欺きの偽神")
+            val startMatch = Regex("^(?:第)?\\s*(\\d{1,3})\\s*(?:[卷巻话話]|\\b)?\\s*[:：\\-_\\s]*(.*)$").find(rest)
+            if (startMatch != null) {
+                volNum = startMatch.groupValues[1].toIntOrNull()
+                rest = startMatch.groupValues[2].trim()
+            } else {
+                // Try trailing number
+                val endMatch = Regex("(?:第)?\\s*(\\d{1,3})\\s*(?:[卷巻话話]|\\b)?\\s*$").find(rest)
+                if (endMatch != null) {
+                    volNum = endMatch.groupValues[1].toIntOrNull()
+                    rest = rest.substring(0, endMatch.range.first).trim()
+                } else {
+                    // Try mid number
+                    val midMatch = Regex("(?:第|\\b)\\s*(\\d{1,3})\\s*(?:[卷巻话話]|\\b)").find(rest)
+                    if (midMatch != null) {
+                        volNum = midMatch.groupValues[1].toIntOrNull()
+                        rest = (rest.substring(0, midMatch.range.first) + " " + rest.substring(midMatch.range.last + 1)).replace(Regex("\\s+"), " ").trim()
+                    }
+                }
+            }
+
+            sub = rest.trim(' ', ':', '：', '-', '_', '~', '～')
+            sub = sub.replace(Regex("^[~～]\\s*"), "").replace(Regex("\\s*[~～]$"), "").trim()
+
+            // If it's a regular volume without a number in its title, it is Volume 1!
+            if (volNum == null) {
+                volNum = 1
+            }
+
+            if (zhSubtitlesMap.containsKey(volNum)) {
+                val zhSub = zhSubtitlesMap[volNum]
+                if (!zhSub.isNullOrBlank()) {
+                    sub = zhSub
+                }
+            }
+        }
+
+        return ParsedVolumeMeta(
+            volumeNumber = volNum,
+            specialNumber = specialNum,
+            subtitle = sub,
+            cleanName = clean,
+            isSpecial = isSpecial
+        )
+    }
+
     /**
      * Build precise Wenku volume download URL with complete translation fallback priority
      */
     fun buildWenkuDownloadUrl(novelId: String, volumeId: String, engine: TranslationEngine): String {
         val encodedVolId = URLEncoder.encode(volumeId, "UTF-8").replace("+", "%20")
-        val filenameStr = if (volumeId.endsWith(".epub", ignoreCase = true)) volumeId else "$volumeId.epub"
-        val safeFilename = URLEncoder.encode(filenameStr, "UTF-8").replace("+", "%20")
-
         val priorityList = when (engine) {
             TranslationEngine.SAKURA -> listOf("sakura", "gpt", "youdao", "baidu")
             TranslationEngine.GPT -> listOf("gpt", "sakura", "youdao", "baidu")
@@ -372,6 +507,10 @@ class NoveliaApiClient(context: Context) {
         }
 
         val mode = if (engine == TranslationEngine.ORIGINAL) "raw" else "zh"
+        val tag = if (priorityList.isNotEmpty()) "Y" + priorityList.map { it.first() }.joinToString("") else ""
+        val filenameStr = if (engine == TranslationEngine.ORIGINAL) "raw..$volumeId" else "zh.$tag.$volumeId"
+        val safeFilename = URLEncoder.encode(filenameStr, "UTF-8").replace("+", "%20")
+
         val queryBuilder = StringBuilder("$BASE_URL/api/wenku/$novelId/file/$encodedVolId?mode=$mode&translationsMode=priority")
         for (trans in priorityList) {
             queryBuilder.append("&translations=").append(trans)
@@ -771,34 +910,87 @@ class NoveliaApiClient(context: Context) {
                 }
             }
 
-            val volumes = mutableListOf<NoveliaVolume>()
+            val zhSubtitlesMap = mutableMapOf<Int, String>()
+            val volZhArray = root.optJSONArray("volumeZh")
+            if (volZhArray != null) {
+                for (i in 0 until volZhArray.length()) {
+                    val zhStr = volZhArray.optString(i)
+                    if (zhStr.isNotBlank()) {
+                        var cleanZh = normalizeText(zhStr.replace(Regex("\\.epub$", RegexOption.IGNORE_CASE), ""))
+                        cleanZh = cleanZh.replace(Regex("^\\[[^\\]]+\\]\\s*"), "")
+                        cleanZh = cleanZh.replace(Regex("^[^-]{2,20}-\\s*"), "")
+                        for (p in listOf(displayTitle, titleJp)) {
+                            if (p.isNotBlank() && cleanZh.startsWith(p, ignoreCase = true)) {
+                                cleanZh = cleanZh.substring(p.length).trim()
+                            }
+                        }
+                        cleanZh = cleanZh.trim(' ', '.', ':', '：', '-', '_')
+                        val numMatch = Regex("^(?:第)?\\s*(\\d{1,3})\\s*(?:[卷巻话話]|\\b)?\\s*[:：\\-_\\s]*(.*)").find(cleanZh)
+                        if (numMatch != null) {
+                            val vNum = numMatch.groupValues[1].toIntOrNull()
+                            val subText = numMatch.groupValues[2].trim(' ', '.', ':', '：', '-', '_')
+                            if (vNum != null && subText.isNotBlank() && !zhSubtitlesMap.containsKey(vNum)) {
+                                zhSubtitlesMap[vNum] = subText
+                            }
+                        }
+                    }
+                }
+            }
+
+            data class RawWenkuVol(
+                val volId: String,
+                val origIndex: Int,
+                val meta: ParsedVolumeMeta,
+                val totalChapters: Int,
+                val youdao: Int,
+                val gpt: Int,
+                val sakura: Int
+            )
+
+            val rawList = mutableListOf<RawWenkuVol>()
             val volsArray = root.optJSONArray("volumeJp") ?: root.optJSONArray("volumeZh") ?: root.optJSONArray("volumes") ?: JSONArray()
             for (i in 0 until volsArray.length()) {
-                val vObj = volsArray.optJSONObject(i) ?: continue
-                val volId = vObj.optString("volumeId").ifEmpty { vObj.optString("id", "$i") }
-                val volName = volId.replace(".epub", "").ifEmpty { "第${i + 1}卷" }
-                val totalChapters = vObj.optInt("total", 0)
-                val youdao = vObj.optInt("youdao", 0)
-                val gpt = vObj.optInt("gpt", 0)
-                val sakura = vObj.optInt("sakura", 0)
+                val vObj = volsArray.optJSONObject(i)
+                val volId = vObj?.optString("volumeId")?.ifEmpty { vObj.optString("id", "$i") } ?: volsArray.optString(i, "$i")
+                if (volId.isBlank()) continue
+
+                val meta = parseVolumeMeta(volId, displayTitle, titleJp, publisher, imprint, zhSubtitlesMap)
+                val totalChapters = vObj?.optInt("total", 0) ?: 0
+                val youdao = vObj?.optInt("youdao", 0) ?: 0
+                val gpt = vObj?.optInt("gpt", 0) ?: 0
+                val sakura = vObj?.optInt("sakura", 0) ?: 0
+
+                rawList.add(RawWenkuVol(volId, i, meta, totalChapters, youdao, gpt, sakura))
+            }
+
+            // Natural Sort: 1..N regular numbered volumes, then specials in order
+            rawList.sortWith(
+                compareBy<RawWenkuVol> { if (it.meta.isSpecial) 1 else 0 }
+                    .thenBy { if (it.meta.isSpecial) (it.meta.specialNumber ?: 1) else (it.meta.volumeNumber ?: (1000 + it.origIndex)) }
+                    .thenBy { it.origIndex }
+            )
+
+            val volumes = rawList.mapIndexed { idx, raw ->
+                val actualVolNum = if (raw.meta.isSpecial) (raw.meta.specialNumber ?: (idx + 1)) else (raw.meta.volumeNumber ?: (idx + 1))
+                val volTag = if (raw.meta.isSpecial) "特别篇" else "第${actualVolNum}卷"
+                val subPart = if (raw.meta.subtitle.isNotBlank()) " ${raw.meta.subtitle}" else ""
+                val cleanFormattedName = "$volTag$subPart".trim()
 
                 val engineMap = mutableMapOf<TranslationEngine, String>()
-                engineMap[TranslationEngine.SAKURA] = buildWenkuDownloadUrl(novelId, volId, TranslationEngine.SAKURA)
-                engineMap[TranslationEngine.GPT] = buildWenkuDownloadUrl(novelId, volId, TranslationEngine.GPT)
-                engineMap[TranslationEngine.YOUDAO] = buildWenkuDownloadUrl(novelId, volId, TranslationEngine.YOUDAO)
+                engineMap[TranslationEngine.SAKURA] = buildWenkuDownloadUrl(novelId, raw.volId, TranslationEngine.SAKURA)
+                engineMap[TranslationEngine.GPT] = buildWenkuDownloadUrl(novelId, raw.volId, TranslationEngine.GPT)
+                engineMap[TranslationEngine.YOUDAO] = buildWenkuDownloadUrl(novelId, raw.volId, TranslationEngine.YOUDAO)
 
-                volumes.add(
-                    NoveliaVolume(
-                        id = volId,
-                        volumeIndex = i + 1,
-                        volumeName = volName,
-                        totalChapters = totalChapters,
-                        youdaoChapters = youdao,
-                        gptChapters = gpt,
-                        sakuraChapters = sakura,
-                        defaultDownloadUrl = engineMap[TranslationEngine.SAKURA] ?: "",
-                        engineDownloadUrls = engineMap
-                    )
+                NoveliaVolume(
+                    id = raw.volId,
+                    volumeIndex = actualVolNum,
+                    volumeName = cleanFormattedName,
+                    totalChapters = raw.totalChapters,
+                    youdaoChapters = raw.youdao,
+                    gptChapters = raw.gpt,
+                    sakuraChapters = raw.sakura,
+                    defaultDownloadUrl = engineMap[TranslationEngine.SAKURA] ?: "",
+                    engineDownloadUrls = engineMap
                 )
             }
 

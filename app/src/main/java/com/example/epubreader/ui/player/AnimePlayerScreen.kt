@@ -73,6 +73,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.Stroke
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -261,10 +262,23 @@ fun AnimePlayerScreen(
     var isSpeedBoosting by remember { mutableStateOf(false) }
     var useHdrPassthrough by remember { mutableStateOf(false) }
 
-    // Screen Brightness State (Follows system brightness by default to prevent hardware overheating)
+    // Screen Brightness State (Initialized from system brightness or window attributes)
     var playerBrightness by remember {
         val cur = activity?.window?.attributes?.screenBrightness ?: -1f
-        mutableFloatStateOf(if (cur in 0.05f..1.0f) cur else -1.0f)
+        val initial = if (cur in 0.01f..1.0f) {
+            cur
+        } else {
+            try {
+                android.provider.Settings.System.getInt(
+                    context.contentResolver,
+                    android.provider.Settings.System.SCREEN_BRIGHTNESS,
+                    128
+                ) / 255.0f
+            } catch (e: Throwable) {
+                0.5f
+            }
+        }
+        mutableFloatStateOf(initial.coerceIn(0.01f, 1.0f))
     }
 
     // Gesture HUD States
@@ -288,6 +302,7 @@ fun AnimePlayerScreen(
     var showAudioSheet by remember { mutableStateOf(false) }
     var showChapterSheet by remember { mutableStateOf(false) }
     var availableSubtitles by remember { mutableStateOf<List<PlayerTrackInfo>>(emptyList()) }
+    var selectedSubtitleIndex by remember(episode.id) { mutableStateOf<Int?>(null) }
     var availableExternalSubtitles by remember { mutableStateOf<List<ExternalSubtitleItem>>(emptyList()) }
     var selectedExternalSubtitlePath by remember(episode.id) { mutableStateOf<String?>(null) }
     var isLoadingExternalSubs by remember { mutableStateOf(false) }
@@ -488,6 +503,8 @@ fun AnimePlayerScreen(
     var hdrExoSeekTargetMs by remember { mutableStateOf<Long?>(null) }
     var hdrStartPositionMs by remember { mutableLongStateOf(0L) }
 
+    var isExoAudioSupported by remember { mutableStateOf(true) }
+
     val onToggleHdrPassthrough: (Boolean) -> Unit = { enableHdr ->
         if (enableHdr != useHdrPassthrough) {
             if (enableHdr) {
@@ -496,16 +513,44 @@ fun AnimePlayerScreen(
                 hdrStartPositionMs = pos
                 hdrExoPositionMs = pos
                 isHdrExoPlaying = mpvPlayer.isPlaying.value
-                mpvPlayer.pause()
                 useHdrPassthrough = true
             } else {
                 // Switching from ExoPlayer back to mpv: restore position in mpv
                 val pos = hdrExoPositionMs
                 useHdrPassthrough = false
-                mpvPlayer.seekTo(pos)
-                if (isHdrExoPlaying) {
-                    mpvPlayer.play()
+                isExoAudioSupported = true
+                coroutineScope.launch {
+                    kotlinx.coroutines.delay(120)
+                    mpvPlayer.seekTo(pos)
+                    if (isHdrExoPlaying) {
+                        mpvPlayer.play()
+                    }
                 }
+            }
+        }
+    }
+
+    // Synchronize mpv as background FFmpeg audio decoder when ExoPlayer cannot decode DTS-HD MA / TrueHD
+    LaunchedEffect(useHdrPassthrough, isExoAudioSupported, isHdrExoPlaying, isHdrExoBuffering) {
+        if (useHdrPassthrough && !isExoAudioSupported) {
+            if (isHdrExoPlaying && !isHdrExoBuffering) {
+                mpvPlayer.play()
+            } else {
+                mpvPlayer.pause()
+            }
+        } else if (useHdrPassthrough && isExoAudioSupported) {
+            mpvPlayer.pause()
+        }
+    }
+
+    // Active Audio-Video sync lock: lock mpv background audio to ExoPlayer's video position at all times
+    LaunchedEffect(useHdrPassthrough, isExoAudioSupported, hdrExoPositionMs) {
+        if (useHdrPassthrough && !isExoAudioSupported && hdrExoPositionMs > 0L) {
+            val mpvPos = mpvPlayer.positionMs.value
+            val diff = kotlin.math.abs(mpvPos - hdrExoPositionMs)
+            if (diff > 250L) {
+                android.util.Log.d("AnimePlayerScreen", "Syncing background DTS audio: mpvPos=$mpvPos, exoPos=$hdrExoPositionMs, diff=${diff}ms")
+                mpvPlayer.seekTo(hdrExoPositionMs)
             }
         }
     }
@@ -557,6 +602,9 @@ fun AnimePlayerScreen(
         if (useHdrPassthrough) {
             hdrExoSeekTargetMs = targetMs
             hdrExoPositionMs = targetMs
+            if (!isExoAudioSupported) {
+                mpvPlayer.seekTo(targetMs)
+            }
         } else {
             mpvPlayer.seekTo(targetMs)
         }
@@ -564,7 +612,7 @@ fun AnimePlayerScreen(
 
     val setPlayerSpeed: (Float) -> Unit = { speed ->
         playbackSpeed = speed
-        if (!useHdrPassthrough) {
+        if (!isSpeedBoosting) {
             mpvPlayer.setSpeed(speed)
         }
     }
@@ -969,11 +1017,13 @@ fun AnimePlayerScreen(
     val vHeight = if (mpvPlayer.videoHeight.value > 0) mpvPlayer.videoHeight.value else cachedVHeight
 
     val resolutionLabel = when {
+        vHeight >= 4320 || vWidth >= 7680 -> "8K"
         vHeight >= 2160 || vWidth >= 3840 -> "4K"
         vHeight >= 1440 || vWidth >= 2560 -> "2K"
         vHeight >= 1080 || vWidth >= 1920 -> "1080P"
         vHeight >= 720 || vWidth >= 1280 -> "720P"
         episode.fileSize > 20L * 1024 * 1024 * 1024 -> "4K"
+        episode.resolution.contains("8K", ignoreCase = true) || episode.resolution.contains("4320", ignoreCase = true) -> "8K"
         episode.resolution.contains("4K", ignoreCase = true) || episode.resolution.contains("2160", ignoreCase = true) -> "4K"
         episode.resolution.contains("1080", ignoreCase = true) -> "1080P"
         episode.resolution.contains("720", ignoreCase = true) -> "720P"
@@ -1073,7 +1123,7 @@ fun AnimePlayerScreen(
                 useHdrPassthrough = useHdrPassthrough,
                 hdrStartPositionMs = hdrStartPositionMs,
                 isHdrPlaying = isHdrExoPlaying,
-                playbackSpeed = playbackSpeed,
+                playbackSpeed = if (isSpeedBoosting) 2.0f else playbackSpeed,
                 hdrSeekCommandMs = hdrExoSeekTargetMs,
                 onHdrPositionUpdate = { current, duration ->
                     hdrExoPositionMs = current
@@ -1087,7 +1137,10 @@ fun AnimePlayerScreen(
                 isPlaying = isPlaying,
                 danmakuConfig = danmakuConfig,
                 resizeMode = resizeMode,
-                onToggleHdrPassthrough = { useHdrPassthrough = it },
+                onToggleHdrPassthrough = onToggleHdrPassthrough,
+                onAudioSupportStatus = { isExoAudioSupported = it },
+                selectedSubtitleIndex = selectedSubtitleIndex,
+                isSubtitleDisabled = isSubtitlesDisabledManually,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -1101,7 +1154,7 @@ fun AnimePlayerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(isLocked) {
+                .pointerInput(isLocked, playbackSpeed) {
                     if (isLocked) {
                         detectTapGestures(
                             onTap = {
@@ -1111,13 +1164,14 @@ fun AnimePlayerScreen(
                     } else {
                         detectTapGestures(
                             onPress = {
-                                try {
+                                val released = try {
                                     tryAwaitRelease()
-                                } finally {
-                                    if (isSpeedBoosting) {
-                                        isSpeedBoosting = false
-                                        setPlayerSpeed(playbackSpeed)
-                                    }
+                                } catch (e: Exception) {
+                                    false
+                                }
+                                if (isSpeedBoosting) {
+                                    isSpeedBoosting = false
+                                    mpvPlayer.setSpeed(playbackSpeed)
                                 }
                             },
                             onTap = {
@@ -1128,12 +1182,12 @@ fun AnimePlayerScreen(
                             },
                             onLongPress = {
                                 isSpeedBoosting = true
-                                setPlayerSpeed(2.0f)
+                                mpvPlayer.setSpeed(2.0f)
                             }
                         )
                     }
                 }
-                .pointerInput(isLocked) {
+                .pointerInput(isLocked, playbackSpeed) {
                     if (!isLocked) {
                         detectDragGestures(
                             onDragStart = { offset ->
@@ -1149,7 +1203,7 @@ fun AnimePlayerScreen(
                                 showGestureHud = false
                                 if (isSpeedBoosting) {
                                     isSpeedBoosting = false
-                                    setPlayerSpeed(playbackSpeed)
+                                    mpvPlayer.setSpeed(playbackSpeed)
                                 }
                             },
                             onDragCancel = {
@@ -1157,7 +1211,7 @@ fun AnimePlayerScreen(
                                 showGestureHud = false
                                 if (isSpeedBoosting) {
                                     isSpeedBoosting = false
-                                    setPlayerSpeed(playbackSpeed)
+                                    mpvPlayer.setSpeed(playbackSpeed)
                                 }
                             },
                             onDrag = { change, dragAmount ->
@@ -1189,19 +1243,19 @@ fun AnimePlayerScreen(
                                     }
                                     2 -> {
                                         // Brightness Control (Left side vertical drag)
-                                        val delta = -dragAmount.y / (size.height * 0.80f)
+                                        val delta = -dragAmount.y / (size.height * 0.70f)
                                         val win = activity?.window
                                         if (win != null) {
-                                            playerBrightness = (playerBrightness + delta).coerceIn(0.01f, 1.0f)
+                                            val newBrightness = (playerBrightness + delta).coerceIn(0.01f, 1.0f)
+                                            playerBrightness = newBrightness
                                             val lp = win.attributes
-                                            lp.screenBrightness = if (playerBrightness >= 0.99f) {
-                                                WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-                                            } else {
-                                                playerBrightness
+                                            lp.screenBrightness = newBrightness
+                                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                                                lp.desiredHdrHeadroom = if (newBrightness >= 0.8f) 4.0f else (1.0f + newBrightness * 3.0f)
                                             }
                                             win.attributes = lp
-                                            gestureHudText = "亮度: ${(playerBrightness * 100).toInt()}%"
-                                            gestureHudIcon = if (playerBrightness > 0.6f) Icons.Filled.BrightnessHigh else if (playerBrightness > 0.3f) Icons.Filled.BrightnessMedium else Icons.Filled.BrightnessLow
+                                            gestureHudText = "亮度: ${(newBrightness * 100).toInt()}%"
+                                            gestureHudIcon = if (newBrightness > 0.6f) Icons.Filled.BrightnessHigh else if (newBrightness > 0.3f) Icons.Filled.BrightnessMedium else Icons.Filled.BrightnessLow
                                             showGestureHud = true
                                         }
                                     }
@@ -2418,6 +2472,7 @@ fun AnimePlayerScreen(
                         availableSubtitles = availableSubtitles,
                         availableExternalSubtitles = availableExternalSubtitles,
                         selectedExternalSubtitlePath = selectedExternalSubtitlePath,
+                        selectedSubtitleIndex = selectedSubtitleIndex,
                         isLoadingExternalSubs = isLoadingExternalSubs,
                         isSubtitleDisabled = isSubtitlesDisabledManually,
                         subtitleDelayMs = mpvPlayer.subtitleDelayMs.value,
@@ -2449,13 +2504,19 @@ fun AnimePlayerScreen(
                         onSelectInternalSubtitle = { subTrack ->
                             selectedExternalSubtitlePath = null
                             isSubtitlesDisabledManually = false
-                            mpvPlayer.selectSubtitleTrack(subTrack.mpvTrackId)
+                            selectedSubtitleIndex = subTrack.trackIndex
+                            if (!useHdrPassthrough) {
+                                mpvPlayer.selectSubtitleTrack(subTrack.mpvTrackId)
+                            }
                             GlobalToastManager.show("已切换为内置字幕: ${subTrack.label}", ToastType.Success)
                         },
                         onDisableSubtitles = {
                             selectedExternalSubtitlePath = null
                             isSubtitlesDisabledManually = true
-                            mpvPlayer.disableSubtitleTrack()
+                            selectedSubtitleIndex = null
+                            if (!useHdrPassthrough) {
+                                mpvPlayer.disableSubtitleTrack()
+                            }
                             GlobalToastManager.show("已关闭字幕", ToastType.Info)
                         },
                         onClose = { showTrackSheet = false }
@@ -2988,9 +3049,12 @@ fun AnimePlayerScreen(
                 ) {
                     val resolutionStr = if (vWidth > 0 && vHeight > 0) {
                         val label = when {
+                            vHeight >= 4320 || vWidth >= 7680 -> "8K 极清"
                             vHeight >= 2160 || vWidth >= 3840 -> "4K 超高清"
+                            vHeight >= 1440 || vWidth >= 2560 -> "2K QHD"
                             vHeight >= 1080 || vWidth >= 1920 -> "1080P 全高清"
                             vHeight >= 720 || vWidth >= 1280 -> "720P 高清"
+                            vHeight >= 480 || vWidth >= 720 -> "480P 标清"
                             else -> "标清"
                         }
                         "${vWidth} × ${vHeight} ($label)"
@@ -2998,8 +3062,15 @@ fun AnimePlayerScreen(
                         if (episode.fileSize > 20L * 1024 * 1024 * 1024) "3840 × 2160 (4K 超高清)" else episode.resolution.ifBlank { "自动检测中" }
                     }
 
-                    val aspectVal = if (mpvPlayer.aspectRatio.value > 0) mpvPlayer.aspectRatio.value else cachedAspectRatio
-                    val aspectRatioStr = if (aspectVal > 1.8) "16:9 宽屏" else if (aspectVal > 2.2) "21:9 原生宽银幕" else "标准比例"
+                    val aspectVal = if (mpvPlayer.aspectRatio.value > 0.0) mpvPlayer.aspectRatio.value else if (vWidth > 0 && vHeight > 0) vWidth.toDouble() / vHeight.toDouble() else cachedAspectRatio
+                    val aspectRatioStr = when {
+                        aspectVal >= 2.2 -> "21:9 原生宽银幕"
+                        aspectVal in 1.70..1.85 -> "16:9 宽屏"
+                        aspectVal in 1.55..1.69 -> "16:10 宽屏"
+                        aspectVal in 1.25..1.45 -> "4:3 标准比例"
+                        aspectVal > 0.0 -> String.format(java.util.Locale.US, "%.2f:1", aspectVal)
+                        else -> "标准比例"
+                    }
 
                     val primaries = mpvPlayer.colorPrimaries.value
                     val colorSpaceStr = if (primaries.contains("2020", ignoreCase = true) || isHdr) cachedColorSpace else "BT.709 标准色域"
@@ -3075,6 +3146,7 @@ fun AnimePlayerScreen(
                         mpvPlayer = mpvPlayer,
                         useHdrPassthrough = useHdrPassthrough,
                         onToggleHdrPassthrough = onToggleHdrPassthrough,
+                        videoUrl = episode.videoUrl,
                         onClose = { showQualitySheet = false }
                     )
                 }
@@ -3107,6 +3179,9 @@ private fun VideoAndDanmakuLayer(
     danmakuConfig: DanmakuConfig,
     resizeMode: MpvPlayerManager.ResizeMode = MpvPlayerManager.ResizeMode.FIT,
     onToggleHdrPassthrough: (Boolean) -> Unit = {},
+    onAudioSupportStatus: (Boolean) -> Unit = {},
+    selectedSubtitleIndex: Int? = null,
+    isSubtitleDisabled: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier) {
@@ -3120,8 +3195,12 @@ private fun VideoAndDanmakuLayer(
                 playbackSpeed = playbackSpeed,
                 resizeMode = resizeMode,
                 seekCommandMs = hdrSeekCommandMs,
+                selectedSubtitleIndex = selectedSubtitleIndex,
+                isSubtitleDisabled = isSubtitleDisabled,
                 onPositionUpdate = onHdrPositionUpdate,
                 onBufferingUpdate = onHdrBufferingUpdate,
+                onErrorFallback = { onToggleHdrPassthrough(false) },
+                onAudioSupportStatus = onAudioSupportStatus,
                 modifier = Modifier.fillMaxSize()
             )
         } else {

@@ -2,7 +2,8 @@ package com.example.epubreader.data.novelia
 
 enum class NoveliaCategory(val displayName: String) {
     WENKU("文库小说"),
-    WEB_NOVEL("网络小说")
+    WEB_NOVEL("网络小说"),
+    LINOVELIB("哔哩轻小说")
 }
 
 enum class NoveliaViewMode(val displayName: String) {

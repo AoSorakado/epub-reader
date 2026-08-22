@@ -441,6 +441,23 @@ class ReaderViewModel(
                                     nodes.add(ChapterNode.TextNode(androidx.compose.ui.text.AnnotatedString("[Unrecognized Content]\n$debugContent")))
                                 }
                                 
+                                // Deduplicate leading text node if it duplicates the chapter title header
+                                val cleanTitle = chapter.title.replace(Regex("[\\s　\\p{Punct}（）()【】\\[\\]《》「」『』—\\-_:：·，,。.]"), "").lowercase()
+                                if (cleanTitle.isNotBlank()) {
+                                    while (nodes.isNotEmpty()) {
+                                        val firstNode = nodes.firstOrNull()
+                                        if (firstNode is ChapterNode.TextNode) {
+                                            val cleanFirstText = firstNode.text.text.replace(Regex("[\\s　\\p{Punct}（）()【】\\[\\]《》「」『』—\\-_:：·，,。.]"), "").lowercase()
+                                            if (cleanFirstText.isNotBlank() && (cleanFirstText == cleanTitle || 
+                                                    (cleanTitle.length >= 2 && cleanFirstText.length >= 2 && (cleanTitle.startsWith(cleanFirstText) || cleanFirstText.startsWith(cleanTitle))))) {
+                                                nodes.removeAt(0)
+                                                continue
+                                            }
+                                        }
+                                        break
+                                    }
+                                }
+
                                 ParsedChapter(chapter.title, nodes.toList())
                             }
                         }.awaitAll()

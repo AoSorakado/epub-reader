@@ -425,11 +425,71 @@ fun NoveliaWenkuDetailDialog(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    text = "总计 ${vol.totalChapters} 章 · Sakura ${vol.sakuraChapters} · GPT ${vol.gptChapters}",
-                                    color = subTextColor,
-                                    fontSize = 11.sp
-                                )
+                                val curEngineCount = when (selectedEngine) {
+                                    TranslationEngine.SAKURA -> vol.sakuraChapters
+                                    TranslationEngine.GPT -> vol.gptChapters
+                                    TranslationEngine.YOUDAO -> vol.youdaoChapters
+                                    TranslationEngine.ORIGINAL -> vol.totalChapters
+                                }
+                                val isFull = curEngineCount >= vol.totalChapters && vol.totalChapters > 0
+                                val isZero = curEngineCount == 0 && vol.totalChapters > 0
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "总计 ${vol.totalChapters} 章 · Sakura ${vol.sakuraChapters} · GPT ${vol.gptChapters} · 有道 ${vol.youdaoChapters}",
+                                        color = subTextColor,
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    if (selectedEngine != TranslationEngine.ORIGINAL && vol.totalChapters > 0) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        if (isFull) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(Color(0xFF10B981).copy(alpha = 0.15f))
+                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            ) {
+                                                Text(
+                                                    text = "${selectedEngine.displayName}全译",
+                                                    color = Color(0xFF10B981),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        } else if (isZero) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(Color(0xFFF59E0B).copy(alpha = 0.15f))
+                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            ) {
+                                                Text(
+                                                    text = "回退多引擎",
+                                                    color = Color(0xFFF59E0B),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(Color(0xFF3B82F6).copy(alpha = 0.15f))
+                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            ) {
+                                                Text(
+                                                    text = "${selectedEngine.displayName} $curEngineCount/${vol.totalChapters}",
+                                                    color = Color(0xFF3B82F6),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                             Spacer(modifier = Modifier.width(8.dp))

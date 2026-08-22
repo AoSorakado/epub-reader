@@ -305,8 +305,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             // The folder name is the res.name
                             scanDirectory(res.path, res.name)
                         } else if (res.name.endsWith(".epub", ignoreCase = true)) {
-                            val seriesName = currentFolderName
-                            val cleanTitle = res.name.removeSuffix(".epub").replace("-", " ").replace("_", " ").trim()
+                            // Extract author from folder like "[Author] SeriesName" if present
+                            var seriesName: String? = currentFolderName
+                            var authorFromFolder: String? = null
+                            if (currentFolderName != null) {
+                                val folderMatch = Regex("^\\[([^\\]]+)\\]\\s*(.+)$").find(currentFolderName)
+                                if (folderMatch != null) {
+                                    authorFromFolder = folderMatch.groupValues[1].trim()
+                                    seriesName = folderMatch.groupValues[2].trim()
+                                }
+                            }
+
+                            val cleanTitle = res.name.removeSuffix(".epub")
+                                .replace(Regex("\\[(Sakura|GPT|有道|有道翻译|百度|Baidu|日文原文)\\]", RegexOption.IGNORE_CASE), "")
+                                .replace("-", " ")
+                                .replace("_", " ")
+                                .trim()
                             val cleanResPath = res.path.trimEnd('/')
                             val decodedResPath = try { java.net.URLDecoder.decode(cleanResPath, "UTF-8") } catch (e: Exception) { cleanResPath }
                             val resFilename = java.io.File(decodedResPath).name
@@ -324,9 +338,18 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             }
 
                             if (existingBook != null) {
-                                // Already exists, update seriesName if missing but do not duplicate
+                                var needsUpdate = false
+                                var updatedBook = existingBook
                                 if (seriesName != null && existingBook.seriesName != seriesName) {
-                                    bookDao.updateBook(existingBook.copy(seriesName = seriesName))
+                                    updatedBook = updatedBook.copy(seriesName = seriesName)
+                                    needsUpdate = true
+                                }
+                                if (authorFromFolder != null && (existingBook.author.isNullOrBlank() || existingBook.author.equals("Unknown", ignoreCase = true) || existingBook.author == "未知作者")) {
+                                    updatedBook = updatedBook.copy(author = authorFromFolder)
+                                    needsUpdate = true
+                                }
+                                if (needsUpdate) {
+                                    bookDao.updateBook(updatedBook)
                                 }
                                 continue
                             }
@@ -350,7 +373,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                             val book = BookEntity(
                                 title = cleanTitle,
-                                author = "Unknown",
+                                author = authorFromFolder ?: "未知作者",
                                 coverImage = coverImagePath,
                                 filePath = res.path,
                                 isWebDav = true,

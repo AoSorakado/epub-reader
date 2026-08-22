@@ -69,47 +69,36 @@ class NoveliaWebDavExporter(
             ?: return@withContext Result.failure(Exception("请先在「配置」页面配置 WebDAV 服务器"))
 
         try {
-            val authorPart = if (novel.author.isNotBlank() && novel.author != "未知作者") "[${truncateUtf8(sanitizeFilename(novel.author), 30)}] " else ""
-            val cleanSeriesTitle = truncateUtf8(sanitizeFilename(novel.title), 50)
+            val authorPart = if (novel.author.isNotBlank() && novel.author != "未知作者" && !novel.author.equals("Unknown", ignoreCase = true)) {
+                "[${truncateUtf8(sanitizeFilename(novel.author), 60)}] "
+            } else ""
+            val cleanSeriesTitle = truncateUtf8(sanitizeFilename(novel.title), 120)
             val seriesFolder = "Novels/文库小说/$authorPart$cleanSeriesTitle"
             val downloadUrl = volume.engineDownloadUrls[engine] 
-                ?: volume.defaultDownloadUrl.ifEmpty { "/api/wenku/${novel.id}/file/${volume.id}?engine=${engine.code}" }
+                ?: apiClient.buildWenkuDownloadUrl(novel.id, volume.id, engine)
 
-            val rawVolName = volume.volumeName.replace(".epub", "", ignoreCase = true).trim()
-            val cleanVolName = truncateUtf8(sanitizeFilename(rawVolName), 60)
+            // Intelligently compute distinct volume title & remote filename
+            val meta = apiClient.parseVolumeMeta(
+                rawVolId = volume.id,
+                seriesTitleZh = novel.title,
+                seriesTitleJp = novel.japaneseTitle,
+                publisher = novel.publisher,
+                imprint = novel.imprint
+            )
+            val actualVolNum = meta.volumeNumber ?: volume.volumeIndex
+            val volTag = if (meta.isSpecial) "特别篇" else "第${actualVolNum}卷"
+            val subPart = if (meta.subtitle.isNotBlank()) " ${meta.subtitle}" else ""
+            val displayVolTitle = "${novel.title} $volTag$subPart".trim()
 
-            // Extract subtitle or real volume part if repeated
-            val subtitlePart = if (cleanVolName.startsWith(novel.title, ignoreCase = true) && cleanVolName.length > novel.title.length) {
-                cleanVolName.substring(novel.title.length).trimStart(' ', '-', '_', '：', ':', '\t')
-            } else {
-                cleanVolName
-            }
-
-            val finalFileNameBase = if (subtitlePart.isNotBlank() && subtitlePart != cleanVolName) {
-                "${novel.title} $subtitlePart"
-            } else if (cleanVolName.isNotBlank()) {
-                cleanVolName
-            } else {
-                "${novel.title} 第${volume.volumeIndex}卷"
-            }
-
-            val safeFileBase = truncateUtf8(sanitizeFilename(finalFileNameBase), 80)
+            val safeFileBase = truncateUtf8(sanitizeFilename(displayVolTitle), 180)
             val remoteFilename = "$safeFileBase [${engine.displayName}].epub"
             val remoteFilePath = "$seriesFolder/$remoteFilename"
 
-            val displayVolTitle = if (subtitlePart.isNotBlank() && subtitlePart != cleanVolName) {
-                "${novel.title} $subtitlePart"
-            } else if (cleanVolName.isNotBlank()) {
-                cleanVolName
-            } else {
-                "${novel.title} 第${volume.volumeIndex}卷"
-            }
-
-            onProgress(0.05f, "正在连接 Novelia 下载 ${subtitlePart.ifEmpty { "电子书" }}...")
+            onProgress(0.05f, "正在连接 Novelia 下载 $volTag...")
 
             // Download into temporary cache file
             val tempDir = File(context.cacheDir, "novelia_temp").apply { mkdirs() }
-            val tempFile = File(tempDir, "temp_${novel.id}_vol${volume.volumeIndex}_${System.currentTimeMillis()}.epub")
+            val tempFile = File(tempDir, "temp_${novel.id}_vol${actualVolNum}_${System.currentTimeMillis()}.epub")
 
             val downloadOk = apiClient.downloadWenkuEpub(downloadUrl, tempFile) { p ->
                 onProgress(0.05f + p * 0.45f, "正在从 Novelia 下载: ${(p * 100).toInt()}%")
@@ -166,13 +155,14 @@ class NoveliaWebDavExporter(
 
             // Register in BookDao as Cloud Book (isWebDav = true, filePath = remoteFilePath)
             val existingBook = bookDao.getAllBooksList().firstOrNull {
-                it.filePath == remoteFilePath || it.title.trim().equals(displayVolTitle.trim(), ignoreCase = true)
+                it.filePath == remoteFilePath
             }
 
             if (existingBook != null) {
                 bookDao.updateBook(
                     existingBook.copy(
                         title = displayVolTitle,
+                        author = novel.author.ifEmpty { "未知作者" },
                         filePath = remoteFilePath,
                         coverImage = coverImagePath ?: existingBook.coverImage,
                         isWebDav = true,
@@ -217,8 +207,8 @@ class NoveliaWebDavExporter(
         }
 
         try {
-            val sourcePrefix = if (novel.sourcePlatform.isNotBlank()) "[${truncateUtf8(sanitizeFilename(novel.sourcePlatform), 20)}] " else ""
-            val cleanTitle = truncateUtf8(sanitizeFilename(novel.title), 50)
+            val sourcePrefix = if (novel.sourcePlatform.isNotBlank()) "[${truncateUtf8(sanitizeFilename(novel.sourcePlatform), 30)}] " else ""
+            val cleanTitle = truncateUtf8(sanitizeFilename(novel.title), 120)
             val seriesFolder = "Novels/网络小说/$sourcePrefix$cleanTitle"
             val remoteFilename = "$cleanTitle [${engine.displayName}].epub"
             val remoteFilePath = "$seriesFolder/$remoteFilename"
@@ -276,7 +266,7 @@ class NoveliaWebDavExporter(
 
             // Register in BookDao as Cloud Book (isWebDav = true, filePath = remoteFilePath)
             val existingBook = bookDao.getAllBooksList().firstOrNull {
-                it.filePath == remoteFilePath || it.title.trim().equals(novel.title.trim(), ignoreCase = true)
+                it.filePath == remoteFilePath
             }
 
             if (existingBook != null) {

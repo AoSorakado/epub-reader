@@ -26,6 +26,7 @@ object EpubBuilder {
         val author: String = "未知作者",
         val description: String = "",
         val coverImageBytes: ByteArray? = null,
+        val illustrations: Map<String, ByteArray> = emptyMap(), // filename -> bytes
         val language: String = "zh-CN",
         val identifier: String = "urn:uuid:" + UUID.randomUUID().toString(),
         val publisher: String = "Novelia",
@@ -57,7 +58,13 @@ object EpubBuilder {
                     val hasCover = metadata.coverImageBytes != null && metadata.coverImageBytes.isNotEmpty()
                     if (hasCover) {
                         writeZipEntry(zip, "OEBPS/Images/cover.jpg", metadata.coverImageBytes!!)
-                        writeCoverXhtml(zip, metadata.title)
+                    }
+
+                    // 4.5 In-chapter Illustrations
+                    for ((imgName, imgBytes) in metadata.illustrations) {
+                        if (imgBytes.isNotEmpty()) {
+                            writeZipEntry(zip, "OEBPS/Images/$imgName", imgBytes)
+                        }
                     }
 
                     // 5. Chapter XHTML files
@@ -92,11 +99,24 @@ object EpubBuilder {
     }
 
     private fun writeMimetype(zip: ZipOutputStream) {
-        val bytes = "application/epub+zip".toByteArray(StandardCharsets.US_ASCII)
         val entry = ZipEntry("mimetype").apply {
             method = ZipEntry.STORED
+            val bytes = "application/epub+zip".toByteArray(StandardCharsets.US_ASCII)
             size = bytes.size.toLong()
             compressedSize = bytes.size.toLong()
+            val crc = CRC32()
+            crc.update(bytes)
+            setCrc(crc.value)
+        }
+        zip.putNextEntry(entry)
+        zip.write("application/epub+zip".toByteArray(StandardCharsets.US_ASCII))
+        zip.closeEntry()
+    }
+
+    private fun writeZipEntry(zip: ZipOutputStream, path: String, bytes: ByteArray) {
+        val entry = ZipEntry(path).apply {
+            method = ZipEntry.DEFLATED
+            size = bytes.size.toLong()
             val crc = CRC32()
             crc.update(bytes)
             setCrc(crc.value)
@@ -141,12 +161,12 @@ p {
     text-indent: 2em;
     margin: 0.6em 0;
 }
-.cover-container {
+.cover-container, .illust-container {
     text-align: center;
     padding: 0;
-    margin: 0;
+    margin: 1em 0;
 }
-.cover-img {
+.cover-img, .illust-img {
     max-width: 100%;
     max-height: 100vh;
     height: auto;
@@ -182,27 +202,66 @@ p {
 
     private fun buildChapterXhtml(chapter: NoveliaChapter, index: Int): String {
         val sb = StringBuilder()
+        val chTitle = chapter.title.trim()
         sb.append("""<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh-CN">
 <head>
-    <title>${escapeXml(chapter.title)}</title>
+    <title>${escapeXml(chTitle)}</title>
     <link href="../Styles/style.css" rel="stylesheet" type="text/css"/>
 </head>
 <body>
-    <h2>${escapeXml(chapter.title)}</h2>
+    <h2>${escapeXml(chTitle)}</h2>
 """)
 
-        if (chapter.japaneseTitle.isNotBlank() && chapter.japaneseTitle != chapter.title) {
+        if (chapter.japaneseTitle.isNotBlank() && chapter.japaneseTitle != chTitle) {
             sb.append("    <p class=\"jp-text\">${escapeXml(chapter.japaneseTitle)}</p>\n")
         }
 
         val lines = chapter.content.split("\n")
+        var skippedDuplicateTitle = false
+
         for (rawLine in lines) {
-            val line = rawLine.trim()
-            if (line.isNotEmpty()) {
-                sb.append("    <p>").append(escapeXml(line)).append("</p>\n")
+            var line = rawLine.trim()
+            if (line.isEmpty()) continue
+
+            // Check if line is an image placeholder
+            if (line.startsWith("<!--IMAGE:") && line.endsWith("-->")) {
+                val imgTarget = line.removePrefix("<!--IMAGE:").removeSuffix("-->").trim()
+                val filename = imgTarget.substringAfterLast("/")
+                if (filename.isNotBlank()) {
+                    sb.append("    <div class=\"illust-container\"><img src=\"../Images/$filename\" alt=\"插图\" class=\"illust-img\"/></div>\n")
+                }
+                continue
             }
+
+            // Strip any raw HTML tags (like <p>, </p>, <img.../>) that may have leaked
+            line = line.replace(Regex("<[^>]*>"), "").trim()
+            if (line.isEmpty()) continue
+
+            // Deduplicate if first paragraph is identical to or matches chapter title
+            if (!skippedDuplicateTitle) {
+                val normLine = normalizeTitle(line)
+                val normTitle = normalizeTitle(chTitle)
+                val normJpTitle = normalizeTitle(chapter.japaneseTitle)
+
+                val isTitleDup = normLine.equals(normTitle, ignoreCase = true) ||
+                        (normJpTitle.isNotBlank() && normLine.equals(normJpTitle, ignoreCase = true)) ||
+                        (normTitle.startsWith(normLine) && normLine.length >= 2) ||
+                        (normLine.startsWith(normTitle) && normTitle.length >= 2) ||
+                        ((normLine.startsWith("第") || normLine.startsWith("序") || normLine.startsWith("终") || normLine.startsWith("後") || normLine.startsWith("后")) &&
+                                (normLine.contains("章") || normLine.contains("话") || normLine.contains("話") || normLine.contains("序") || normLine.contains("后记") || normLine.contains("後記")) &&
+                                normLine.length <= normTitle.length + 6) ||
+                        ((normTitle.contains("插图") || normTitle.contains("插圖") || normTitle.contains("特典")) && (normLine.contains("插图") || normLine.contains("插圖") || normLine.contains("特典")))
+
+                if (isTitleDup) {
+                    skippedDuplicateTitle = true
+                    continue
+                }
+                skippedDuplicateTitle = true
+            }
+
+            sb.append("    <p>").append(escapeXml(line)).append("</p>\n")
         }
 
         sb.append("""</body>
@@ -244,8 +303,15 @@ p {
 """)
         if (hasCover) {
             sb.append("        <item id=\"cover-image\" href=\"Images/cover.jpg\" media-type=\"image/jpeg\" properties=\"cover-image\"/>\n")
-            sb.append("        <item id=\"cover-page\" href=\"Text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n")
         }
+
+        // Register in-chapter illustrations in manifest
+        metadata.illustrations.forEach { (imgName, _) ->
+            val mediaType = if (imgName.endsWith(".png", true)) "image/png" else "image/jpeg"
+            val safeId = "img-" + imgName.replace(Regex("[^a-zA-Z0-9_]"), "_")
+            sb.append("        <item id=\"$safeId\" href=\"Images/$imgName\" media-type=\"$mediaType\"/>\n")
+        }
+
         chapters.forEachIndexed { index, _ ->
             val num = String.format(Locale.US, "%04d", index + 1)
             sb.append("        <item id=\"chapter-$num\" href=\"Text/chapter_$num.xhtml\" media-type=\"application/xhtml+xml\"/>\n")
@@ -253,9 +319,6 @@ p {
         sb.append("""    </manifest>
     <spine toc="ncx">
 """)
-        if (hasCover) {
-            sb.append("        <itemref idref=\"cover-page\"/>\n")
-        }
         chapters.forEachIndexed { index, _ ->
             val num = String.format(Locale.US, "%04d", index + 1)
             sb.append("        <itemref idref=\"chapter-$num\"/>\n")
@@ -271,30 +334,26 @@ p {
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
     <head>
         <meta name="dtb:uid" content="${escapeXml(metadata.identifier)}"/>
-        <meta name="dtb:depth" content="2"/>
+        <meta name="dtb:depth" content="1"/>
         <meta name="dtb:totalPageCount" content="0"/>
         <meta name="dtb:maxPageNumber" content="0"/>
     </head>
     <docTitle>
         <text>${escapeXml(metadata.title)}</text>
     </docTitle>
-    <docAuthor>
-        <text>${escapeXml(metadata.author)}</text>
-    </docAuthor>
     <navMap>
 """)
         var playOrder = 1
         chapters.forEachIndexed { index, chapter ->
             val num = String.format(Locale.US, "%04d", index + 1)
             sb.append("""        <navPoint id="navPoint-$playOrder" playOrder="$playOrder">
-            <navLabel>
-                <text>${escapeXml(chapter.title)}</text>
-            </navLabel>
+            <navLabel><text>${escapeXml(chapter.title)}</text></navLabel>
             <content src="Text/chapter_$num.xhtml"/>
         </navPoint>
 """)
             playOrder++
         }
+
         sb.append("""    </navMap>
 </ncx>""")
         return sb.toString()
@@ -306,7 +365,7 @@ p {
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="zh-CN">
 <head>
-    <title>${escapeXml(metadata.title)} - 目录</title>
+    <title>目录</title>
     <link href="Styles/style.css" rel="stylesheet" type="text/css"/>
 </head>
 <body>
@@ -325,17 +384,15 @@ p {
         return sb.toString()
     }
 
-    private fun writeZipEntry(zip: ZipOutputStream, path: String, bytes: ByteArray) {
-        val entry = ZipEntry(path).apply {
-            method = ZipEntry.DEFLATED
-        }
-        zip.putNextEntry(entry)
-        zip.write(bytes)
-        zip.closeEntry()
+    private fun normalizeTitle(text: String): String {
+        return text
+            .replace(Regex("[\\s\\p{Punct}（）()【】\\[\\]《》「」『』—\\-_:：·，,。.]"), "")
+            .lowercase(Locale.ROOT)
     }
 
-    private fun escapeXml(str: String): String {
-        return str.replace("&", "&amp;")
+    private fun escapeXml(text: String): String {
+        return text
+            .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace("\"", "&quot;")

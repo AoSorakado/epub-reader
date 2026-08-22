@@ -55,6 +55,8 @@ class DampedDragAnimation(
     private val velocityTracker = VelocityTracker()
 
     var dragTarget: Float = initialValue
+    var isPointerDown: Boolean = false
+        private set
 
     val value: Float get() = valueAnimation.value
     val progress: Float get() = (value - valueRange.start) / (valueRange.endInclusive - valueRange.start)
@@ -67,14 +69,17 @@ class DampedDragAnimation(
     val modifier: Modifier = Modifier.pointerInput(Unit) {
         inspectDragGestures(
             onDragStart = { down ->
+                isPointerDown = true
                 onDragStarted(down.position)
                 press()
             },
             onDragEnd = {
+                isPointerDown = false
                 onDragStopped()
                 release()
             },
             onDragCancel = {
+                isPointerDown = false
                 onDragStopped()
                 release()
             }
@@ -95,7 +100,8 @@ class DampedDragAnimation(
         }
     }
 
-    fun release() {
+    fun release(force: Boolean = false) {
+        if (isPointerDown && !force) return
         animationScope.launch {
             awaitFrame()
             if (value != targetValue) {
@@ -104,6 +110,7 @@ class DampedDragAnimation(
                     .filter { abs(it - valueAnimation.targetValue) < threshold }
                     .first()
             }
+            if (isPointerDown && !force) return@launch
             launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
             launch { scaleXAnimation.animateTo(initialScale, scaleXAnimationSpec) }
             launch { scaleYAnimation.animateTo(initialScale, scaleYAnimationSpec) }
@@ -132,16 +139,18 @@ class DampedDragAnimation(
     }
 
     fun animateToValue(value: Float) {
+        val target = value.coerceIn(valueRange)
+        dragTarget = target
         animationScope.launch {
             mutatorMutex.mutate {
                 press()
-                val target = value.coerceIn(valueRange)
-                dragTarget = target
                 launch { valueAnimation.animateTo(target, valueAnimationSpec) }
                 if (velocity != 0f) {
                     launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
                 }
-                release()
+                if (!isPointerDown) {
+                    release()
+                }
             }
         }
     }

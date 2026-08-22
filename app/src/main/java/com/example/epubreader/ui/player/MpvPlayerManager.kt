@@ -93,10 +93,9 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.setOptionString("hwdec", "mediacodec")
             mpv.setOptionString("hwdec-codecs", "all")
             mpv.setOptionString("force-window", "no")
-            mpv.setOptionString("video-sync", "desync")
-            mpv.setOptionString("framedrop", "vo")
-            mpv.setOptionString("hr-seek", "no")
-            mpv.setOptionString("hr-seek-framedrop", "no")
+            mpv.setOptionString("video-sync", "audio")
+            mpv.setOptionString("framedrop", "auto")
+            mpv.setOptionString("autosync", "30")
             mpv.setOptionString("vd-lavc-threads", "0")
 
             // HDR & Wide Color Gamut (HDR10 ST 2084 / BT.2020 / HLG) Pipeline
@@ -122,7 +121,9 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.setOptionString("sub-ass", "yes")
             mpv.setOptionString("sub-visibility", "yes")
             mpv.setOptionString("sub-ass-override", "no")
-            mpv.setOptionString("sub-ass-force-margins", "yes")
+            mpv.setOptionString("sub-ass-force-margins", "no")
+            mpv.setOptionString("sub-ass-vsfilter-aspect-compat", "yes")
+            mpv.setOptionString("sub-ass-vsfilter-color-compat", "basic")
             mpv.setOptionString("sub-hinting", "native")
             mpv.setOptionString("sub-shaper", "harfbuzz")
             mpv.setOptionString("embeddedfonts", "yes")
@@ -132,7 +133,9 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.setOptionString("sub-codepage", "GB18030")
             mpv.setOptionString("slang", "chs,sc,zh-cn,chi,zh,ja,jp,jpn,en,eng")
             mpv.setOptionString("subs-fallback", "yes")
-            mpv.setOptionString("blend-subtitles", "video")
+            mpv.setOptionString("blend-subtitles", "no")
+            mpv.setOptionString("sub-pos", "100")
+            mpv.setOptionString("sub-margin-y", "22")
 
             // Audio Output - Force 16-bit downmix to ensure 100% Android AudioTrack compatibility
             mpv.setOptionString("ao", "audiotrack")
@@ -277,13 +280,11 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             mpv.attachSurface(surface)
             isSurfaceAttached = true
             mpv.setPropertyBoolean("sub-visibility", true)
-            
-            // Re-enable video output (mpv disables video output when surface/opengl context is destroyed)
             try {
-                mpv.setPropertyInt("vid", 1)
-                mpv.setPropertyBoolean("pause", !isPlaying.value)
+                mpv.setPropertyString("vid", "auto")
+                mpv.command("video-reconfig")
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to re-enable video track with vid=1", e)
+                // Ignore
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to attach surface", e)
@@ -629,23 +630,26 @@ class MpvPlayerManager(private val context: Context) : MPV.EventObserver, MPV.Lo
             colorPrimaries.value = primaries
             colorGamma.value = gamma
 
-            val isHdrContent = gamma.contains("pq", ignoreCase = true) ||
+            val isPq = gamma.contains("pq", ignoreCase = true) ||
                     gamma.contains("smpte2084", ignoreCase = true) ||
-                    gamma.contains("st2084", ignoreCase = true) ||
-                    gamma.contains("hlg", ignoreCase = true) ||
-                    gamma.contains("arib", ignoreCase = true) ||
-                    primaries.contains("bt.2020", ignoreCase = true) ||
-                    primaries.contains("bt2020", ignoreCase = true) ||
-                    pixFmt.contains("10bit", ignoreCase = true) ||
-                    pixFmt.contains("p010", ignoreCase = true) ||
-                    pixFmt.contains("yuv420p10", ignoreCase = true)
+                    gamma.contains("st2084", ignoreCase = true)
+            val isHlg = gamma.contains("hlg", ignoreCase = true) ||
+                    gamma.contains("arib", ignoreCase = true)
+            val isBt2020 = primaries.contains("bt.2020", ignoreCase = true) ||
+                    primaries.contains("bt2020", ignoreCase = true)
+            val is10Bit = pixFmt.contains("10", ignoreCase = true) ||
+                    pixFmt.contains("p010", ignoreCase = true)
 
-            isHdr.value = isHdrContent
+            // True HDR requires PQ (HDR10/DV) or HLG or BT.2020 with non-SDR transfer curve.
+            // 10-bit SDR anime (Hi10P / 10-bit BT.709) is SDR with high bit depth, NOT HDR.
+            val isTrueHdr = isPq || isHlg || (isBt2020 && is10Bit && !gamma.contains("709", ignoreCase = true))
+
+            isHdr.value = isTrueHdr
             hdrType.value = when {
-                gamma.contains("pq", ignoreCase = true) || gamma.contains("smpte2084", ignoreCase = true) || gamma.contains("st2084", ignoreCase = true) -> "HDR10 / ST 2084 (高动态范围)"
-                gamma.contains("hlg", ignoreCase = true) || gamma.contains("arib", ignoreCase = true) -> "HLG (广播高动态范围)"
-                primaries.contains("bt.2020", ignoreCase = true) || primaries.contains("bt2020", ignoreCase = true) -> "HDR (BT.2020 广色域)"
-                pixFmt.contains("10") -> "10-bit SDR (高色彩精度)"
+                isPq -> "HDR10 / ST 2084 (高动态范围)"
+                isHlg -> "HLG (广播高动态范围)"
+                isTrueHdr -> "HDR (BT.2020 广色域)"
+                is10Bit -> "10-bit SDR (高色彩精度)"
                 else -> "SDR 标准动态范围"
             }
 

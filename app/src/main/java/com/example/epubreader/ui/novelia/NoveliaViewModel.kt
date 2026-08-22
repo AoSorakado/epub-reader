@@ -3,6 +3,10 @@ package com.example.epubreader.ui.novelia
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.epubreader.data.linovelib.LinovelibApiClient
+import com.example.epubreader.data.linovelib.LinovelibNovel
+import com.example.epubreader.data.linovelib.LinovelibVolume
+import com.example.epubreader.data.linovelib.sync.LinovelibWebDavExporter
 import com.example.epubreader.data.novelia.NoveliaApiClient
 import com.example.epubreader.data.novelia.NoveliaCategory
 import com.example.epubreader.data.novelia.NoveliaChapter
@@ -30,6 +34,9 @@ class NoveliaViewModel(application: Application) : AndroidViewModel(application)
     val apiClient = NoveliaApiClient(application)
     val webDavExporter = NoveliaWebDavExporter(application, apiClient)
 
+    val linovelibApiClient = LinovelibApiClient(application)
+    val linovelibExporter = LinovelibWebDavExporter(application, linovelibApiClient)
+
     private val _viewMode = MutableStateFlow(NoveliaViewMode.BROWSE)
     val viewMode: StateFlow<NoveliaViewMode> = _viewMode.asStateFlow()
 
@@ -41,6 +48,24 @@ class NoveliaViewModel(application: Application) : AndroidViewModel(application)
 
     private val _webNovels = MutableStateFlow<List<NoveliaWebNovel>>(emptyList())
     val webNovels: StateFlow<List<NoveliaWebNovel>> = _webNovels.asStateFlow()
+
+    private val _linovelibNovels = MutableStateFlow<List<LinovelibNovel>>(emptyList())
+    val linovelibNovels: StateFlow<List<LinovelibNovel>> = _linovelibNovels.asStateFlow()
+
+    private val _linovelibSubCategory = MutableStateFlow(0)
+    val linovelibSubCategory: StateFlow<Int> = _linovelibSubCategory.asStateFlow()
+
+    private val _linovelibUsername = MutableStateFlow(linovelibApiClient.getSavedUsername())
+    val linovelibUsername: StateFlow<String> = _linovelibUsername.asStateFlow()
+
+    private val _selectedLinovelibNovel = MutableStateFlow<LinovelibNovel?>(null)
+    val selectedLinovelibNovel: StateFlow<LinovelibNovel?> = _selectedLinovelibNovel.asStateFlow()
+
+    private val _showLinovelibBrowser = MutableStateFlow(false)
+    val showLinovelibBrowser: StateFlow<Boolean> = _showLinovelibBrowser.asStateFlow()
+
+    private val _linovelibBrowserUrl = MutableStateFlow("https://tw.linovelib.com/login.php")
+    val linovelibBrowserUrl: StateFlow<String> = _linovelibBrowserUrl.asStateFlow()
 
     private val _favoredWenkuNovels = MutableStateFlow<List<NoveliaWenkuNovel>>(emptyList())
     val favoredWenkuNovels: StateFlow<List<NoveliaWenkuNovel>> = _favoredWenkuNovels.asStateFlow()
@@ -77,6 +102,10 @@ class NoveliaViewModel(application: Application) : AndroidViewModel(application)
                 refreshRes.onSuccess { session ->
                     _userSession.value = session
                 }
+            }
+            val biliUname = linovelibApiClient.fetchUsernameFromSession()
+            if (biliUname.isNotBlank()) {
+                _linovelibUsername.value = biliUname
             }
             loadNovels(resetPage = true)
         }
@@ -146,22 +175,235 @@ class NoveliaViewModel(application: Application) : AndroidViewModel(application)
             }
 
             val filter = _searchFilter.value
-            if (filter.category == NoveliaCategory.WENKU) {
-                val result = apiClient.searchWenku(filter)
-                result.onSuccess { list ->
-                    _wenkuNovels.value = if (resetPage) list else _wenkuNovels.value + list
-                }.onFailure { err ->
-                    _errorMsg.value = err.message ?: "加载文库小说失败"
+            when (filter.category) {
+                NoveliaCategory.WENKU -> {
+                    val result = apiClient.searchWenku(filter)
+                    result.onSuccess { list ->
+                        _wenkuNovels.value = if (resetPage) list else _wenkuNovels.value + list
+                    }.onFailure { err ->
+                        _errorMsg.value = err.message ?: "加载文库小说失败"
+                    }
                 }
-            } else {
-                val result = apiClient.searchWebNovels(filter)
-                result.onSuccess { list ->
-                    _webNovels.value = if (resetPage) list else _webNovels.value + list
-                }.onFailure { err ->
-                    _errorMsg.value = err.message ?: "加载网络小说失败"
+                NoveliaCategory.WEB_NOVEL -> {
+                    val result = apiClient.searchWebNovels(filter)
+                    result.onSuccess { list ->
+                        _webNovels.value = if (resetPage) list else _webNovels.value + list
+                    }.onFailure { err ->
+                        _errorMsg.value = err.message ?: "加载网络小说失败"
+                    }
+                }
+                NoveliaCategory.LINOVELIB -> {
+                    val sub = _linovelibSubCategory.value
+                    val result = linovelibApiClient.searchNovels(
+                        keyword = filter.keyword,
+                        subCategory = sub,
+                        page = filter.page
+                    )
+                    result.onSuccess { list ->
+                        _linovelibNovels.value = if (resetPage) list else _linovelibNovels.value + list
+                    }.onFailure { err ->
+                        if (err.message == "CLOUDFLARE_CHALLENGE") {
+                            _errorMsg.value = "触发人机验证，请点击右上角「网页/登录」完成验证"
+                            _showLinovelibBrowser.value = true
+                        } else {
+                            _errorMsg.value = err.message ?: "加载哔哩轻小说失败"
+                        }
+                    }
                 }
             }
             _isLoading.value = false
+        }
+    }
+
+    fun setLinovelibSubCategory(sub: Int) {
+        _linovelibSubCategory.value = sub
+        loadNovels(resetPage = true)
+    }
+
+    fun openLinovelibBrowser(url: String = "https://tw.linovelib.com/login.php") {
+        _linovelibBrowserUrl.value = url
+        _showLinovelibBrowser.value = true
+    }
+
+    fun openLinovelibWebSearch(keyword: String = "") {
+        val clean = keyword.trim()
+        val url = if (clean.isNotBlank()) {
+            "https://cse.google.com/cse?cx=649de34f5e63448cb&q=${java.net.URLEncoder.encode(clean, "UTF-8")}"
+        } else {
+            "https://tw.linovelib.com/wenku/"
+        }
+        openLinovelibBrowser(url)
+    }
+
+    fun openLinovelibNovelById(novelId: String) {
+        val cleanId = novelId.replace(Regex("[^0-9]"), "")
+        if (cleanId.isBlank()) return
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMsg.value = null
+            val detailRes = linovelibApiClient.getNovelDetail(cleanId)
+            detailRes.onSuccess { fullNovel ->
+                _selectedLinovelibNovel.value = fullNovel
+            }.onFailure { err ->
+                if (err.message == "CLOUDFLARE_CHALLENGE") {
+                    openLinovelibBrowser("https://tw.linovelib.com/novel/$cleanId.html")
+                    GlobalToastManager.show("请先在内置浏览器中完成人机验证", ToastType.Info)
+                } else {
+                    GlobalToastManager.show("加载小说详情失败: ${err.message}", ToastType.Error)
+                }
+            }
+            _isLoading.value = false
+        }
+    }
+
+    fun closeLinovelibBrowser() {
+        _showLinovelibBrowser.value = false
+    }
+
+    fun syncLinovelibCookies(cookies: String, ua: String, username: String = "") {
+        if (ua.isNotBlank()) {
+            linovelibApiClient.saveUserAgent(ua)
+        }
+        if (username.isNotBlank()) {
+            linovelibApiClient.saveUsername(username)
+            _linovelibUsername.value = username
+        }
+        linovelibApiClient.syncCookiesFromCookieManager()
+        _showLinovelibBrowser.value = false
+
+        viewModelScope.launch {
+            val detected = linovelibApiClient.fetchUsernameFromSession()
+            if (detected.isNotBlank()) {
+                _linovelibUsername.value = detected
+            }
+            val displayMsg = if (_linovelibUsername.value.isNotBlank()) "已同步哔哩轻小说账号: ${_linovelibUsername.value}" else "已同步哔哩轻小说 Cookie，正在重新加载"
+            GlobalToastManager.show(displayMsg, ToastType.Success)
+            loadNovels(resetPage = true)
+        }
+    }
+
+    fun openLinovelibDetail(novel: LinovelibNovel) {
+        viewModelScope.launch {
+            _selectedLinovelibNovel.value = novel
+            _isLoading.value = true
+            val detailRes = linovelibApiClient.getNovelDetail(novel.id)
+            detailRes.onSuccess { fullNovel ->
+                _selectedLinovelibNovel.value = fullNovel
+            }.onFailure { err ->
+                if (err.message == "CLOUDFLARE_CHALLENGE") {
+                    openLinovelibBrowser("https://tw.linovelib.com/novel/${novel.id}.html")
+                    GlobalToastManager.show("请先在内置浏览器中完成人机验证", ToastType.Info)
+                } else {
+                    GlobalToastManager.show("加载目录失败: ${err.message}", ToastType.Error)
+                }
+            }
+            _isLoading.value = false
+        }
+    }
+
+    fun closeLinovelibDetail() {
+        _selectedLinovelibNovel.value = null
+    }
+
+    fun downloadLinovelibVolume(novel: LinovelibNovel, volume: LinovelibVolume) {
+        if (_activeDownloadTask.value != null && !_activeDownloadTask.value!!.isCompleted) {
+            GlobalToastManager.show("已有下载任务正在进行中", ToastType.Info)
+            return
+        }
+
+        val task = NoveliaDownloadTask(
+            novelId = novel.id,
+            novelTitle = novel.title,
+            author = novel.author,
+            category = NoveliaCategory.LINOVELIB,
+            volumeOrChapterTitle = volume.volumeName,
+            engine = TranslationEngine.ORIGINAL,
+            progress = 0.05f,
+            statusText = "准备抓取 ${volume.volumeName}..."
+        )
+        _activeDownloadTask.value = task
+
+        viewModelScope.launch {
+            GlobalToastManager.showSyncing("开始下载 ${novel.title} ${volume.volumeName}")
+            val res = linovelibExporter.exportLinovelibVolume(novel, volume) { progress, status ->
+                _activeDownloadTask.value = _activeDownloadTask.value?.copy(
+                    progress = progress,
+                    statusText = status
+                )
+            }
+
+            res.onSuccess { remotePath ->
+                _activeDownloadTask.value = _activeDownloadTask.value?.copy(
+                    progress = 1.0f,
+                    statusText = "${volume.volumeName} 已生成 EPUB 并上传 WebDAV",
+                    isCompleted = true
+                )
+                GlobalToastManager.show("${volume.volumeName} 已保存至 WebDAV", ToastType.Success)
+            }.onFailure { err ->
+                _activeDownloadTask.value = _activeDownloadTask.value?.copy(
+                    statusText = "${volume.volumeName} 下载失败: ${err.message}",
+                    error = err.message,
+                    isCompleted = true
+                )
+                GlobalToastManager.show("${volume.volumeName} 下载失败: ${err.message}", ToastType.Error)
+            }
+        }
+    }
+
+    fun downloadAllLinovelibVolumes(novel: LinovelibNovel) {
+        if (novel.volumes.isEmpty()) {
+            GlobalToastManager.show("暂无分卷可供下载", ToastType.Info)
+            return
+        }
+
+        if (_activeDownloadTask.value != null && !_activeDownloadTask.value!!.isCompleted) {
+            GlobalToastManager.show("已有下载任务正在进行中", ToastType.Info)
+            return
+        }
+
+        val totalVolumes = novel.volumes.size
+        val task = NoveliaDownloadTask(
+            novelId = novel.id,
+            novelTitle = novel.title,
+            author = novel.author,
+            category = NoveliaCategory.LINOVELIB,
+            volumeOrChapterTitle = "全系列 ($totalVolumes 卷)",
+            engine = TranslationEngine.ORIGINAL,
+            progress = 0.01f,
+            statusText = "准备下载全系列..."
+        )
+        _activeDownloadTask.value = task
+
+        viewModelScope.launch {
+            GlobalToastManager.showSyncing("开始下载 ${novel.title} 全系列 (共 $totalVolumes 卷)")
+            var successCount = 0
+            for ((volIdx, vol) in novel.volumes.withIndex()) {
+                val baseProgress = volIdx.toFloat() / totalVolumes.toFloat()
+                _activeDownloadTask.value = _activeDownloadTask.value?.copy(
+                    volumeOrChapterTitle = vol.volumeName,
+                    progress = baseProgress,
+                    statusText = "正在下载 [${volIdx + 1}/$totalVolumes] ${vol.volumeName}..."
+                )
+
+                val exportRes = linovelibExporter.exportLinovelibVolume(novel, vol) { progress, status ->
+                    val overallProgress = (volIdx.toFloat() + progress) / totalVolumes.toFloat()
+                    _activeDownloadTask.value = _activeDownloadTask.value?.copy(
+                        progress = overallProgress,
+                        statusText = "[${volIdx + 1}/$totalVolumes] $status"
+                    )
+                }
+
+                if (exportRes.isSuccess) {
+                    successCount++
+                }
+            }
+
+            _activeDownloadTask.value = _activeDownloadTask.value?.copy(
+                progress = 1.0f,
+                statusText = "全系列下载完成 ($successCount/$totalVolumes 卷)",
+                isCompleted = true
+            )
+            GlobalToastManager.show("全系列下载完成 ($successCount/$totalVolumes 卷)", ToastType.Success)
         }
     }
 
@@ -349,15 +591,15 @@ class NoveliaViewModel(application: Application) : AndroidViewModel(application)
             novelTitle = novel.title,
             author = novel.author,
             category = NoveliaCategory.WENKU,
-            volumeOrChapterTitle = "第${volume.volumeIndex}卷 ${volume.volumeName}",
+            volumeOrChapterTitle = volume.volumeName,
             engine = engine,
             progress = 0.05f,
-            statusText = "准备下载第${volume.volumeIndex}卷..."
+            statusText = "准备下载 ${volume.volumeName}..."
         )
         _activeDownloadTask.value = task
 
         viewModelScope.launch {
-            GlobalToastManager.showSyncing("开始下载 ${novel.title} 第${volume.volumeIndex}卷")
+            GlobalToastManager.showSyncing("开始下载 ${novel.title} ${volume.volumeName}")
             val res = webDavExporter.exportWenkuVolume(novel, volume, engine) { progress, status ->
                 _activeDownloadTask.value = _activeDownloadTask.value?.copy(
                     progress = progress,
@@ -368,17 +610,17 @@ class NoveliaViewModel(application: Application) : AndroidViewModel(application)
             res.onSuccess { remotePath ->
                 _activeDownloadTask.value = _activeDownloadTask.value?.copy(
                     progress = 1.0f,
-                    statusText = "第${volume.volumeIndex}卷已归档至 WebDAV",
+                    statusText = "${volume.volumeName} 已归档至 WebDAV",
                     isCompleted = true
                 )
-                GlobalToastManager.show("第${volume.volumeIndex}卷已保存至 WebDAV", ToastType.Success)
+                GlobalToastManager.show("${volume.volumeName} 已保存至 WebDAV", ToastType.Success)
             }.onFailure { err ->
                 _activeDownloadTask.value = _activeDownloadTask.value?.copy(
-                    statusText = "第${volume.volumeIndex}卷下载失败: ${err.message}",
+                    statusText = "${volume.volumeName} 下载失败: ${err.message}",
                     error = err.message,
                     isCompleted = true
                 )
-                GlobalToastManager.show("第${volume.volumeIndex}卷下载失败: ${err.message}", ToastType.Error)
+                GlobalToastManager.show("${volume.volumeName} 下载失败: ${err.message}", ToastType.Error)
             }
         }
     }

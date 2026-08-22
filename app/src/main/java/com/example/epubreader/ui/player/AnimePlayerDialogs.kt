@@ -313,6 +313,7 @@ fun TrackSelectorDialogContent(
     availableSubtitles: List<PlayerTrackInfo>,
     availableExternalSubtitles: List<ExternalSubtitleItem>,
     selectedExternalSubtitlePath: String?,
+    selectedSubtitleIndex: Int? = null,
     isLoadingExternalSubs: Boolean,
     isSubtitleDisabled: Boolean,
     subtitleDelayMs: Long = 0L,
@@ -436,7 +437,10 @@ fun TrackSelectorDialogContent(
         if (availableSubtitles.isNotEmpty()) {
             Text("内嵌字幕轨", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.padding(top = 2.dp))
             availableSubtitles.forEach { subTrack ->
-                val isTrackActive = selectedExternalSubtitlePath == null && subTrack.isSelected && !isSubtitleDisabled
+                val isTrackActive = selectedExternalSubtitlePath == null && !isSubtitleDisabled && (
+                    if (selectedSubtitleIndex != null) subTrack.trackIndex == selectedSubtitleIndex
+                    else subTrack.isSelected
+                )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1039,6 +1043,7 @@ fun QualitySpecsDialogContent(
     mpvPlayer: MpvPlayerManager? = null,
     useHdrPassthrough: Boolean = false,
     onToggleHdrPassthrough: (Boolean) -> Unit = {},
+    videoUrl: String = "",
     onClose: () -> Unit
 ) {
     Column(
@@ -1121,7 +1126,7 @@ fun QualitySpecsDialogContent(
             }
         }
 
-        // HDR Passthrough Channel Toggle (Always available for HDR content)
+        // HDR Passthrough Channel Toggle
         if (isHdr) {
             Row(
                 modifier = Modifier
@@ -1141,8 +1146,8 @@ fun QualitySpecsDialogContent(
                             )
                             else listOf(
                                 Color.White.copy(alpha = 0.40f),
-                                Color(0xFFE0E7FF).copy(alpha = 0.20f),
-                                Color.White.copy(alpha = 0.08f)
+                                Color(0xFFE0E7FF).copy(alpha = 0.10f),
+                                Color.White.copy(alpha = 0.05f)
                             )
                         ),
                         shape = RoundedCornerShape(14.dp)
@@ -1174,13 +1179,10 @@ fun QualitySpecsDialogContent(
                         )
                     }
                     Text(
-                        text = if (useHdrPassthrough)
-                            "✓ 硬件直通激活中 · 10-bit HDR 信号直达 OLED 屏幕"
-                        else
-                            "直通 10-bit HDR 硬件激发通道，呈现物理光学高光",
+                        text = if (useHdrPassthrough) "✓ 硬件直通激活中 · 10-bit HDR 信号直达 OLED 屏幕"
+                               else "直通 10-bit HDR 硬件激发通道，呈现物理光学高光",
                         fontSize = 10.5.sp,
-                        color = if (useHdrPassthrough) Color(0xFFFFB800).copy(alpha = 0.9f)
-                        else Color.White.copy(alpha = 0.6f),
+                        color = if (useHdrPassthrough) Color(0xFFFFB800).copy(alpha = 0.9f) else Color.White.copy(alpha = 0.6f),
                         lineHeight = 14.sp
                     )
                 }

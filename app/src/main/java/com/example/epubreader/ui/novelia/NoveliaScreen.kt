@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
@@ -69,10 +70,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.example.epubreader.data.linovelib.LinovelibNovel
 import com.example.epubreader.data.novelia.NoveliaCategory
 import com.example.epubreader.data.novelia.NoveliaViewMode
 import com.example.epubreader.data.novelia.NoveliaWebNovel
 import com.example.epubreader.data.novelia.NoveliaWenkuNovel
+import com.example.epubreader.ui.linovelib.LinovelibBrowserDialog
+import com.example.epubreader.ui.linovelib.LinovelibDetailDialog
 
 @Composable
 fun NoveliaScreen(
@@ -89,6 +93,7 @@ fun NoveliaScreen(
     val filter by viewModel.searchFilter.collectAsState()
     val wenkuNovels by viewModel.wenkuNovels.collectAsState()
     val webNovels by viewModel.webNovels.collectAsState()
+    val linovelibNovels by viewModel.linovelibNovels.collectAsState()
     val favoredWenku by viewModel.favoredWenkuNovels.collectAsState()
     val favoredWeb by viewModel.favoredWebNovels.collectAsState()
     val favoriteFolders by viewModel.favoriteFolders.collectAsState()
@@ -96,27 +101,34 @@ fun NoveliaScreen(
     val errorMsg by viewModel.errorMsg.collectAsState()
     val selectedWenku by viewModel.selectedWenkuNovel.collectAsState()
     val selectedWeb by viewModel.selectedWebNovel.collectAsState()
+    val selectedLinovelib by viewModel.selectedLinovelibNovel.collectAsState()
+    val showLinovelibBrowser by viewModel.showLinovelibBrowser.collectAsState()
     val activeTask by viewModel.activeDownloadTask.collectAsState()
     val userSession by viewModel.userSession.collectAsState()
+    val linovelibSubCategory by viewModel.linovelibSubCategory.collectAsState()
+    val linovelibUsername by viewModel.linovelibUsername.collectAsState()
 
-    var showLoginDialog by remember { mutableStateOf(false) }
     var searchInput by remember { mutableStateOf(filter.keyword) }
+    var showLoginDialog by remember { mutableStateOf(false) }
+
     val focusManager = LocalFocusManager.current
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
-            .statusBarsPadding()
-            .navigationBarsPadding()
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Header Top Bar
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+        ) {
+            // Top App Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -128,25 +140,24 @@ fun NoveliaScreen(
                             tint = textColor
                         )
                     }
-                    Spacer(modifier = Modifier.width(2.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Novelia",
+                        text = if (filter.category == NoveliaCategory.LINOVELIB) "哔哩轻小说" else "Novelia 在线书库",
                         color = textColor,
-                        fontSize = 19.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Mode Switcher Pill (书库 / 收藏)
+                    // Browse vs Favorites Segment
+                    val isBrowse = viewMode == NoveliaViewMode.BROWSE
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
                             .background(if (isDark) Color(0xFF222233) else Color(0xFFE2E8F0))
-                            .padding(2.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(2.dp)
                     ) {
-                        val isBrowse = viewMode == NoveliaViewMode.BROWSE
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(18.dp))
@@ -161,6 +172,7 @@ fun NoveliaScreen(
                                 fontWeight = if (isBrowse) FontWeight.Bold else FontWeight.Normal
                             )
                         }
+
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(18.dp))
@@ -188,35 +200,69 @@ fun NoveliaScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // User Login / Avatar Pill
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(if (userSession.isLoggedIn) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFF3B82F6).copy(alpha = 0.15f))
-                            .clickable { showLoginDialog = true }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (userSession.isLoggedIn) Icons.Default.AccountCircle else Icons.Default.Lock,
-                                contentDescription = null,
-                                tint = if (userSession.isLoggedIn) Color(0xFF10B981) else Color(0xFF3B82F6),
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (userSession.isLoggedIn) userSession.username.ifEmpty { "已登录" } else "登录",
-                                color = if (userSession.isLoggedIn) Color(0xFF10B981) else Color(0xFF3B82F6),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                    if (filter.category == NoveliaCategory.LINOVELIB) {
+                        // Linovelib Account / Browser Entry
+                        val hasLinovelibUser = linovelibUsername.isNotBlank()
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(if (hasLinovelibUser) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFF3B82F6).copy(alpha = 0.15f))
+                                .clickable { viewModel.openLinovelibBrowser() }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (hasLinovelibUser) Icons.Default.Person else Icons.Default.AutoStories,
+                                    contentDescription = null,
+                                    tint = if (hasLinovelibUser) Color(0xFF10B981) else Color(0xFF3B82F6),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (hasLinovelibUser) linovelibUsername else "网页/登录",
+                                    color = if (hasLinovelibUser) Color(0xFF10B981) else Color(0xFF3B82F6),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    } else {
+                        // Novelia Account Entry
+                        val isNoveliaLoggedIn = userSession.isLoggedIn
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(if (isNoveliaLoggedIn) Color(0xFF6366F1).copy(alpha = 0.15f) else Color(0xFFEC4899).copy(alpha = 0.15f))
+                                .clickable { showLoginDialog = true }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = if (isNoveliaLoggedIn) Color(0xFF6366F1) else Color(0xFFEC4899),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isNoveliaLoggedIn) userSession.username.ifEmpty { "已登录" } else "账号登录",
+                                    color = if (isNoveliaLoggedIn) Color(0xFF6366F1) else Color(0xFFEC4899),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // Category Segmented Tabs (文库小说 / 网络小说)
+            // Category Segmented Tabs (文库小说 / 网络小说 / 哔哩轻小说)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -236,7 +282,7 @@ fun NoveliaScreen(
                                 .clip(RoundedCornerShape(11.dp))
                                 .background(if (isSelected) (if (isDark) Color(0xFF3B82F6) else Color.White) else Color.Transparent)
                                 .clickable { viewModel.setCategory(cat) }
-                                .padding(horizontal = 24.dp, vertical = 6.dp),
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -262,7 +308,16 @@ fun NoveliaScreen(
                     OutlinedTextField(
                         value = searchInput,
                         onValueChange = { searchInput = it },
-                        placeholder = { Text(if (filter.category == NoveliaCategory.WENKU) "搜索文库书名或作者..." else "搜索网络小说标题或作者...", fontSize = 13.sp) },
+                        placeholder = {
+                            Text(
+                                when (filter.category) {
+                                    NoveliaCategory.WENKU -> "搜索文库书名或作者..."
+                                    NoveliaCategory.WEB_NOVEL -> "搜索网络小说标题或作者..."
+                                    NoveliaCategory.LINOVELIB -> "搜索哔哩轻小说 (tw.linovelib.com)..."
+                                },
+                                fontSize = 13.sp
+                            )
+                        },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Search,
@@ -310,74 +365,110 @@ fun NoveliaScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Filter Chips for Browse Mode
-                if (filter.category == NoveliaCategory.WENKU) {
-                    val wenkuLevels = if (userSession.isLoggedIn) {
-                        listOf(
-                            "全部小说" to 0,
-                            "轻小说" to 1,
-                            "轻文学" to 2,
-                            "文学" to 3,
-                            "非小说" to 4,
-                            "R18男性向" to 5,
-                            "R18女性向" to 6
-                        )
-                    } else {
-                        listOf(
-                            "全部小说" to 0,
-                            "轻小说" to 1,
-                            "轻文学" to 2,
-                            "文学" to 3,
-                            "非小说" to 4
-                        )
-                    }
-
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        items(wenkuLevels) { (label, levelVal) ->
-                            val isSel = filter.wenkuLevel == levelVal
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(if (isSel) Color(0xFF3B82F6) else (if (isDark) Color(0xFF222233) else Color(0xFFE2E8F0)))
-                                    .clickable { viewModel.setWenkuLevel(levelVal) }
-                                    .padding(horizontal = 10.dp, vertical = 5.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = label,
-                                    color = if (isSel) Color.White else (if (label.contains("R18")) Color(0xFFEF4444) else subTextColor),
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
-                                )
-                            }
+                when (filter.category) {
+                    NoveliaCategory.WENKU -> {
+                        val wenkuLevels = if (userSession.isLoggedIn) {
+                            listOf(
+                                "全部小说" to 0,
+                                "轻小说" to 1,
+                                "轻文学" to 2,
+                                "文学" to 3,
+                                "非小说" to 4,
+                                "R18男性向" to 5,
+                                "R18女性向" to 6
+                            )
+                        } else {
+                            listOf(
+                                "全部小说" to 0,
+                                "轻小说" to 1,
+                                "轻文学" to 2,
+                                "文学" to 3,
+                                "非小说" to 4
+                            )
                         }
-                    }
-                } else {
-                    val sources = listOf(
-                        "全部来源" to "kakuyomu,syosetu,novelup,hameln,pixiv,alphapolis",
-                        "Kakuyomu" to "kakuyomu",
-                        "成为小说家吧" to "syosetu",
-                        "Hameln" to "hameln",
-                        "Pixiv" to "pixiv",
-                        "Novelup" to "novelup",
-                        "Alphapolis" to "alphapolis"
-                    )
 
-                    Column {
                         LazyRow(
                             modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            items(sources) { (label, srcKey) ->
-                                val isSel = filter.webProvider == srcKey
+                            items(wenkuLevels) { (label, levelVal) ->
+                                val isSel = filter.wenkuLevel == levelVal
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(if (isSel) Color(0xFF3B82F6) else (if (isDark) Color(0xFF222233) else Color(0xFFE2E8F0)))
+                                        .clickable { viewModel.setWenkuLevel(levelVal) }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (isSel) Color.White else (if (label.contains("R18")) Color(0xFFEF4444) else subTextColor),
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    NoveliaCategory.LINOVELIB -> {
+                        val subCats = listOf(
+                            "轻小说文库" to 0,
+                            "月点击榜" to 1,
+                            "总收藏榜" to 2,
+                            "月推荐榜" to 3,
+                            "全本完结" to 4,
+                            "首页推荐" to 5
+                        )
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(subCats) { (label, subVal) ->
+                                val isSel = linovelibSubCategory == subVal
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (isSel) Color(0xFF3B82F6) else (if (isDark) Color(0xFF222233) else Color(0xFFE2E8F0)))
+                                        .clickable { viewModel.setLinovelibSubCategory(subVal) }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (isSel) Color.White else subTextColor,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    NoveliaCategory.WEB_NOVEL -> {
+                        val sources = listOf(
+                            "全部来源" to "kakuyomu,syosetu,novelup,hameln,pixiv,alphapolis",
+                            "Kakuyomu" to "kakuyomu",
+                            "成为小说家吧" to "syosetu",
+                            "Hameln" to "hameln",
+                            "Pixiv" to "pixiv",
+                            "Novelup" to "novelup",
+                            "Alphapolis" to "alphapolis"
+                        )
+
+                        Column {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(sources) { (label, srcKey) ->
+                                    val isSel = filter.webProvider == srcKey
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(if (isSel) Color(0xFF3B82F6) else (if (isDark) Color(0xFF222233) else Color(0xFFE2E8F0)))
                                         .clickable { viewModel.setWebProvider(srcKey) }
                                         .padding(horizontal = 10.dp, vertical = 5.dp),
                                     contentAlignment = Alignment.Center
@@ -450,6 +541,7 @@ fun NoveliaScreen(
                         }
                     }
                 }
+            }
             } else {
                 // Favorites Mode: Folders & Sort Rows
                 Row(
@@ -531,49 +623,158 @@ fun NoveliaScreen(
                     .fillMaxWidth()
             ) {
                 if (viewMode == NoveliaViewMode.BROWSE) {
-                    if (filter.category == NoveliaCategory.WENKU) {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(wenkuNovels) { novel ->
-                                WenkuNovelCard(
-                                    novel = novel,
-                                    isDark = isDark,
-                                    cardColor = cardColor,
-                                    textColor = textColor,
-                                    subTextColor = subTextColor,
-                                    onClick = { viewModel.openWenkuDetail(novel) }
-                                )
-                            }
+                    when (filter.category) {
+                        NoveliaCategory.WENKU -> {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(2),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                items(wenkuNovels) { novel ->
+                                    WenkuNovelCard(
+                                        novel = novel,
+                                        isDark = isDark,
+                                        cardColor = cardColor,
+                                        textColor = textColor,
+                                        subTextColor = subTextColor,
+                                        onClick = { viewModel.openWenkuDetail(novel) }
+                                    )
+                                }
 
-                            if (wenkuNovels.isNotEmpty()) {
-                                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 16.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (isLoading) {
-                                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFF3B82F6))
-                                        } else {
-                                            Text(
-                                                text = "点击加载更多...",
-                                                color = Color(0xFF3B82F6),
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                modifier = Modifier.clickable { viewModel.loadMore() }
-                                            )
+                                if (wenkuNovels.isNotEmpty()) {
+                                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 16.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isLoading) {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFF3B82F6))
+                                            } else {
+                                                Text(
+                                                    text = "点击加载更多...",
+                                                    color = Color(0xFF3B82F6),
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    modifier = Modifier.clickable { viewModel.loadMore() }
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    } else {
+                        NoveliaCategory.LINOVELIB -> {
+                            if (linovelibNovels.isEmpty() && !isLoading) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp)
+                                        .align(Alignment.Center),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoStories,
+                                        contentDescription = null,
+                                        tint = Color(0xFF3B82F6),
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = if (filter.keyword.isNotBlank()) "未在公开列表中搜到「${filter.keyword}」" else "暂无哔哩轻小说数据",
+                                        color = textColor,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = if (filter.keyword.isNotBlank())
+                                            "部分下架/版权隐藏作品（如 ID: 4586）未在公共列表展示，但章节依然完整。点击下方「网页搜索」找到后一键导入，或在上方搜索栏直接输入数字 ID / 链接。"
+                                        else
+                                            "若首次加载或遭遇人机拦截，可点击「重新加载」或打开网页验证",
+                                        color = subTextColor,
+                                        fontSize = 12.sp,
+                                        textAlign = TextAlign.Center,
+                                        lineHeight = 17.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        if (filter.keyword.isNotBlank()) {
+                                            Button(
+                                                onClick = { viewModel.openLinovelibWebSearch(filter.keyword) },
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+                                            ) {
+                                                Icon(imageVector = Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("在网页中搜索「${filter.keyword}」")
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = { viewModel.loadNovels(resetPage = true) },
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
+                                            ) {
+                                                Text("重新加载")
+                                            }
+                                            Button(
+                                                onClick = { viewModel.openLinovelibBrowser() },
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                                            ) {
+                                                Text("打开网页验证")
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(2),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    items(linovelibNovels) { novel ->
+                                        LinovelibNovelCard(
+                                            novel = novel,
+                                            isDark = isDark,
+                                            cardColor = cardColor,
+                                            textColor = textColor,
+                                            subTextColor = subTextColor,
+                                            onClick = { viewModel.openLinovelibDetail(novel) }
+                                        )
+                                    }
+
+                                    if (linovelibNovels.isNotEmpty()) {
+                                        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 16.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (isLoading) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFF3B82F6))
+                                                } else {
+                                                    Text(
+                                                        text = "点击加载更多...",
+                                                        color = Color(0xFF3B82F6),
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        modifier = Modifier.clickable { viewModel.loadMore() }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        NoveliaCategory.WEB_NOVEL -> {
                         // Web Novels tab
                         if (!userSession.isLoggedIn && webNovels.isEmpty() && !isLoading) {
                             Column(
@@ -663,8 +864,9 @@ fun NoveliaScreen(
                             }
                         }
                     }
-                } else {
-                    // FAVORITES VIEW
+                }
+            } else {
+                // FAVORITES VIEW
                     if (!userSession.isLoggedIn) {
                         Column(
                             modifier = Modifier
@@ -710,52 +912,62 @@ fun NoveliaScreen(
                                 Text("一键登录账号", color = Color.White)
                             }
                         }
-                    } else if (filter.category == NoveliaCategory.WENKU) {
-                        if (favoredWenku.isEmpty() && !isLoading) {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(text = "文库收藏夹为空", color = subTextColor, fontSize = 14.sp)
-                            }
-                        } else {
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(2),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                items(favoredWenku) { novel ->
-                                    WenkuNovelCard(
-                                        novel = novel,
-                                        isDark = isDark,
-                                        cardColor = cardColor,
-                                        textColor = textColor,
-                                        subTextColor = subTextColor,
-                                        onClick = { viewModel.openWenkuDetail(novel) }
-                                    )
+                    } else {
+                        when (filter.category) {
+                            NoveliaCategory.WENKU -> {
+                                if (favoredWenku.isEmpty() && !isLoading) {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Text(text = "文库收藏夹为空", color = subTextColor, fontSize = 14.sp)
+                                    }
+                                } else {
+                                    LazyVerticalGrid(
+                                        columns = GridCells.Fixed(2),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        items(favoredWenku) { novel ->
+                                            WenkuNovelCard(
+                                                novel = novel,
+                                                isDark = isDark,
+                                                cardColor = cardColor,
+                                                textColor = textColor,
+                                                subTextColor = subTextColor,
+                                                onClick = { viewModel.openWenkuDetail(novel) }
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    } else {
-                        if (favoredWeb.isEmpty() && !isLoading) {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(text = "网络小说收藏夹为空", color = subTextColor, fontSize = 14.sp)
+                            NoveliaCategory.LINOVELIB -> {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Text(text = "哔哩轻小说暂不支持云端收藏夹同步，请在「书库」中浏览或搜索下载", color = subTextColor, fontSize = 14.sp)
+                                }
                             }
-                        } else {
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(1),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                items(favoredWeb) { novel ->
-                                    WebNovelCard(
-                                        novel = novel,
-                                        isDark = isDark,
-                                        cardColor = cardColor,
-                                        textColor = textColor,
-                                        subTextColor = subTextColor,
-                                        onClick = { viewModel.openWebNovelDetail(novel) }
-                                    )
+                            NoveliaCategory.WEB_NOVEL -> {
+                                if (favoredWeb.isEmpty() && !isLoading) {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Text(text = "网络小说收藏夹为空", color = subTextColor, fontSize = 14.sp)
+                                    }
+                                } else {
+                                    LazyVerticalGrid(
+                                        columns = GridCells.Fixed(1),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        items(favoredWeb) { novel ->
+                                            WebNovelCard(
+                                                novel = novel,
+                                                isDark = isDark,
+                                                cardColor = cardColor,
+                                                textColor = textColor,
+                                                subTextColor = subTextColor,
+                                                onClick = { viewModel.openWebNovelDetail(novel) }
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -900,6 +1112,32 @@ fun NoveliaScreen(
                 onDismiss = { viewModel.closeWebNovelDetail() },
                 onDownloadNovel = { n, eng -> viewModel.downloadWebNovel(n, eng) },
                 onToggleFavorite = { viewModel.toggleFavoriteWeb(it) }
+            )
+        }
+
+        if (selectedLinovelib != null) {
+            LinovelibDetailDialog(
+                novel = selectedLinovelib!!,
+                activeTask = activeTask,
+                onDismiss = { viewModel.closeLinovelibDetail() },
+                onOpenInBrowser = { url -> viewModel.openLinovelibBrowser(url) },
+                onDownloadVolume = { n, v -> viewModel.downloadLinovelibVolume(n, v) },
+                onDownloadAllVolumes = { n -> viewModel.downloadAllLinovelibVolumes(n) }
+            )
+        }
+
+        if (showLinovelibBrowser) {
+            val browserUrl by viewModel.linovelibBrowserUrl.collectAsState()
+            LinovelibBrowserDialog(
+                initialUrl = browserUrl,
+                savedUsername = linovelibUsername,
+                onDismiss = { viewModel.closeLinovelibBrowser() },
+                onCookiesExtracted = { cookies, ua, uname ->
+                    viewModel.syncLinovelibCookies(cookies, ua, uname)
+                },
+                onNovelSelected = { novelId ->
+                    viewModel.openLinovelibNovelById(novelId)
+                }
             )
         }
 
@@ -1121,3 +1359,102 @@ private fun WebNovelCard(
         }
     }
 }
+
+@Composable
+private fun LinovelibNovelCard(
+    novel: LinovelibNovel,
+    isDark: Boolean,
+    cardColor: Color,
+    textColor: Color,
+    subTextColor: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(cardColor)
+            .border(1.dp, if (isDark) Color(0xFF2E2E42) else Color(0xFFE2E8F0), RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (isDark) Color(0xFF28283B) else Color(0xFFE2E8F0))
+        ) {
+            if (novel.coverUrl.isNotEmpty()) {
+                AsyncImage(
+                    model = novel.coverUrl,
+                    contentDescription = novel.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Book,
+                        contentDescription = null,
+                        tint = subTextColor,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
+
+            // Category tag
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = novel.category.ifEmpty { "轻小说" },
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = novel.title,
+            color = textColor,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 17.sp
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = novel.author,
+                color = subTextColor,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = novel.status,
+                color = if (novel.status.contains("完结")) Color(0xFF10B981) else Color(0xFF3B82F6),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
